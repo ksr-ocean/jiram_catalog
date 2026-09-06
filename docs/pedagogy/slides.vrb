@@ -1,0 +1,10 @@
+\frametitle{\texttt {reproject.py}: the inverse camera model}
+\revsec{4.8}
+  \texttt{project\_to\_pixels}: run \texttt{geometry.py}'s chain backwards.
+\begin{lstlisting}[basicstyle=\ttfamily\tiny,frame=none]
+(lat,lon) -> surface point -> IAU_JUPITER -> J2000
+   -> re-apply FORWARD stellar aberration (put it back!)
+   -> band frame -> invert pinhole -> fractional (line, sample)
+\end{lstlisting}
+  Round-trip residual on a live frame: \textbf{1.22e-05 px}. \\
+  \texttt{reproject\_frame}: walk the \emph{output} grid, pull from the source --- no output pixel unpainted, no input pixel double-scattered.

@@ -1,0 +1,943 @@
+% Pedagogical slide deck for jiram_catalog.
+% Companion to ../../PEDAGOGICAL_REVIEW.md; every slide footer cites the
+% review section it corresponds to. metropolis is not installed on this
+% system (checked with kpsewhich beamerthememetropolis.sty), so this
+% deck uses the beamer "default" theme per the spec's fallback rule.
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usetheme{default}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{textcomp}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit}
+\usepackage{amsmath}
+\usepackage{booktabs}
+
+\definecolor{jirblue}{RGB}{40,70,120}
+\definecolor{jirgold}{RGB}{180,120,20}
+\definecolor{jirgray}{RGB}{90,90,90}
+\setbeamercolor{structure}{fg=jirblue}
+\setbeamercolor{title}{fg=jirblue}
+\setbeamercolor{frametitle}{fg=jirblue}
+\setbeamercolor{block title}{bg=jirblue!12,fg=jirblue}
+\setbeamercolor{block body}{bg=jirblue!4}
+\setbeamerfont{frametitle}{series=\bfseries}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  columns=fullflexible,
+  keywordstyle=\color{jirblue}\bfseries,
+  commentstyle=\color{jirgray}\itshape,
+  stringstyle=\color{jirgold},
+  showstringspaces=false,
+  frame=single,
+  rulecolor=\color{jirgray!40},
+  backgroundcolor=\color{black!3}
+}
+
+% ---------------------------------------------------------------------
+% Footer that cites the review section a slide corresponds to, rather
+% than beamer's usual navigation dots. \revsec{X.Y} sets it per slide.
+\newcommand{\currevsec}{}
+\newcommand{\revsec}[1]{\renewcommand{\currevsec}{#1}}
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.55\paperwidth,ht=2.6ex,dp=1.1ex,leftskip=.3cm]{author in head/foot}%
+    \usebeamerfont{author in head/foot}\scriptsize jiram\_catalog: a pedagogical review
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.45\paperwidth,ht=2.6ex,dp=1.1ex,rightskip=.3cm plus1fil]{title in head/foot}%
+    \usebeamerfont{title in head/foot}\scriptsize
+    \ifx\currevsec\@empty\else review \S\currevsec\ \textbullet\ \fi
+    \insertframenumber\,/\,\inserttotalframenumber
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+
+\title{\textbf{jiram\_catalog}}
+\subtitle{A pedagogical review: archive, geometry, and the two regimes}
+\author{}
+\date{}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+  {\small\color{jirgray} Companion to \texttt{PEDAGOGICAL\_REVIEW.md}; every footer cites the review section it expands on.}
+\end{frame}
+
+\begin{frame}{Outline}
+  \revsec{}
+  \tableofcontents
+\end{frame}
+
+% =======================================================================
+\section{What the tool is for}
+% =======================================================================
+
+\begin{frame}{Juno JIRAM, in one slide}
+  \revsec{1}
+  \begin{itemize}
+    \item Two-channel infrared camera on Juno: L-band (3.455~$\mu$m, aurora, H3$^+$) and M-band (4.780~$\mu$m, thermal, day \& night)
+    \item Detector: 128 lines $\times$ 432 samples per band; 256-line \texttt{LM} products stack both bands, 10 gap lines removed
+    \item Juno spins at 2~rpm (12~deg/s); JIRAM's despinning mirror holds one look steady per spin
+    \item 85{,}108 archived camera frames as of this writing (\texttt{README.md})
+  \end{itemize}
+  \vspace{0.3cm}
+  \begin{block}{The archive's own labels do not tell you where a frame is pointed}
+    They tell you which SPICE kernels were used to figure that out --- computing it yourself is the first half of this project.
+  \end{block}
+\end{frame}
+
+\begin{frame}{The single fact that organizes the whole codebase}
+  \revsec{1}
+  A JIRAM frame is small; the spacecraft is fast. What the archive gives you looks completely different at the poles than everywhere else.
+  \vspace{0.4cm}
+  \begin{columns}
+    \column{0.5\textwidth}
+    \textbf{At the poles:} Juno revisits\\
+    \small spin axis $\perp$ orbit plane $\Rightarrow$ JIRAM's one pointing DOF sweeps the pole every pass; a sequence returns every 8--20 min
+    \column{0.5\textwidth}
+    \textbf{Everywhere else:} Juno never comes back\\
+    \small one swath, one look, gone --- the spacecraft's orbit carries it away for the rest of the mission
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Regime 1: polar / repeat-view}
+  \revsec{1}
+  \begin{itemize}
+    \item Real time-series data: same patch, reimaged, known cadence
+    \item Natural product: a \textbf{region time stack} --- every overlapping frame, reprojected onto one fixed grid, laid along a time axis
+    \item Ground truth exists: Ingersoll et al.\ (2022, \emph{Nature Astronomy}), 48 archived PJ4 frames $\to$ 4 published polar mosaics + wind vectors
+    \item Built by: \texttt{region-stack}, \texttt{movie}, \texttt{export-goflow}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Regime 2: everywhere else}
+  \revsec{1}
+  \begin{itemize}
+    \item One look, no revisit, no time axis worth having
+    \item Natural product: a \textbf{library} --- each look reprojected onto its own small tangent-plane grid, queryable by latitude / epoch / illumination
+    \item No published ground truth; validated by internal consistency only
+    \item Built by: \texttt{strips}, \texttt{strip-stats}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The two regimes, side by side}
+  \revsec{1}
+  \small
+  \begin{tabular}{lll}
+    \toprule
+     & \textbf{regime 1: polar} & \textbf{regime 2: everywhere else} \\
+    \midrule
+    product & region time stack & strip library \\
+    grid & one per region & one per chunk \\
+    time axis & real, known cadence & none, one look \\
+    ground truth & Ingersoll et al.\ 2022 & internal consistency only \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.4cm}
+
+  When a module's shape is confusing: ask ``is this regime 1 or regime 2?''
+\end{frame}
+
+% =======================================================================
+\section{Three archive facts}
+% =======================================================================
+
+\begin{frame}{Three facts, undocumented, found the hard way}
+  \revsec{2}
+  \begin{enumerate}
+    \item Archive labels lose all geometry after orbit 38
+    \item Image files are little-endian despite every label saying otherwise
+    \item Sequence numbering is 1-based, and frame~1 never arrives
+  \end{enumerate}
+  \vspace{0.3cm}
+  Each one is enforced today by a specific line of code, not a comment. Get any of them wrong and geometry corrupts silently.
+\end{frame}
+
+\begin{frame}{Fact 1: labels lose geometry after orbit 38}
+  \revsec{2.1}
+  \begin{quote}\small
+    ``label geometry is ABSENT for orbits $\geq$ 39 ... and for most 256-line dual-band products ... 64{,}139/85{,}108 frames have no label centre.'' \\
+    \hfill---\texttt{docs/build\_log\_2026-09-04.md}, step 3d/3e
+  \end{quote}
+  75\% of the archive has no usable label geometry at all.
+\end{frame}
+
+\begin{frame}{Fact 1: what it forced}
+  \revsec{2.1}
+  \begin{itemize}
+    \item Label geometry could never be the foundation --- only a spot-check
+    \item \texttt{geometry.py} + \texttt{geo.py} $\to$ \texttt{frames\_geo.parquet} became \textbf{mandatory} infrastructure, not a convenience
+    \item Every downstream module reads \texttt{frames\_with\_geo()}; none fall back to label geometry, because for 3 in 4 frames there is nothing to fall back to
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Fact 2: little-endian, despite every label}
+  \revsec{2.2}
+  Every label declares \texttt{IEEE754MSBSingle} / \texttt{IEEE\_REAL} --- big-endian, unambiguously.
+  \vspace{0.2cm}
+  \begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Read big-endian:}\\
+    \small spans $-2.6\times10^{38}$ to $3.1\times10^{38}$, 143 NaNs
+    \column{0.5\textwidth}
+    \textbf{Read little-endian:}\\
+    \small spans $-0.00017$ to $0.5547$ W~m$^{-2}$~sr$^{-1}$~$\mu$m$^{-1}$ --- matches the published map's $0.0060$--$0.5545$
+  \end{columns}
+  \vspace{0.3cm}
+  Found independently twice, from two unrelated questions, both times by checking whether the numbers were physically plausible.
+\end{frame}
+
+\begin{frame}{Fact 2: what it forced}
+  \revsec{2.2}
+  \begin{itemize}
+    \item Every raw-pixel read hard-codes \texttt{'<f4'} --- never the label's declared type
+    \item Now a project-wide rule (\texttt{AGENTS.md}), not a one-off patch
+    \item The original crawl-index spec still says ``big-endian'' --- explicitly superseded, left as historical record
+  \end{itemize}
+  \vspace{0.3cm}
+  \textbf{Rule of this repo:} where code and an old spec disagree, the code wins, and the spec stays as a record of what was believed at the time.
+\end{frame}
+
+\begin{frame}{Fact 3: frame 1 never arrives}
+  \revsec{2.3}
+  \begin{quote}\small
+    ``sequence\_number is 1-based and frame 1 is never delivered (\texttt{seq\_n = sequence\_samples-1} always).'' \\
+    \hfill---\texttt{docs/build\_log\_2026-09-04.md}, ``Facts'' after step 3d
+  \end{quote}
+  Total, exact, unexplained --- every sequence in the archive is missing its first frame.
+\end{frame}
+
+\begin{frame}[fragile]{Fact 3: what it forced}
+  \revsec{2.3}
+  \texttt{sequence\_number} cannot be trusted across a real gap either. \texttt{index.assign\_sequences} instead detects boundaries from observed behaviour:
+\begin{lstlisting}[language=Python]
+new sequence starts when:
+    gap since previous frame > 45 s     # one spin ~30.5 s
+ or sequence_number fails to increase
+\end{lstlisting}
+  Every later grouping (strip chunking, trackability pairing) trusts this reconstruction, not the label's own claimed count.
+\end{frame}
+
+% =======================================================================
+\section{Architecture}
+% =======================================================================
+
+\begin{frame}{Layers, in build order}
+  \revsec{3}
+  \small
+  \begin{enumerate}
+    \item \texttt{pds.py} + \texttt{mirror.py} --- crawl and download the archive
+    \item \texttt{labels.py} + \texttt{index.py} --- parse labels, build \texttt{frames.parquet}
+    \item \texttt{geometry.py} + \texttt{kernels.py} --- the SPICE engine
+    \item \texttt{geo.py} --- geometry for every frame $\to$ \texttt{frames\_geo.parquet}
+    \item \texttt{vicar.py} + \texttt{reproject.py} --- ground-truth I/O, map grids, inverse camera
+    \item \texttt{regions.py} $\to$ \texttt{stacks.py} / \texttt{strips.py} --- the two regimes
+    \item \texttt{movie.py}, \texttt{export\_goflow.py}, \texttt{stats2d.py}, \texttt{trackability.py} --- exports and analysis
+    \item \texttt{tracking.py} --- the standing acceptance test, not a pipeline stage
+    \item \texttt{gui/} --- a view over everything above; computes nothing new
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}[fragile]{One frame's path: archive to product}
+  \revsec{3.2}
+  \begin{center}
+\begin{lstlisting}[basicstyle=\ttfamily\tiny,frame=none]
+PDS4 archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
+      --(labels.py, index.py)--> frames.parquet (+ sequences)
+      --(geometry.py, geo.py)--> frames_geo.parquet
+      |
+      +-- regime 1: select_frames -> reproject_frame -> region stack .nc
+      |        -> composite_sequences / movie.py / export_goflow.py
+      +-- regime 2: unit_rows -> chunk_table -> build_strip -> strip .nc
+      |        -> stats2d.strip_statistics -> stats NetCDF
+      |
+      +-- GUI: reads every product above; writes only gui_cache/
+\end{lstlisting}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Where every product lives on disk}
+  \revsec{3.3}
+  \scriptsize
+  \begin{tabular}{ll}
+    \toprule
+    product & path (relative to mirror root) \\
+    \midrule
+    label index & \texttt{index/frames.parquet} \\
+    SPICE geometry & \texttt{index/frames\_geo.parquet} \\
+    SPICE kernels & \texttt{spice/\{lsk,pck,fk,ik,sclk,spk,ck\}/} \\
+    region stacks & \texttt{regions/<region>/<band>\_orbits<spec>\_<level>.nc} \\
+    goflow realizations & \texttt{regions/<region>/goflow\_<band>\_orbits<spec>/rNNNNN/} \\
+    strip NetCDFs \& index & \texttt{strips/orbitNN/<strip\_id>.nc}, \texttt{strips/strips.parquet} \\
+    strip statistics & \texttt{strips/stats/} or \texttt{gui\_cache/stats\_<id>.nc} \\
+    GUI cache/exports & \texttt{gui\_cache/}, \texttt{gui\_cache/exports/} \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+% =======================================================================
+\section{Deep dives}
+% =======================================================================
+
+\begin{frame}{Deep dives: what each one covers}
+  \revsec{4}
+  For every module: purpose, key data structures, the algorithm, what a modifier must know, the validation gate, and the scars.
+  \vspace{0.3cm}
+
+  17 modules, grouped by what they do:
+  \begin{itemize}
+    \item archive mirror \& index (4.1--4.3)
+    \item geometry \& kernels (4.4--4.6)
+    \item map machinery \& regions (4.7--4.9)
+    \item the two regimes (4.10--4.11, 4.13)
+    \item validation \& analysis (4.12, 4.14--4.15)
+    \item the GUI, config (4.16--4.17)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\texttt{pds.py} + \texttt{mirror.py}: archive mirror}
+  \revsec{4.1}
+  \textbf{Purpose:} Apache listings $\to$ manifest $\to$ verified download.
+  \begin{itemize}
+    \item Only the \texttt{Wget} user agent is permitted under \texttt{/PDS/}; every download is a real \texttt{wget} subprocess
+    \item Completeness = exact declared byte count from the sibling label, or last line \texttt{END}, or trailing \texttt{</Product\_Observational>}
+    \item \texttt{--verify} re-checks MD5 and re-downloads mismatches once
+  \end{itemize}
+  \textbf{Scar:} orbit50's listing alone is $\sim$36~MB HTML --- large enough to need retry-with-backoff, not a single timeout.
+\end{frame}
+
+\begin{frame}{\texttt{labels.py}: PDS3 parsing}
+  \revsec{4.2}
+  \textbf{Purpose:} one \texttt{.LBL} $\to$ one flat, typed dict --- tolerantly.
+  \begin{itemize}
+    \item \texttt{pvl.load}, then a fallback grammar, then require the last line to be literally \texttt{END}
+    \item A parse failure never raises: the row still exists, \texttt{parse\_ok=False}, every geometry column NaN
+    \item \texttt{"N/A"} (any case) is the \emph{only} missing-value sentinel the archive uses
+    \item \texttt{geom\_band}: whichever band group has a numeric \texttt{CENTER\_LATITUDE} --- independent of which band the image data actually is
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\texttt{index.py}: sequence segmentation}
+  \revsec{4.3}
+  \textbf{Purpose:} multiprocess label parse $\to$ \texttt{frames.parquet}, then segment sequences over the \emph{whole} sorted table.
+  \begin{itemize}
+    \item \texttt{orbit} is float64 (4{,}697 nulls); \textbf{always use \texttt{orbit\_dir}}, never \texttt{orbit}
+    \item \texttt{orbit} disagrees with \texttt{orbit\_dir} on 3{,}900 rows --- all \texttt{orbit03}, labelled \texttt{ORBIT\_NUMBER=1}; an archive property, not a bug
+    \item sequence columns are recomputed over the combined table every run, never patched incrementally
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{geometry.py}: the pinhole model}
+  \revsec{4.4}
+  \textbf{Purpose:} per pixel, per frame $\to$ lat/lon/range/emission/incidence/phase, no per-pixel Python loop.
+\begin{lstlisting}[language=Python]
+x = ifov * (lines/2 + 0.5 - line)      # 1-based line index
+y = ifov * (samples/2 + 0.5 - sample)  # 1-based sample index
+d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
+\end{lstlisting}
+  One vectorised numpy op over the whole \texttt{(lines, samples, 3)} grid --- never per pixel. Then \texttt{pxform}: band frame $\to$ \texttt{J2000} $\to$ \texttt{IAU\_JUPITER}.
+\end{frame}
+
+\begin{frame}{\texttt{geometry.py}: the aberration fix}
+  \revsec{4.4}
+  \texttt{sincpt}'s \texttt{srfvec} and every pixel ray are \emph{apparent} (light-time + stellar aberration). Both must be un-aberrated \emph{the same way} before the ellipsoid intercept.
+  \vspace{0.2cm}
+  \begin{block}{Original spec: un-aberrate rays only}
+    per-pixel error vs. oracle: \textbf{4e-3 deg}
+  \end{block}
+  \begin{block}{Corrected: un-aberrate \texttt{srfvec} too}
+    per-pixel error vs. oracle: \textbf{8e-5 deg} --- a 50$\times$ reduction
+  \end{block}
+  Order of the mistake: $|v|/c \approx$ 7 arcsec $\approx$ 4~km on Jupiter's surface at perijove range.
+\end{frame}
+
+\begin{frame}{\texttt{geometry.py}: epoch sensitivity \& mirror-blind}
+  \revsec{4.4}
+  \begin{itemize}
+    \item Juno spins at 12~deg/s: a 0.1~s epoch error moves the boresight $>1$~deg
+    \item Epoch is always the label's \texttt{START\_TIME} exactly --- never mid-exposure (tested: off by \emph{tens of degrees})
+    \item Engine is deliberately \textbf{mirror-blind}: models bus attitude only, not JIRAM's despinning mirror
+  \end{itemize}
+  \vspace{0.2cm}
+  Validated before writing code: mirror-blind SPICE matched 48 label centres to median 0.006~deg lat/lon, 0.017~deg emission, 28~km altitude.
+\end{frame}
+
+\begin{frame}{\texttt{kernels.py}: SPICE kernel management}
+  \revsec{4.5}
+  \begin{itemize}
+    \item Static set (leap-seconds, planetary constants, one frame/instrument kernel) + per-orbit CK/SPK named in the labels
+    \item Operational server first, PDS SPICE archive as fallback (renames SPKs: \texttt{spk\_rec\_*} $\leftrightarrow$ \texttt{juno\_rec\_*})
+    \item \texttt{naif.jpl.nasa.gov} fails system-CA TLS; every fetch pinned to the \texttt{certifi} bundle
+  \end{itemize}
+  \textbf{Scar:} 6 CK gaps $>$7 days found archive-wide; orbits 38/55/70 fail geometry from short gaps \emph{not} among those six --- still unidentified.
+\end{frame}
+
+\begin{frame}{\texttt{geo.py}: augmenting every frame}
+  \revsec{4.6}
+  \begin{itemize}
+    \item \texttt{spawn} workers (never \texttt{fork}) --- SPICE kernel pool is per-process global state
+    \item One row per (frame, band half); a 256-line \texttt{LM} product $\to$ 2 rows
+    \item A frame's computation failure never aborts the run: \texttt{geo\_ok=False}, error text recorded, row still exists
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\texttt{geo.py}: the label-centroid caveat}
+  \revsec{4.6}
+  \begin{alertblock}{\texttt{bore\_lat} $\neq$ label \texttt{CENTER\_LATITUDE} for a partial frame}
+    \texttt{bore\_lat}: the boresight's own intercept, NaN if the boresight misses. \\
+    Label centre: a \emph{visible-area centroid} for a partial (limb) frame.
+  \end{alertblock}
+  Comparing the two without filtering to fully-on-planet frames looks like a large geometric error that is really just two different definitions of ``centre.''
+  \vspace{0.2cm}
+  \textbf{Open:} L-band residual (median 0.024~deg) is roughly double M-band's (0.010~deg) --- both inside the M-only gate tolerance; cause unresolved.
+\end{frame}
+
+\begin{frame}{\texttt{vicar.py}: reading the ground truth}
+  \revsec{4.7}
+  \begin{itemize}
+    \item JPL's older format: ASCII label \emph{inside} the file, not a sidecar
+    \item Label size (\texttt{LBLSIZE}) always read from the file, never hard-coded --- the paper's own supplementary readers hard-code 12{,}800 bytes and silently misparse the 1{,}728-byte \texttt{.tp4} vector tables
+    \item \texttt{EOL=1}: a \emph{second} trailing label after the data (TRACKER4's own processing history)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{reproject.py}: the inverse camera model}
+  \revsec{4.8}
+  \texttt{project\_to\_pixels}: run \texttt{geometry.py}'s chain backwards.
+\begin{lstlisting}[basicstyle=\ttfamily\tiny,frame=none]
+(lat,lon) -> surface point -> IAU_JUPITER -> J2000
+   -> re-apply FORWARD stellar aberration (put it back!)
+   -> band frame -> invert pinhole -> fractional (line, sample)
+\end{lstlisting}
+  Round-trip residual on a live frame: \textbf{1.22e-05 px}. \\
+  \texttt{reproject\_frame}: walk the \emph{output} grid, pull from the source --- no output pixel unpainted, no input pixel double-scattered.
+\end{frame}
+
+\begin{frame}{\texttt{reproject.py}: stereographic was wrong}
+  \revsec{4.8}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    candidate & centroid RMS (px) & sing.\ ratio & km/px \\
+    \midrule
+    stereographic & 0.828 & 1.00178 & 15.069 \\
+    \textbf{orthographic (ellipsoid)} & \textbf{0.339} & \textbf{1.00010} & \textbf{15.005} \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.3cm}
+
+  Every JIRAM paper checked calls the polar maps ``stereographic.'' The fit says otherwise, decisively: the map \emph{is} the body-fixed equatorial plane, orthographically projected --- no trig at all once you have the 3-D point.
+\end{frame}
+
+\begin{frame}{\texttt{reproject.py}: the radius degeneracy}
+  \revsec{4.8}
+  Three candidate radii (polar, equatorial, $\sqrt{ac}$) were proposed for the fit.
+  \begin{alertblock}{They cannot be distinguished by residual at all}
+    $\rho \propto R$ for every radial law --- registration only ever measures the \emph{ratio} $R / \text{km\_per\_px}$, never $R$ alone.
+  \end{alertblock}
+  Settled instead by requiring self-consistency with the one independently stated number: the label's own \texttt{MPS=15.0}.
+\end{frame}
+
+\begin{frame}{\texttt{regions.py}: two grid rules}
+  \revsec{4.9}
+  \begin{itemize}
+    \item \texttt{polar\_ortho}: the published rule, generalised to either pole, any central meridian --- \texttt{north\_pole\_paper} reproduces \texttt{PAPER\_GRID} exactly
+    \item \texttt{local\_ortho}: tangent plane at an arbitrary centre, dropped onto the ellipsoid along the local normal --- every mid-latitude strip's grid
+  \end{itemize}
+  \vspace{0.2cm}
+  A new named region (e.g.\ the Great Red Spot) is a \textbf{4-line YAML addition}, no code.
+\end{frame}
+
+\begin{frame}{\texttt{regions.py}: the visibility subtlety}
+  \revsec{4.9}
+  Naive test $(P-c)\cdot up > 0$ fails: the tangent plane touches the ellipsoid \emph{only} at $c$, so this is $\leq 0$ almost everywhere --- near side and far side alike.
+  \begin{block}{Correct test: use the surface normal at $P$ itself}
+    $\text{visible} = \big(\text{normal}(P)\cdot up\big) > -\text{tol}$
+  \end{block}
+  Exactly the silhouette condition a rendering engineer would recognise.
+\end{frame}
+
+\begin{frame}{\texttt{stacks.py}: selection, three cost tiers}
+  \revsec{4.10}
+  \texttt{select\_frames}, cheapest test first:
+  \begin{enumerate}
+    \item Scalar quality cuts on \texttt{frames\_geo.parquet} --- free
+    \item Bounding-box prefilter against the region --- free, approximate
+    \item Exact test: fresh geometry, every 4th pixel, must land on canvas --- expensive, exact
+  \end{enumerate}
+  Three tiers, three cost levels, cheapest first --- run the expensive exact test only on what already survived the free filters.
+\end{frame}
+
+\begin{frame}{\texttt{stacks.py}: memory design}
+  \revsec{4.10}
+  \begin{itemize}
+    \item One geometry-only pass unions every frame's footprint box \emph{before} any pixel is reprojected
+    \item Output array allocated \textbf{once}, at the tight window's size --- never at the full region canvas (a \texttt{north\_pole} region is 3600$\times$3600)
+    \item \texttt{spawn} workers each return only their own frame's footprint box, not the shared window
+  \end{itemize}
+  Orbit-4 frame stack: 294 steps, 2.25~GB. Sequence composite: 25 steps, more valid coverage than any one frame.
+\end{frame}
+
+\begin{frame}{\texttt{movie.py} + \texttt{export\_goflow.py}}
+  \revsec{4.11}
+  \begin{itemize}
+    \item \textbf{One whole-stack} brightness stretch, not per-frame --- a per-frame stretch would \emph{hide} the wobble that reveals a bad reprojection
+    \item \texttt{export\_goflow}: cuts variable-cadence stacks into constant-cadence \emph{runs}; invalid pixels \textbf{zero-encoded} (not NaN) to match the downstream model's own convention
+    \item No \texttt{u\_mid}/\texttt{v\_mid}: real data has no ground-truth velocity, unlike the synthetic sets this layout was designed to match
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\texttt{tracking.py}: masked NCC as cost volumes}
+  \revsec{4.12}
+  90\% of a published map is exact-zero background; validity has to be a first-class concept, and the mask \emph{depends on trial displacement}.
+  \vspace{0.2cm}
+  6 masked window sums $\times$ 1225 trial displacements per template --- one at a time is hopeless.
+  \begin{block}{Cost volumes}
+    Each sum, at one fixed displacement, is a box filter over the whole tile --- serves every template in that tile at once.
+  \end{block}
+  Measured throughput: \textbf{2{,}141 templates/s} on one core.
+\end{frame}
+
+\begin{frame}{\texttt{tracking.py}: the reversed line axis}
+  \revsec{4.12}
+  \small
+  \begin{tabular}{lrr}
+    \toprule
+    line axis & centre-on-footprint & full-template-on-footprint \\
+    \midrule
+    direct & 0.0\% & 0.0\% \\
+    reversed & 96.4\% & 91.4\% \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.3cm}
+
+  \texttt{row = NL - 1 - (line - 1)} --- settled unambiguously by footprint overlap. \\
+  0-vs-1-based index origin: genuinely underdetermined --- the two conventions differ by 0.0005~px in the pooled result, ``the tracking cannot separate them, which is the point.''
+\end{frame}
+
+\begin{frame}{\texttt{tracking.py}: the gate numbers}
+  \revsec{4.12}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+     & n & median (px) & frac $<1$px \\
+    \midrule
+    A: paper maps vs.\ TRACKER4 & 516{,}517 & 0.224 & 83.4\% \\
+    B: our reprojections vs.\ TRACKER4 & 515{,}377 & 0.434 & 80.1\% \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.3cm}
+
+  The A$\to$B gap ($\sim$0.2~px) is the honest cost of the full geometry+reprojection chain, on top of the tracker's own noise floor.
+  \vspace{0.2cm}
+  \textbf{Scar:} 2 of 24 pairs (\texttt{n0204aa/bb}) sit near 1.04~px median --- pooled statistic absorbs it, per-pair table reveals it.
+\end{frame}
+
+\begin{frame}{\texttt{strips.py}: chunking a sequence}
+  \revsec{4.13}
+  A single commanded sequence can slew tens of degrees while it runs. A chunk ends when:
+  \begin{itemize}
+    \item great-circle distance from the \emph{chunk's first row} exceeds 12~deg, \emph{or}
+    \item the time gap exceeds 120~s
+  \end{itemize}
+  Chunks under \texttt{min\_frames} are dropped but still consume a \texttt{chunk\_index} --- so a strip's name never shifts if the threshold changes later.
+\end{frame}
+
+\begin{frame}{\texttt{strips.py}: resolution classes}
+  \revsec{4.13}
+  \texttt{RESOLUTION\_CLASSES} = (2, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 150, 200, 300)~km/px --- log-nearest snap, ties to the finer class.
+  \vspace{0.2cm}
+  \begin{block}{Why quantise at all}
+    Two strips of the same class compare spectrum-to-spectrum, structure-function-to-structure-function, \textbf{with no resampling} --- resampling would contaminate exactly the small-scale statistics being measured.
+  \end{block}
+  Result on the mirror: 289 strips, orbits 4+24, both bands, 392~MB.
+\end{frame}
+
+\begin{frame}{\texttt{stats2d.py}: the recipe}
+  \revsec{4.14}
+  Every diagnostic in this module follows one recipe, because a strip is a field with holes:
+  \begin{enumerate}
+    \item detrend over \emph{valid} pixels only
+    \item fill invalid pixels with that same mean
+    \item taper the whole canvas (Tukey/Hann)
+    \item divide by $\text{valid\_frac} \times \text{window\_power}$
+  \end{enumerate}
+  Result: a fully-valid, untapered field obeys Parseval exactly; a masked field is unbiased in \emph{total} variance to first order.
+\end{frame}
+
+\begin{frame}{\texttt{stats2d.py}: mask leakage --- stated, not fixed}
+  \revsec{4.14}
+  Masking \emph{convolves} the true spectrum with the mask's own spectrum --- moves variance across $k$ even when the total is right.
+  \begin{itemize}
+    \item Smooth, sparse holes: mild distortion. Measured: slope $-2.97$ unmasked vs.\ $-2.92$ with 15\% masked
+    \item Speckle masks: broadband leakage --- \textbf{``no scalar correction can repair''} this (module's own words)
+  \end{itemize}
+  A documented, \emph{measured} limitation, not hidden and not over-corrected.
+\end{frame}
+
+\begin{frame}{\texttt{stats2d.py}: bicoherence}
+  \revsec{4.14}
+  $b^2 = \dfrac{|\sum_s X_s(k_1)X_s(k_2)X_s^*(k_1{+}k_2)|^2}{\sum_s|X_s(k_1)X_s(k_2)|^2 \cdot \sum_s|X_s(k_1{+}k_2)|^2} \in [0,1]$
+  \vspace{0.2cm}
+
+  1.0 when the sum-mode phase is \emph{locked} to the two parents' phases every segment; falls toward $1/n_{\text{segments}}$ when random.
+  \vspace{0.2cm}
+  Test: same power spectrum, coupled vs.\ independent third-term phase $\to$ $b^2 > 0.5$ vs.\ $b^2 < 0.1$ at the same bin --- detects coupling an ordinary spectrum cannot see at all.
+\end{frame}
+
+\begin{frame}{\texttt{trackability.py}: before any pixel is reprojected}
+  \revsec{4.15}
+  Pure numpy/pandas, no SPICE, no imagery. Candidate pair: same orbit/band, 90~s--6~h apart, boresights within a generous separation proxy.
+  \begin{alertblock}{The threshold alone over-admits}
+    Dense polar mosaics: one boresight falls near \emph{several} raster positions in the next sequence, not just its true repeat --- verified numerically (closest wrong-position pair $<$ farthest correct-position pair).
+  \end{alertblock}
+  Fix: keep only the \textbf{nearest partner per sequence} --- on top of the threshold, not instead of it.
+\end{frame}
+
+\begin{frame}{\texttt{trackability.py}: the best-baseline redefinition}
+  \revsec{4.15}
+  \begin{columns}
+    \column{0.48\textwidth}
+    \textbf{Original:} partner whose displacement is closest to 5~px
+    \column{0.48\textwidth}
+    \textbf{Revised:} smallest $dt$ among \emph{trackable} partners
+  \end{columns}
+  \vspace{0.3cm}
+  A sequence hours away could \emph{coincidentally} land closer to 5~px than the true nearest repeat and win. ``Smallest usable $dt$'' has no such failure mode.
+  \vspace{0.2cm}
+  Totals: 29{,}862 unit frames, 16{,}541 with a partner, 7{,}493 trackable @ 30~m/s, 61 orbits.
+\end{frame}
+
+\begin{frame}{\texttt{gui/}: one state, three tabs}
+  \revsec{4.16}
+  \begin{itemize}
+    \item One \texttt{CatalogState} object shared by Catalog, Poles, Strips --- so the tabs cannot disagree with each other
+    \item Computes \textbf{no science}: every number shown is something the command line already wrote or could write
+    \item \texttt{to\_json}/\texttt{from\_json}: a session is a small, shareable, human-diffable file
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\texttt{gui/}: lazy stacks \& rasterisation}
+  \revsec{4.16}
+  \begin{itemize}
+    \item A frame stack can be 2.25~GB --- \texttt{open\_stack} never calls \texttt{.load()}; one time step read per player move
+    \item Measured: 280~MB resident, $<1$~s to open; $\sim$0.2~s per subsequent step
+    \item Catalog map: \texttt{datashader} rasterisation for \emph{all} 47{,}600 points; individual hover points added only below 5{,}000 filtered rows
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\texttt{gui/}: the graticule seam}
+  \revsec{4.16}
+  Contouring raw longitude draws a spurious line straight across the map at the 359$^\circ\to$0$^\circ$ wrap.
+  \begin{block}{Fix: contour a wrapped difference, not the raw field}
+    $((\text{lon} - \text{level} + P/2) \bmod P) - P/2$, masked beyond a quarter period, then contour its \emph{zero} crossing.
+  \end{block}
+  One helper, reused for latitude, longitude, \emph{and} local-time-of-day contours (period 24~h).
+\end{frame}
+
+\begin{frame}{\texttt{config.py} + the subcommand pattern}
+  \revsec{4.17}
+  \begin{itemize}
+    \item Precedence: explicit arg $>$ env var $>$ TOML file $>$ built-in default --- resolved \emph{at call time}, never cached at import
+    \item \texttt{add\_subparser(subparsers)} / \texttt{run(args)}: a module owns its own CLI surface; \texttt{cli.py} wires it in afterward
+    \item Enforces a project rule: executors never edit \texttt{cli.py}, \texttt{pyproject.toml}, \texttt{uv.lock} directly --- exactly where concurrent milestones would collide
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\section{Figures from real data}
+% =======================================================================
+
+\begin{frame}{Six figures, all from real data on the mirror}
+  \revsec{4}
+  Generated by \texttt{docs/pedagogy/make\_figures.py}, reusing \texttt{jiram\_catalog} directly --- no module modified.
+  \begin{itemize}
+    \item (a) one raw frame beside its computed latitude map
+    \item (b) the published n01a map vs.\ our reprojection, with the difference
+    \item (c) one mid-latitude strip with its graticule
+    \item (d) that strip's isotropic spectrum and structure function
+    \item (e) the trackability heatmap
+    \item (f) a sketch of the SPICE frame chain and the pinhole model
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{(a) A raw frame and its computed geometry}
+  \revsec{4.4}
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/fig_a_frame_and_latitude.png}
+\end{frame}
+
+\begin{frame}{(b) Reproducing a published map from raw bytes}
+  \revsec{4.8}
+  \centering
+  \includegraphics[width=0.98\textwidth]{figures/fig_b_paper_vs_reprojection.png}
+\end{frame}
+
+\begin{frame}{(c) A mid-latitude strip, with its graticule}
+  \revsec{4.13}
+  \centering
+  \includegraphics[height=0.82\textheight,keepaspectratio]{figures/fig_c_strip_graticule.png}
+\end{frame}
+
+\begin{frame}{(d) That strip's spectrum and structure function}
+  \revsec{4.14}
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/fig_d_spectrum_structure.png}
+\end{frame}
+
+\begin{frame}{(e) The trackability heatmap}
+  \revsec{4.15}
+  \centering
+  \includegraphics[width=0.88\textwidth]{figures/fig_e_trackability_heatmap.png}
+\end{frame}
+
+\begin{frame}{(f) The SPICE frame chain and the pinhole model}
+  \revsec{4.4}
+  \centering
+  \includegraphics[width=0.98\textwidth]{figures/fig_f_spice_and_pinhole.png}
+\end{frame}
+
+% =======================================================================
+\section{Testing philosophy}
+% =======================================================================
+
+\begin{frame}{Offline tests vs.\ gates}
+  \revsec{5}
+  \begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Offline tests}\\
+    \small \texttt{test\_*\_offline.py}\\
+    no mirror, no network\\
+    \texttt{JIRAM\_SKIP\_GATES=1}\\
+    synthetic fields, known answers
+    \column{0.5\textwidth}
+    \textbf{Gates}\\
+    \small \texttt{test\_gate\_*.py}\\
+    need the real mirror + paper data\\
+    check against \emph{published} ground truth
+  \end{columns}
+  \vspace{0.3cm}
+  \textbf{Gates are read-only to every executor, always.} Passing a gate by editing it is task failure --- stated in three separate project documents.
+\end{frame}
+
+\begin{frame}{Where gate ground truth comes from}
+  \revsec{5}
+  \begin{enumerate}
+    \item The 48-frame PJ4 fixture --- numbers a peer-reviewed paper actually published
+    \item The published maps and TRACKER4 tables themselves, read directly with \texttt{vicar.py}
+    \item A \emph{fresh}, independent SPICE oracle call --- the only kind that can catch a bug in the \emph{vectorisation itself}
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}{Wrong gate \#1: the geo consistency report}
+  \revsec{5}
+  All-orbit residuals folded together well-conditioned frames and \emph{partial} (limb) frames, where the label's ``centre'' is a visible-area centroid, not a boresight intercept.
+  \begin{quote}\small
+    ``geo gate rewritten by lead (well-conditioned median 0.0078 deg; all-orbit report median was inflated by partial/limb frames)''\\
+    \hfill---build log, step 8a'
+  \end{quote}
+  Fix: restrict to fully-on-planet, low-emission frames before computing the statistic.
+\end{frame}
+
+\begin{frame}{Wrong gate \#2: the best-baseline definition}
+  \revsec{5}
+  Original \texttt{best\_dt\_s} rule (``closest to 5~px displacement''): 14/15 gate checks passed on first run --- one failure, from PJ4's dense polar campaign letting a far-in-time sequence coincidentally win.
+  \vspace{0.2cm}
+  \textbf{Response: investigate, don't loosen the gate.} Redefined to ``smallest $dt$ among trackable partners'' --- no equivalent failure mode; gate tolerance widened to reflect real cadence spread (90~s), not to hide the bug.
+\end{frame}
+
+\begin{frame}{The general rule}
+  \revsec{5}
+  \begin{alertblock}{When a gate fails}
+    Investigate why. Never relax the threshold or edit the gate to match whatever the code produced.
+  \end{alertblock}
+  \vspace{0.2cm}
+  \small ``If a threshold is not met, do not tune parameters to pass; investigate ... and report what limits agreement.''\\
+  \hfill---\texttt{docs/specs/2026-09-05\_tracking.md}
+  \vspace{0.2cm}
+
+  Both wrong-gate stories: the \emph{code} was never the bug --- the gate's own definition was measuring the wrong thing.
+\end{frame}
+
+% =======================================================================
+\section{How it was built}
+% =======================================================================
+
+\begin{frame}{The loop, per milestone}
+  \revsec{6}
+  \begin{enumerate}
+    \item \textbf{Facts first} --- reconnaissance reports numbers, never designs
+    \item \textbf{Spec} --- goal, files in scope, every decision explicit, exact validation block
+    \item \textbf{Gate before dispatch} --- written by the lead, against ground truth
+    \item \textbf{Dispatch} --- one executor, fresh context, the spec is the whole brief
+    \item \textbf{Verify} --- scope check, gates run by the lead (not trusted from the report)
+    \item \textbf{Record} --- outcome, executor, wall time, gate result $\to$ build log
+  \end{enumerate}
+  Every spec ends: stop and list ambiguities rather than guess; list every judgment call.
+\end{frame}
+
+\begin{frame}{What each executor tier actually did}
+  \revsec{6}
+  \small
+  \begin{itemize}
+    \item \textbf{Reconnaissance \& prose:} lighter tier --- 230k tokens settled the two facts the whole design rests on
+    \item \textbf{Mechanical code, airtight spec:} cheapest executor that has passed a gate here --- crawler + index, one pass
+    \item \textbf{Bounded numerical/geometric work, SPICE/projection oracle, fresh-context review:} stronger tier --- every milestone after the geometry engine, 15--45~min each, 1--3 genuine ambiguities each, resolved sensibly
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The stalls, and the ambiguity stops that worked}
+  \revsec{6}
+  The geometry engine, dispatched three times to the cheaper tier:
+  \begin{itemize}
+    \item Attempt 1 \& 2: hit a genuine spec ambiguity, \textbf{stopped correctly} --- exactly right
+    \item Attempt 3: stalled \textbf{2h12m}, produced nothing --- the failure mode with no automatic detector
+  \end{itemize}
+  Re-routed to the stronger tier: working engine, aberration fix included, in \textbf{16 minutes}.
+  \vspace{0.2cm}
+  \textbf{Lesson:} stopping on ambiguity $\neq$ failure. Silent non-progress needs a wall-clock budget, watched by whoever dispatched the work.
+\end{frame}
+
+\begin{frame}{Errors executors caught, twice}
+  \revsec{6}
+  \begin{itemize}
+    \item \textbf{Byte order} (little-endian, section 2.2): found \emph{inside} the geometry-augmentation milestone by an executor trusting physical plausibility over the labels; the reprojection gate, written with the documented byte order, failed at the same moment and confirmed it independently
+    \item \textbf{Stellar aberration} (section 4.4): a specific, measured 4e-3~deg $\to$ 8e-5~deg fix, found by an executor checking its own output against the same oracle the gate would later check
+  \end{itemize}
+  Neither was caught by a human re-reading the spec more carefully --- both were caught by checking output against reality.
+\end{frame}
+
+\begin{frame}{What this teaches about delegating numerical work}
+  \revsec{6}
+  \begin{enumerate}
+    \item An executor that \textbf{stops on genuine ambiguity} is working correctly --- never penalise this
+    \item A gate is only as good as its own definition of ground truth --- distrust a failing gate's assumptions, not just the code under it
+    \item Genuine-oracle numerical work (a published number, an independent SPICE call, a known synthetic answer) is exactly where dispatch-then-verify-hard catches real errors --- \emph{in both directions}
+  \end{enumerate}
+\end{frame}
+
+% =======================================================================
+\section{How to extend it}
+% =======================================================================
+
+\begin{frame}{Worked example: two extensions, chosen to contrast}
+  \revsec{7}
+  \begin{enumerate}
+    \item A new named region: \texttt{great\_red\_spot} (a \texttt{local\_ortho} patch)
+    \item A new statistic: \texttt{skewness} of the radiance field, $\langle(f-\mu)^3\rangle/\sigma^3$
+  \end{enumerate}
+  \vspace{0.2cm}
+  Same loop as every real milestone: facts $\to$ spec $\to$ gate $\to$ module $\to$ wiring $\to$ docs.
+\end{frame}
+
+\begin{frame}{Step 1--2: facts, then the spec}
+  \revsec{7}
+  \textbf{Facts first:} the storm's approximate centre lat/lon at a reference epoch; which orbits actually cover it. For skewness: run it once by hand on a real strip, check the existing \texttt{\_prepare} masking helper is sufficient.
+  \vspace{0.2cm}
+  \textbf{Spec:} files in scope, a read-only list, the exact API (\texttt{skewness(field, valid=None) -> float}, matching \texttt{structure\_function}'s own calling convention), the validation block.
+\end{frame}
+
+\begin{frame}{Step 3: the gate, written first}
+  \revsec{7}
+  \begin{columns}
+    \column{0.5\textwidth}
+    \textbf{Region:} no published storm ground truth exists --- gate is \emph{structural}: registry loads, round-trips to 1e-6~px, real-mirror selection is non-empty. Weaker than a scientific gate, and the spec should say so.
+    \column{0.5\textwidth}
+    \textbf{Statistic:} a \emph{real} numerical gate --- synthetic field with known skewness, tight tolerance, plus a symmetric-field negative control at zero.
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Step 4--6: module, wiring, docs}
+  \revsec{7}
+  \begin{itemize}
+    \item Region: \textbf{4-line YAML addition} to \texttt{configs/regions.yaml} --- no Python at all
+    \item Statistic: \texttt{skewness} added next to \texttt{structure\_function}, reusing \texttt{\_prepare}; one new scalar attr on \texttt{strip\_statistics}'s output
+    \item Wiring: region needs none (\texttt{RegionGrid.from\_yaml} is a generic lookup); statistic needs none beyond its own module (already owns its subcommand)
+    \item Docs: one line each in \texttt{data\_products.md}, \texttt{architecture.md}, \texttt{open\_items.md} (no ground truth yet)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What the asymmetry teaches}
+  \revsec{7}
+  \begin{itemize}
+    \item Region: almost no code, because \texttt{regions.py} was designed from the start to generalise past its initial four entries
+    \item Statistic: real code, but slotted directly into an existing, well-established pattern --- no new architecture needed
+  \end{itemize}
+  \vspace{0.3cm}
+  Neither extension needed a new pattern invented on the spot --- that is itself a finding about the codebase, not just a tutorial.
+\end{frame}
+
+% =======================================================================
+\section{Glossary}
+% =======================================================================
+
+\begin{frame}{Glossary: SPICE}
+  \revsec{8}
+  \scriptsize
+  \begin{itemize}
+    \item \textbf{SPICE}: NAIF's toolkit for spacecraft geometry from loaded \emph{kernels}
+    \item \textbf{Kernel} (SPK/CK/FK/IK/SCLK/LSK/PCK): trajectory / attitude / frames / instrument / clock / leap-seconds / planetary-constants files
+    \item \textbf{Furnsh / kernel pool}: SPICE state is global per process --- why every parallel worker here uses \texttt{spawn}, never \texttt{fork}
+    \item \textbf{Ephemeris time (ET)}: SPICE's internal continuous time scale; this project's epoch is always the label's \texttt{START\_TIME}, exactly
+    \item \textbf{Sincpt} / \textbf{pxform}: surface-intercept and frame-rotation calls; \texttt{geometry.py} vectorises the same computation over a whole pixel grid
+    \item \textbf{Light time / stellar aberration (``LT+S'')}: finite light speed, and the observer's own velocity bending apparent direction --- getting the \emph{inverse} applied consistently is section 4.4's central subtlety
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Glossary: geometry conventions}
+  \revsec{8}
+  \scriptsize
+  \begin{itemize}
+    \item \textbf{Planetocentric} latitude: angle from the equatorial plane to the vector from the body's \emph{centre} --- what this project uses everywhere
+    \item \textbf{Planetographic} latitude: uses the local surface normal instead --- numerically different on an oblate body, never used here
+    \item \textbf{East-positive longitude, [0,360)}: this project's fixed convention, matching the archive's own labels
+    \item \textbf{System III}: Jupiter's body-fixed rotating longitude system; \texttt{IAU\_JUPITER} \emph{is} System III for this project's purposes
+    \item \textbf{Emission / incidence / phase angle}: angle to observer / to Sun / between the two, at the surface point
+    \item \textbf{Orthographic / stereographic / equidistant / Lambert}: four radial laws relating map distance to true angular distance; the published maps use orthographic, despite the literature calling them stereographic
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Glossary: archive \& this codebase}
+  \revsec{8}
+  \scriptsize
+  \begin{itemize}
+    \item \textbf{PDS3 / PDS4}: the archive's label syntax (PDS3 text) and bundle layout (PDS4 directories) --- not the same axis
+    \item \textbf{RDR / EDR}: calibrated vs.\ raw data record --- this project reads RDR exclusively
+    \item \textbf{VICAR}: JPL's older self-contained image format --- used here only because the ground-truth maps and vector tables ship in it
+    \item \textbf{NCC}: normalised cross-correlation, 1.0 for identical patches --- the tracker's match score \emph{and} the general ``does our reprojection match the paper'' figure of merit
+    \item \textbf{\texttt{geo\_ok} / \texttt{on\_planet\_frac} / \texttt{bore\_*}}: SPICE succeeded at all / fraction of pixels on the ellipsoid / evaluated at the boresight specifically --- consistent naming across every table in this codebase
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+  \revsec{}
+  \centering
+  \vspace{1.5cm}
+  {\LARGE\color{jirblue}\textbf{Where to read next}}
+  \vspace{0.6cm}
+
+  \begin{tabular}{ll}
+    full detail & \texttt{PEDAGOGICAL\_REVIEW.md} \\
+    module-by-module facts & \texttt{docs/architecture.md}, \texttt{docs/decisions.md} \\
+    schemas & \texttt{docs/data\_products.md} \\
+    command reference & \texttt{docs/usage.md} \\
+    open questions & \texttt{docs/open\_items.md} \\
+  \end{tabular}
+  \vspace{1cm}
+
+  {\small\color{jirgray} This deck and its figures: \texttt{docs/pedagogy/}}
+\end{frame}
+
+\end{document}

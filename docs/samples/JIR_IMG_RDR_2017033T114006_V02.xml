@@ -1,0 +1,275 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<?xml-model href="https://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1D00.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/geom/v1/PDS4_GEOM_1B10_1700.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/mission/juno/v1/PDS4_JUNO_1D00_1110.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<Product_Observational xmlns="http://pds.nasa.gov/pds4/pds/v1" xmlns:pds="http://pds.nasa.gov/pds4/pds/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:geom="http://pds.nasa.gov/pds4/geom/v1" xmlns:juno="http://pds.nasa.gov/pds4/mission/juno/v1" xsi:schemaLocation="http://pds.nasa.gov/pds4/pds/v1 https://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1D00.xsd          http://pds.nasa.gov/pds4/geom/v1 https://pds.nasa.gov/pds4/geom/v1/PDS4_GEOM_1B10_1700.xsd     http://pds.nasa.gov/pds4/mission/juno/v1 https://pds.nasa.gov/pds4/mission/juno/v1/PDS4_JUNO_1D00_1110.xsd">
+  <Identification_Area>
+    <logical_identifier>urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2017033t114006_v02</logical_identifier>
+    <version_id>1.0</version_id>
+    <title>JUNO JOVIAN INFRARED AURORAL MAPPER</title>
+    <information_model_version>1.13.0.0</information_model_version>
+    <product_class>Product_Observational</product_class>
+    <Modification_History>
+      <Modification_Detail>
+        <modification_date>2020-10-27</modification_date>
+        <version_id>1.0</version_id>
+        <description>This label was modified to convert to PDS4.</description>
+      </Modification_Detail>
+    </Modification_History>
+  </Identification_Area>
+  <Observation_Area>
+    <Time_Coordinates>
+      <start_date_time>2017-02-02T11:40:03.870Z</start_date_time>
+      <stop_date_time>2017-02-02T11:40:03.882Z</stop_date_time>
+    </Time_Coordinates>
+    <Primary_Result_Summary>
+      <purpose>Science</purpose>
+      <processing_level>Calibrated</processing_level>
+      <Science_Facets>
+        <domain>Atmosphere</domain>
+        <discipline_name>Atmospheres</discipline_name>
+        <facet1>Structure</facet1>
+      </Science_Facets>
+    </Primary_Result_Summary>
+    <Investigation_Area>
+      <name>JUNO</name>
+      <type>Mission</type>
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:investigation:mission.juno</lid_reference>
+        <reference_type>data_to_investigation</reference_type>
+      </Internal_Reference>
+    </Investigation_Area>
+    <Observing_System>
+      <name>JUNO</name>
+      <Observing_System_Component>
+        <name>JIRAM</name>
+        <type>Instrument</type>
+        <Internal_Reference>
+          <lid_reference>urn:nasa:pds:context:instrument:jiram.jno</lid_reference>
+          <reference_type>is_instrument</reference_type>
+        </Internal_Reference>
+      </Observing_System_Component>
+      <Observing_System_Component>
+        <name>JUNO</name>
+        <type>Spacecraft</type>
+        <Internal_Reference>
+          <lid_reference>urn:nasa:pds:context:instrument_host:spacecraft.jno</lid_reference>
+          <reference_type>is_instrument_host</reference_type>
+        </Internal_Reference>
+      </Observing_System_Component>
+    </Observing_System>
+    <Target_Identification>
+      <name>JUPITER</name>
+      <type>Planet</type>
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:target:planet.jupiter</lid_reference>
+        <reference_type>data_to_target</reference_type>
+      </Internal_Reference>
+    </Target_Identification>
+    <Mission_Area>
+      <juno:JIRAM_Parameters>
+        <juno:L_Band_Parameters>
+          </juno:L_Band_Parameters>
+        <juno:M_Band_Parameters>
+          <juno:Surface_Geometry_Min_Max>
+            <geom:minimum_latitude unit="deg">79.8064</geom:minimum_latitude>
+            <geom:maximum_latitude unit="deg">84.7971</geom:maximum_latitude>
+            <geom:minimum_longitude unit="deg">262.5403</geom:minimum_longitude>
+            <geom:maximum_longitude unit="deg">352.9865</geom:maximum_longitude>
+          </juno:Surface_Geometry_Min_Max>
+          <juno:Pixel_Dimensions>
+            <geom:pixel_field_of_view_method>Constant</geom:pixel_field_of_view_method>
+            <geom:Pixel_Size_Projected>
+              <geom:reference_location>Constant</geom:reference_location>
+              <geom:horizontal_pixel_footprint unit="m">27690.6986</geom:horizontal_pixel_footprint>
+              <geom:vertical_pixel_footprint unit="m">27690.6986</geom:vertical_pixel_footprint>
+            </geom:Pixel_Size_Projected>
+          </juno:Pixel_Dimensions>
+          <juno:Derived_Geometry>
+            <geom:incidence_angle unit="deg">94.6048</geom:incidence_angle>
+            <geom:emission_angle unit="deg">16.5375</geom:emission_angle>
+            <geom:phase_angle unit="deg">98.1083</geom:phase_angle>
+          </juno:Derived_Geometry>
+        </juno:M_Band_Parameters>
+      </juno:JIRAM_Parameters>
+    </Mission_Area>
+    <Discipline_Area>
+      <geom:Geometry>
+        <geom:SPICE_Kernel_Files>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>FK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_v09.tf</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>IK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_jiram_v01.ti</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>IK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_struct_v01.ti</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>LSK</geom:kernel_type>
+            <geom:spice_kernel_file_name>naif0012.tls</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>PCK</geom:kernel_type>
+            <geom:spice_kernel_file_name>pck00010.tpc</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SCLK</geom:kernel_type>
+            <geom:spice_kernel_file_name>JNO_SCLKSCET.00061.tsc</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>de436s.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_struct_v04.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>jup310.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>spk_rec_170106_170228_170307.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>CK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_sc_rec_170129_170204_v01.bc</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+        </geom:SPICE_Kernel_Files>
+        <geom:Image_Display_Geometry>
+          <geom:Display_Direction>
+            <geom:horizontal_display_axis>Sample</geom:horizontal_display_axis>
+            <geom:horizontal_display_direction>Left to Right</geom:horizontal_display_direction>
+            <geom:vertical_display_axis>Line</geom:vertical_display_axis>
+            <geom:vertical_display_direction>Bottom to Top</geom:vertical_display_direction>
+          </geom:Display_Direction>
+          <geom:Object_Orientation_RA_Dec>
+            <geom:right_ascension_angle unit="deg">1.2347</geom:right_ascension_angle>
+            <geom:declination_angle unit="deg">-41.9939</geom:declination_angle>
+            <geom:celestial_north_clock_angle unit="deg">177.9535</geom:celestial_north_clock_angle>
+            <geom:Reference_Frame_Identification>
+              <geom:frame_spice_name>J2000</geom:frame_spice_name>
+            </geom:Reference_Frame_Identification>
+          </geom:Object_Orientation_RA_Dec>
+          <geom:Quaternion_Plus_To_From>
+            <geom:qcos>0.27929</geom:qcos>
+            <geom:qsin1>-0.65052</geom:qsin1>
+            <geom:qsin2>-0.64137</geom:qsin2>
+            <geom:qsin3>-0.29576</geom:qsin3>
+            <geom:Rotate_From>
+              <geom:name>Undefined</geom:name>
+              <geom:comment>Frame rotation information was not given in original PDS3 labels. Quaternion description = "Above parameters are calculated at the center time of the observation which is 2017-02-02T11:40:03.876.  The quaternion has the form: w, x, y, z (i.e. SPICE format)."</geom:comment>
+            </geom:Rotate_From>
+            <geom:Rotate_To>
+              <geom:name>Undefined</geom:name>
+              <geom:comment>Frame rotation information was not given in original PDS3 labels. Quaternion description = "Above parameters are calculated at the center time of the observation which is 2017-02-02T11:40:03.876.  The quaternion has the form: w, x, y, z (i.e. SPICE format)."</geom:comment>
+            </geom:Rotate_To>
+          </geom:Quaternion_Plus_To_From>
+        </geom:Image_Display_Geometry>
+        <geom:Geometry_Orbiter>
+          <geom:geometry_start_time_utc>2017-02-02T11:40:03.870Z</geom:geometry_start_time_utc>
+          <geom:geometry_stop_time_utc>2017-02-02T11:40:03.882Z</geom:geometry_stop_time_utc>
+          <geom:Orbiter_Identification>
+            <geom:Coordinate_System_Identification>
+              <geom:coordinate_system_type>Planetocentric</geom:coordinate_system_type>
+              <geom:Coordinate_System_Origin_Identification>
+                <geom:body_spice_name>JUPITER</geom:body_spice_name>
+              </geom:Coordinate_System_Origin_Identification>
+              <geom:Reference_Frame_Identification>
+                <geom:frame_spice_name>J2000</geom:frame_spice_name>
+              </geom:Reference_Frame_Identification>
+            </geom:Coordinate_System_Identification>
+          </geom:Orbiter_Identification>
+          <geom:Surface_Geometry>
+            <geom:Surface_Geometry_Specific>
+              <geom:subsolar_latitude unit="deg">-2.5825</geom:subsolar_latitude>
+              <geom:subsolar_longitude unit="deg">55.5557</geom:subsolar_longitude>
+              <geom:subspacecraft_latitude unit="deg">73.1781</geom:subspacecraft_latitude>
+              <geom:subspacecraft_longitude unit="deg">309.7766</geom:subspacecraft_longitude>
+            </geom:Surface_Geometry_Specific>
+          </geom:Surface_Geometry>
+          <geom:Vectors>
+            <geom:Vectors_Cartesian_Specific>
+              <geom:Vector_Cartesian_Position_Sun_To_Spacecraft>
+                <geom:x_position unit="km">33798.0321</geom:x_position>
+                <geom:y_position unit="km">-40605.3831</geom:y_position>
+                <geom:z_position unit="km">174774.3272</geom:z_position>
+                <geom:light_time_correction_applied>None</geom:light_time_correction_applied>
+              </geom:Vector_Cartesian_Position_Sun_To_Spacecraft>
+              <geom:Vector_Cartesian_Velocity_Spacecraft_Relative_To_Sun>
+                <geom:x_velocity unit="km/s">-27.5114</geom:x_velocity>
+                <geom:y_velocity unit="km/s">17.2529</geom:y_velocity>
+                <geom:z_velocity unit="km/s">-20.0197</geom:z_velocity>
+                <geom:light_time_correction_applied>None</geom:light_time_correction_applied>
+              </geom:Vector_Cartesian_Velocity_Spacecraft_Relative_To_Sun>
+            </geom:Vectors_Cartesian_Specific>
+          </geom:Vectors>
+        </geom:Geometry_Orbiter>
+        <geom:Geometry_Orbiter>
+          <geom:geometry_start_time_utc>2017-02-02T11:40:03.870Z</geom:geometry_start_time_utc>
+          <geom:geometry_stop_time_utc>2017-02-02T11:40:03.882Z</geom:geometry_stop_time_utc>
+          <geom:Distances>
+            <geom:Distances_Specific>
+              <geom:spacecraft_heliocentric_distance unit="km">816298138.6257</geom:spacecraft_heliocentric_distance>
+              <geom:spacecraft_target_center_distance unit="km">182584.6915</geom:spacecraft_target_center_distance>
+            </geom:Distances_Specific>
+          </geom:Distances>
+        </geom:Geometry_Orbiter>
+      </geom:Geometry>
+    </Discipline_Area>
+  </Observation_Area>
+  <Reference_List>
+    <Internal_Reference>
+      <lid_reference>urn:nasa:pds:juno_jiram:document:jno_jiram_rdr_ds.cat</lid_reference>
+      <reference_type>data_to_document</reference_type>
+      <comment>Data set catalog file</comment>
+    </Internal_Reference>
+  </Reference_List>
+  <File_Area_Observational>
+    <File>
+      <file_name>JIR_IMG_RDR_2017033T114006_V02.IMG</file_name>
+      <local_identifier>JIR_IMG_RDR_2017033T114006_V02_file</local_identifier>
+      <creation_date_time>2017-12-14T10:17:17.000Z</creation_date_time>
+      <file_size unit="byte">221184</file_size>
+      <records>128</records>
+    </File>
+    <Array_2D_Image>
+      <offset unit="byte">0</offset>
+      <axes>2</axes>
+      <axis_index_order>Last Index Fastest</axis_index_order>
+      <Element_Array>
+        <data_type>IEEE754MSBSingle</data_type>
+      </Element_Array>
+      <Axis_Array>
+        <axis_name>Line</axis_name>
+        <elements>128</elements>
+        <sequence_number>1</sequence_number>
+      </Axis_Array>
+      <Axis_Array>
+        <axis_name>Sample</axis_name>
+        <elements>432</elements>
+        <sequence_number>2</sequence_number>
+      </Axis_Array>
+    </Array_2D_Image>
+  </File_Area_Observational>
+  <File_Area_Observational_Supplemental>
+    <File>
+      <file_name>JIR_IMG_RDR_2017033T114006_V02.LBL</file_name>
+      <local_identifier>jir_img_rdr_2017033t114006_v02_pds3file</local_identifier>
+      <creation_date_time>2017-12-14T10:17:17.000Z</creation_date_time>
+      <file_size unit="byte">13520</file_size>
+    </File>
+    <Stream_Text>
+      <local_identifier>jir_img_rdr_2017033t114006_v02_pds3file_stream</local_identifier>
+      <offset unit="byte">0</offset>
+      <object_length unit="byte">14534</object_length>
+      <parsing_standard_id>7-Bit ASCII Text</parsing_standard_id>
+      <record_delimiter>Carriage-Return Line-Feed</record_delimiter>
+    </Stream_Text>
+  </File_Area_Observational_Supplemental>
+</Product_Observational>

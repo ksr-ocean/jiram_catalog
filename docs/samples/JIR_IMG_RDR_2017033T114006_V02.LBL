@@ -1,0 +1,169 @@
+PDS_VERSION_ID                 = PDS3                                         
+                                                                              
+/* Dataset and Product Information */                                         
+DATA_SET_NAME                  = "JUNO JUPITER JIRAM REDUCED DATA RECORD V1.0"
+DATA_SET_ID                    = "JNO-J-JIRAM-3-RDR-V1.0"                     
+PRODUCT_ID                     = JIR_IMG_RDR_2017033T114006_V02               
+PRODUCT_TYPE                   = RDR                                          
+PROCESSING_LEVEL_ID            = "3"                                          
+START_TIME                     = 2017-02-02T11:40:03.870                      
+STOP_TIME                      = 2017-02-02T11:40:03.882                      
+SPACECRAFT_CLOCK_START_COUNT   = "1/539307798:00786"                          
+SPACECRAFT_CLOCK_STOP_COUNT    = "1/539307798:01572"                          
+STANDARD_DATA_PRODUCT_ID       = "IMAGE"                                      
+PRODUCER_FULL_NAME             = "A.ADRIANI - R.NOSCHESE"                     
+INSTITUTION_NAME               = "ISTITUTO NAZIONALE DI ASTROFISICA"          
+PRODUCT_CREATION_TIME          = 2017-12-14T10:17:17.000                      
+PRODUCT_VERSION_ID             = "02"                                         
+SEQUENCE_NUMBER                = 2                                            
+SEQUENCE_SAMPLES               = 13                                           
+MD5_CHECKSUM                   = "739d4daf79cc6e205ecc06b44fd56564"           
+                                                                              
+/* Mission description parameters */                                          
+INSTRUMENT_HOST_NAME           = "JUNO"                                       
+INSTRUMENT_HOST_ID             = "JNO"                                        
+COMMAND_FILE_NAME              = "jm0041_JRMa.sasf"                           
+MISSION_PHASE_NAME             = "SCIENCE ORBITS"                             
+                                                                              
+/* Instrument description parameters */                                       
+INSTRUMENT_NAME                = "JOVIAN INFRARED AURORAL MAPPER"             
+INSTRUMENT_ID                  = "JIR"                                        
+INSTRUMENT_TYPE                = "INFRARED IMAGING SPECTROMETER"              
+SOFTWARE_VERSION_ID            = ("EGSE_208", "PDS_RDR_v9")                   
+                                                                              
+                                                                              
+/* Celestial Geometry */                                                      
+RIGHT_ASCENSION                = 1.2347 <degree>                              
+DECLINATION                    = -41.9939 <degree>                            
+TWIST_ANGLE                    = 2.0465 <degree>                              
+CELESTIAL_NORTH_CLOCK_ANGLE    = 177.9535 <degree>                            
+QUATERNION                     = ( 0.27929,                                   
+                                   -0.65052,                                  
+                                   -0.64137,                                  
+                                   -0.29576)                                  
+QUATERNION_DESC                =                                              
+"Above parameters are calculated at the center time of the observation        
+which is 2017-02-02T11:40:03.876.  The quaternion has the form:               
+w, x, y, z (i.e. SPICE format)."                                              
+/* Solar Geometry */                                                          
+SPACECRAFT_SOLAR_DISTANCE      = 816298138.6257 <km>                          
+SC_SUN_POSITION_VECTOR         = ( 33798.0321 <km>,                           
+                                   -40605.3831 <km>,                          
+                                   174774.3272 <km> )                         
+SC_SUN_VELOCITY_VECTOR         = ( -27.5114 <km/s>,                           
+                                   17.2529 <km/s>,                            
+                                   -20.0197 <km/s>)                           
+ORBIT_NUMBER                   = 4                                            
+TARGET_NAME                    = "JUPITER"                                    
+TARGET_TYPE                    = "PLANET"                                     
+TARGET_PIXELS                  = 55296                                        
+JNO:TARGET_PRESENCE_FLAG       = "000000000010000"                            
+                                                                              
+/* COORDINATE SYSTEM */                                                       
+COORDINATE_SYSTEM_NAME         = "PLANETOCENTRIC"                             
+COORDINATE_SYSTEM_CENTER_NAME  = "JUPITER"                                    
+                                                                              
+/* Geometry in "IAU_JUPITER" */                                               
+SUB_SPACECRAFT_LATITUDE        = 73.1781 <degree>                             
+SUB_SPACECRAFT_LONGITUDE       = 309.7766 <degree>                            
+SUB_SPACECRAFT_AZIMUTH         = 66.3493 <degree>                             
+SPACECRAFT_ALTITUDE            = 115377.9107 <km>                             
+TARGET_CENTER_DISTANCE         = 182584.6915 <km>                             
+SC_TARGET_POSITION_VECTOR      = ( 33798.0321 <km>,                           
+                                   -40605.3831 <km>,                          
+                                   174774.3272 <km> )                         
+SC_TARGET_VELOCITY_VECTOR      = ( -27.5114 <km/s>,                           
+                                   17.2529 <km/s>,                            
+                                   -20.0197 <km/s> )                          
+SUB_SOLAR_LATITUDE             = -2.5825 <degree>                             
+SUB_SOLAR_LONGITUDE            = 55.5557 <degree>                             
+SUB_SOLAR_AZIMUTH              = 350.5889 <degree>                            
+                                                                              
+GROUP = L_BAND_PARAMETERS                                                     
+   /* Illumination Filter L */                                                
+   INCIDENCE_ANGLE        = "N/A"                                             
+   EMISSION_ANGLE         = "N/A"                                             
+   PHASE_ANGLE            = "N/A"                                             
+                                                                              
+   /* Image filter L parameters*/                                             
+   SLANT_DISTANCE         = "N/A"                                             
+   MINIMUM_LATITUDE       = "N/A"                                             
+   CENTER_LATITUDE        = "N/A"                                             
+   MAXIMUM_LATITUDE       = "N/A"                                             
+   WESTERNMOST_LONGITUDE  = "N/A"                                             
+   CENTER_LONGITUDE       = "N/A"                                             
+   EASTERNMOST_LONGITUDE  = "N/A"                                             
+   HORIZONTAL_PIXEL_SCALE = "N/A"                                             
+   VERTICAL_PIXEL_SCALE   = "N/A"                                             
+   NORTH_AZIMUTH          = "N/A"                                             
+   LINE_FIRST_PIXEL       = "N/A"                                             
+   SAMPLE_FIRST_PIXEL     = "N/A"                                             
+END_GROUP = L_BAND_PARAMETERS                                                 
+                                                                              
+GROUP = M_BAND_PARAMETERS                                                     
+   /* Illumination Filter M */                                                
+   INCIDENCE_ANGLE        = 94.6048 <degree>                                  
+   EMISSION_ANGLE         = 16.5375 <degree>                                  
+   PHASE_ANGLE            = 98.1083 <degree>                                  
+                                                                              
+   /* Image filter M parameters*/                                             
+   SLANT_DISTANCE         = 117265.7597 <km>                                  
+   MINIMUM_LATITUDE       = 79.8064 <degree>                                  
+   CENTER_LATITUDE        = 83.1502 <degree>                                  
+   MAXIMUM_LATITUDE       = 84.7971 <degree>                                  
+   WESTERNMOST_LONGITUDE  = 262.5403 <degree>                                 
+   CENTER_LONGITUDE       = 305.7333 <degree>                                 
+   EASTERNMOST_LONGITUDE  = 352.9865 <degree>                                 
+   HORIZONTAL_PIXEL_SCALE = 27690.6986 <m/pixel>                              
+   VERTICAL_PIXEL_SCALE   = 27690.6986 <m/pixel>                              
+   NORTH_AZIMUTH          = 66.3493 <degree>                                  
+   LINE_FIRST_PIXEL       = 2                                                 
+   SAMPLE_FIRST_PIXEL     = 139                                               
+END_GROUP = M_BAND_PARAMETERS                                                 
+                                                                              
+/* Instrument status */                                                       
+CHANNEL_ID                     = "1"       /* 0:SPECTRUM IR; 1:IMAGE */       
+INSTRUMENT_MODE_ID             = SCI_I2_S1                                    
+INSTRUMENT_MODE_DESC           =                                              
+" SCI_I2_S1: Science, IMAGE(128x432) M-Band, SPECTRUM (256x336) High Spatial  
+and High Spectral "                                                           
+                                                                              
+OBJECT                         = FILE                                         
+   RECORD_TYPE                 = FIXED_LENGTH                                 
+   FILE_RECORDS                = 128                                          
+   RECORD_BYTES                = 1728                                         
+   FRAME_TYPE                  = "SCIENCE"                                    
+   DATA_QUALITY_ID             = "1"                                          
+   DATA_QUALITY_DESC           = "0:INCOMPLETE; 1:COMPLETE"                   
+   UNIT                        = "W/(m^2*sr*micron)"                          
+^IMAGE                         = "JIR_IMG_RDR_2017033T114006_V02.IMG"         
+                                                                              
+/* Data Object pointers */                                                    
+OBJECT                        = IMAGE                                         
+   LINES                      = 128                                           
+   LINE_SAMPLES               = 432                                           
+   SAMPLE_TYPE                = IEEE_REAL                                     
+   SAMPLE_BITS                = 32                                            
+END_OBJECT                    = IMAGE                                         
+                                                                              
+OBJECT                        = HISTORY                                       
+   CALIBRATION_SOURCE_ID      = "JIR_IMG_M_RESPONSIVITY_V02.DAT"              
+   SOURCE_PRODUCT_ID          = "JIR_IMG_EDR_2017033T114006_V02.IMG"          
+   NOTE                       = " SUBTRACTION BACKGROUND ON BOARD ENABLED "   
+END_OBJECT                    = HISTORY                                       
+                                                                              
+SPICE_FILE_NAME                =                                              
+{"juno_v09.tf",                                                               
+"juno_jiram_v01.ti",                                                          
+"juno_struct_v01.ti",                                                         
+"naif0012.tls",                                                               
+"pck00010.tpc",                                                               
+"JNO_SCLKSCET.00061.tsc",                                                     
+"de436s.bsp",                                                                 
+"juno_struct_v04.bsp",                                                        
+"jup310.bsp",                                                                 
+"spk_rec_170106_170228_170307.bsp",                                           
+"juno_sc_rec_170129_170204_v01.bc"                                            
+}                                                                             
+END_OBJECT                     = FILE                                         
+END                                                                           

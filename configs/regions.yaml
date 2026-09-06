@@ -1,0 +1,71 @@
+# Named map regions on Jupiter.
+#
+# Each entry needs a name, a projection (polar_ortho or local_ortho), a pixel
+# scale in km, and a raster shape [rows, cols].
+#
+#   polar_ortho: hemisphere (N/S), pole_pixel [row, col] (0-based, may be
+#     fractional) and an optional lon0_east_deg (default 90), the east
+#     longitude of the meridian that runs from the pole along +column.  The map
+#     is the body-fixed equatorial plane: row = pole_row + X/km_per_px and
+#     col = pole_col + Y/km_per_px with X toward lon0-90 and Y toward lon0, the
+#     column axis negated in the southern hemisphere so the map stays an
+#     outside view.
+#
+#   local_ortho: center [lat, lon_east] (planetocentric, degrees) and
+#     center_pixel [row, col].  Tangent-plane orthographic: +column is east and
+#     +row is north at the centre.
+#
+# radii_km defaults to Jupiter's pck00010 triaxial radii and normally stays out
+# of the file.
+
+regions:
+  - name: north_pole_paper
+    projection: polar_ortho
+    hemisphere: N
+    km_per_px: 15.0
+    shape: [3000, 3200]
+    pole_pixel: [1800, 1800]
+    lon0_east_deg: 90.0
+    description: >-
+      The grid of the Ingersoll et al. (2022) perijove-4 north-polar mosaics:
+      15 km per pixel, pole at 0-based (1800, 1800) of a 3000 x 3200 canvas,
+      90 E along +column.  Empirically recovered as reproject.PAPER_GRID, whose
+      fitted values (15.0046 km/px, pole 1800.0003/1800.0131, 90.0009 E) sit
+      0.58 px from these nominal ones at the corner of the canvas, inside the
+      fit's own registration residual (0.34 px RMS, 0.85 px worst frame).  The
+      nominal values are the ones the map labels declare (MPS = 15, MPOX =
+      MPOY = pole pixel, DU = -90), and reprojecting on them registers against
+      the published n01a map at NCC 0.998.
+
+  - name: north_pole
+    projection: polar_ortho
+    hemisphere: N
+    km_per_px: 15.0
+    shape: [3600, 3600]
+    pole_pixel: [1800, 1800]
+    lon0_east_deg: 90.0
+    description: >-
+      Square north-polar map, 27000 km (about 22 deg of colatitude) from the
+      pole in every direction at the paper's pixel scale.
+
+  - name: south_pole
+    projection: polar_ortho
+    hemisphere: S
+    km_per_px: 15.0
+    shape: [3600, 3600]
+    pole_pixel: [1800, 1800]
+    lon0_east_deg: 90.0
+    description: >-
+      The southern counterpart of north_pole, viewed from outside the planet
+      (the column axis is negated, so east longitude runs clockwise on screen
+      where it runs counter-clockwise on a northern map).
+
+  - name: neb_15n
+    projection: local_ortho
+    km_per_px: 10.0
+    shape: [1200, 2400]
+    center: [15.0, 180.0]
+    center_pixel: [600, 1200]
+    description: >-
+      Mid-latitude example region: a 24000 x 12000 km tangent-plane patch of
+      the North Equatorial Belt centred at 15 N, 180 E.

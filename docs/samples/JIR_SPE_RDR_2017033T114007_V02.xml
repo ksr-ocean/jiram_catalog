@@ -1,0 +1,180 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<?xml-model href="http://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1D00.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="http://pds.nasa.gov/pds4/geom/v1/PDS4_GEOM_1B10_1700.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/mission/juno/v1/PDS4_JUNO_1D00_1110.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<Product_Observational xmlns="http://pds.nasa.gov/pds4/pds/v1" xmlns:pds="http://pds.nasa.gov/pds4/pds/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:geom="http://pds.nasa.gov/pds4/geom/v1" xmlns:juno="http://pds.nasa.gov/pds4/mission/juno/v1" xsi:schemaLocation="http://pds.nasa.gov/pds4/pds/v1 https://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1D00.xsd          http://pds.nasa.gov/pds4/geom/v1 https://pds.nasa.gov/pds4/geom/v1/PDS4_GEOM_1B10_1700.xsd     http://pds.nasa.gov/pds4/mission/juno/v1 https://pds.nasa.gov/pds4/mission/juno/v1/PDS4_JUNO_1D00_1110.xsd">
+  <Identification_Area>
+    <logical_identifier>urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2017033t114007_v02</logical_identifier>
+    <version_id>1.0</version_id>
+    <title>JUNO JOVIAN INFRARED AURORAL MAPPER</title>
+    <information_model_version>1.13.0.0</information_model_version>
+    <product_class>Product_Observational</product_class>
+    <Modification_History>
+      <Modification_Detail>
+        <modification_date>2024-06-05</modification_date>
+        <version_id>1.0</version_id>
+        <description>This label was modified to convert to PDS4.</description>
+      </Modification_Detail>
+    </Modification_History>
+  </Identification_Area>
+  <Observation_Area>
+    <Time_Coordinates>
+      <start_date_time>2017-02-02T11:40:03.870Z</start_date_time>
+      <stop_date_time>2017-02-02T11:40:04.870Z</stop_date_time>
+    </Time_Coordinates>
+    <Primary_Result_Summary>
+      <purpose>Science</purpose>
+      <processing_level>Calibrated</processing_level>
+      <Science_Facets>
+        <domain>Atmosphere</domain>
+        <discipline_name>Atmospheres</discipline_name>
+        <facet1>Structure</facet1>
+      </Science_Facets>
+    </Primary_Result_Summary>
+    <Investigation_Area>
+      <name>JUNO</name>
+      <type>Mission</type>
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:investigation:mission.juno</lid_reference>
+        <reference_type>data_to_investigation</reference_type>
+      </Internal_Reference>
+    </Investigation_Area>
+    <Observing_System>
+      <name>JUNO</name>
+      <Observing_System_Component>
+        <name>JIRAM</name>
+        <type>Instrument</type>
+        <Internal_Reference>
+          <lid_reference>urn:nasa:pds:context:instrument:jiram.jno</lid_reference>
+          <reference_type>is_instrument</reference_type>
+        </Internal_Reference>
+      </Observing_System_Component>
+      <Observing_System_Component>
+        <name>JUNO</name>
+        <type>Spacecraft</type>
+        <Internal_Reference>
+          <lid_reference>urn:nasa:pds:context:instrument_host:spacecraft.jno</lid_reference>
+          <reference_type>is_instrument_host</reference_type>
+        </Internal_Reference>
+      </Observing_System_Component>
+    </Observing_System>
+    <Target_Identification>
+      <name>JUPITER</name>
+      <type>Planet</type>
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:target:planet.jupiter</lid_reference>
+        <reference_type>data_to_target</reference_type>
+      </Internal_Reference>
+    </Target_Identification>
+    <Discipline_Area>
+      <juno:Observation_Information>
+        <juno:orbit_number>4</juno:orbit_number>
+      </juno:Observation_Information>
+      <geom:Geometry>
+        <geom:SPICE_Kernel_Files>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>FK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_v09.tf</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>IK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_jiram_v01.ti</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>IK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_struct_v01.ti</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>LSK</geom:kernel_type>
+            <geom:spice_kernel_file_name>naif0012.tls</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>PCK</geom:kernel_type>
+            <geom:spice_kernel_file_name>pck00010.tpc</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SCLK</geom:kernel_type>
+            <geom:spice_kernel_file_name>JNO_SCLKSCET.00061.tsc</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>de436s.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_struct_v04.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>jup310.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>SPK</geom:kernel_type>
+            <geom:spice_kernel_file_name>spk_rec_170106_170228_170307.bsp</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+          <geom:SPICE_Kernel_Identification>
+            <geom:kernel_type>CK</geom:kernel_type>
+            <geom:spice_kernel_file_name>juno_sc_rec_170129_170204_v01.bc</geom:spice_kernel_file_name>
+          </geom:SPICE_Kernel_Identification>
+        </geom:SPICE_Kernel_Files>
+      </geom:Geometry>
+    </Discipline_Area>
+  </Observation_Area>
+  <Reference_List>
+    <Internal_Reference>
+      <lid_reference>urn:nasa:pds:juno_jiram:document:jno_jiram_rdr_ds.cat</lid_reference>
+      <reference_type>data_to_document</reference_type>
+      <comment>Data set catalog file</comment>
+    </Internal_Reference>
+    <Internal_Reference>
+      <lid_reference>urn:nasa:pds:juno_jiram:document:jir_spe_rdr_v02.fmt</lid_reference>
+      <reference_type>data_to_document</reference_type>
+      <comment>Format file containing column information</comment>
+    </Internal_Reference>
+  </Reference_List>
+  <File_Area_Observational>
+    <File>
+      <file_name>JIR_SPE_RDR_2017033T114007_V02.DAT</file_name>
+      <local_identifier>JIR_SPE_RDR_2017033T114007_V02_file</local_identifier>
+      <creation_date_time>2017-12-14T10:18:18.000Z</creation_date_time>
+      <file_size unit="byte">344064</file_size>
+      <records>256</records>
+      <md5_checksum>0edfb5f08b17fbef12623e98338645f4</md5_checksum>
+    </File>
+    <Table_Binary>
+      <offset unit="byte">0</offset>
+      <records>256</records>
+      <Record_Binary>
+        <fields>0</fields>
+        <groups>1</groups>
+        <record_length unit="byte">1344</record_length>
+        <Group_Field_Binary>
+          <repetitions>336</repetitions>
+          <fields>1</fields>
+          <groups>0</groups>
+          <group_location unit="byte">1</group_location>
+          <group_length unit="byte">1344</group_length>
+          <Field_Binary>
+            <name>BAND</name>
+            <field_location unit="byte">1</field_location>
+            <data_type>IEEE754MSBSingle</data_type>
+            <field_length unit="byte">4</field_length>
+            <description>Array of 336 bands (spectral range 2-5um)</description>
+          </Field_Binary>
+        </Group_Field_Binary>
+      </Record_Binary>
+    </Table_Binary>
+  </File_Area_Observational>
+  <File_Area_Observational_Supplemental>
+    <File>
+      <file_name>JIR_SPE_RDR_2017033T114007_V02.LBL</file_name>
+      <local_identifier>jir_spe_rdr_2017033t114007_v02_pds3file</local_identifier>
+    </File>
+    <Stream_Text>
+      <local_identifier>jir_spe_rdr_2017033t114007_v02_pds3file_stream</local_identifier>
+      <offset unit="byte">0</offset>
+      <parsing_standard_id>PDS3</parsing_standard_id>
+      <record_delimiter>Carriage-Return Line-Feed</record_delimiter>
+    </Stream_Text>
+  </File_Area_Observational_Supplemental>
+</Product_Observational>

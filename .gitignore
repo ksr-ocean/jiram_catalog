@@ -1,0 +1,19 @@
+.venv/
+vendor/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.recon/
+# LaTeX by-products (docs/pedagogy)
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz

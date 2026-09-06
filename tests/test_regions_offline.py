@@ -25,7 +25,7 @@ from jiram_catalog.regions import (
     load_registry,
 )
 from jiram_catalog.reproject import PAPER_GRID
-from jiram_catalog.stacks import composite_sequences
+from jiram_catalog.stacks import accumulate_sequences, composite_sequences
 
 #: Largest registration residual of the empirical PAPER_GRID fit, in pixels
 #: (docs/reports/paper_projection_fit.md).
@@ -264,6 +264,99 @@ def test_composite_sequences_means_any_and_min():
     assert pd.Timestamp(np.asarray(composite["time_last"].values)[0]) == pd.Timestamp(
         "2017-02-02T11:40:33"
     )
+
+
+# --------------------------------------------------------------------------
+# cumulative sweeps
+# --------------------------------------------------------------------------
+def _nan_equal(left, right) -> bool:
+    """Allclose that treats NaN as a value, the way the gate does."""
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
+    return bool(
+        np.allclose(
+            np.nan_to_num(left, nan=-1e30),
+            np.nan_to_num(right, nan=-1e30),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+    )
+
+
+def test_accumulate_sequences_keeps_the_axis_and_counts_the_sweep():
+    stack = _synthetic_stack()
+    cumulative = accumulate_sequences(stack)
+
+    assert cumulative.attrs["level"] == "cumulative"
+    assert cumulative.attrs["region"] == stack.attrs["region"]
+    assert cumulative.sizes == stack.sizes
+    assert list(np.asarray(cumulative["time"].values)) == list(np.asarray(stack["time"].values))
+    assert list(np.asarray(cumulative["product_id"].values).astype(str)) == ["p0", "p1", "p2", "p3"]
+    assert list(np.asarray(cumulative["seq_index"].values)) == [0, 1, 0, 1]
+    assert list(np.asarray(cumulative["seq_n"].values)) == [2, 2, 2, 2]
+
+
+def test_accumulate_sequences_starts_at_the_frame_and_ends_at_the_snapshot():
+    """The property the gate tests on the real stack, on four synthetic frames."""
+    stack = _synthetic_stack()
+    cumulative = accumulate_sequences(stack)
+    composite = composite_sequences(stack)
+
+    names = np.asarray(cumulative["seq_id"].values).astype(str)
+    ordered = list(np.asarray(composite["seq_id"].values).astype(str))
+    for name in dict.fromkeys(names):
+        members = np.flatnonzero(names == name)
+        first, last = int(members[0]), int(members[-1])
+        row = ordered.index(name)
+        # The first step of a sweep is the bare frame...
+        assert _nan_equal(cumulative["image"][first], stack["image"][first])
+        assert _nan_equal(cumulative["emission"][first], stack["emission"][first])
+        assert np.array_equal(
+            np.asarray(cumulative["valid"][first].values), np.asarray(stack["valid"][first].values)
+        )
+        # ...and the last is that sweep's snapshot, exactly.
+        assert _nan_equal(cumulative["image"][last], composite["image"][row])
+        assert _nan_equal(cumulative["emission"][last], composite["emission"][row])
+        assert np.array_equal(
+            np.asarray(cumulative["valid"][last].values), np.asarray(composite["valid"][row].values)
+        )
+
+
+def test_accumulate_sequences_means_the_valid_pixels_only():
+    """A pixel one frame missed is the other frame's value, not half of it."""
+    cumulative = accumulate_sequences(_synthetic_stack())
+    image = np.asarray(cumulative["image"].values)
+    emission = np.asarray(cumulative["emission"].values)
+    valid = np.asarray(cumulative["valid"].values)
+
+    # Step 0: frame 0 alone, with its hole at (0, 1).
+    assert image[0] == pytest.approx(np.array([[1.0, np.nan], [3.0, 4.0]]), nan_ok=True)
+    assert valid[0].tolist() == [[True, False], [True, True]]
+    # Step 1: the two frames of sweep "a". (0, 0) is the mean of 1 and 3;
+    # (0, 1) was only ever painted by frame 1, so it is 6, not 3; (1, 0) was
+    # only painted by frame 0. The emission is the best angle either achieved.
+    assert image[1] == pytest.approx(np.array([[2.0, 6.0], [3.0, 6.0]]))
+    assert emission[1] == pytest.approx(np.array([[10.0, 5.0], [40.0, 20.0]]))
+    assert valid[1].all()
+    # Step 2 restarts: sweep "b" knows nothing of sweep "a".
+    assert image[2] == pytest.approx(np.array([[10.0, 10.0], [np.nan, np.nan]]), nan_ok=True)
+    assert valid[2].tolist() == [[True, True], [False, False]]
+
+
+def test_accumulate_sequences_survives_interleaved_sequences():
+    """Two sweeps braided along the axis still accumulate separately."""
+    stack = _synthetic_stack()
+    braided = stack.assign_coords(seq_id=("time", np.array(["a", "b", "a", "b"])))
+    cumulative = accumulate_sequences(braided)
+    composite = composite_sequences(braided)
+
+    assert list(np.asarray(cumulative["seq_index"].values)) == [0, 0, 1, 1]
+    assert list(np.asarray(cumulative["seq_n"].values)) == [2, 2, 2, 2]
+    ordered = list(np.asarray(composite["seq_id"].values).astype(str))
+    # Step 2 closes sweep "a" (frames 0 and 2); step 3 closes sweep "b".
+    assert _nan_equal(cumulative["image"][2], composite["image"][ordered.index("a")])
+    assert _nan_equal(cumulative["image"][3], composite["image"][ordered.index("b")])
+    assert _nan_equal(cumulative["image"][1], braided["image"][1])
 
 
 # --------------------------------------------------------------------------

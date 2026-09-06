@@ -24,8 +24,9 @@ from fastapi.testclient import TestClient
 
 from jiram_catalog.api import catalog as api_catalog
 from jiram_catalog.api import data as api_data
+from jiram_catalog.api import stacks as api_stacks
 from jiram_catalog.api.app import create_app
-from jiram_catalog.stacks import write_stack
+from jiram_catalog.stacks import accumulate_sequences, write_stack
 from jiram_catalog.strips import write_strip
 
 FRAMES = 10
@@ -494,6 +495,102 @@ def test_movie_is_absent_then_answers_a_range(client, mirror):
         assert client.get("/api/stacks").json()[0]["has_movie"] is True
     finally:
         path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# the three levels: labels, siblings and the order they are listed in
+# ---------------------------------------------------------------------------
+def test_level_labels_and_stem_parsing():
+    assert api_stacks.level_label("frame") == "Instrument frames"
+    assert api_stacks.level_label("sequence") == "Region snapshots"
+    assert api_stacks.level_label("cumulative") == "Accumulating sweep"
+    # An unknown level names itself rather than vanishing from the listing.
+    assert api_stacks.level_label("mosaic") == "mosaic"
+    assert api_stacks.level_label(None) == ""
+
+    assert api_stacks.parse_stem("M_orbits4_frame") == {
+        "band": "M",
+        "orbits": "4",
+        "level": "frame",
+    }
+    # An orbit token with underscores in it still leaves the level behind.
+    assert api_stacks.parse_stem("L_orbits4_5_6_cumulative")["orbits"] == "4_5_6"
+    assert api_stacks.parse_stem("M_orbitsall_sequence")["orbits"] == "all"
+    # A file written with --out to some other name has no token to trust.
+    assert api_stacks.parse_stem("scratch") is None
+    assert api_stacks.parse_stem("M_orbits4_mosaic") is None
+
+
+@pytest.fixture(scope="module")
+def levels_mirror(tmp_path_factory) -> Path:
+    """A mirror holding all three levels of one stack, plus an unrelated one."""
+    root = tmp_path_factory.mktemp("levels")
+    frames = synthetic_stack(steps=2, size=8).assign_attrs(level="frame")
+    region = root / "regions" / "synthetic"
+    write_stack(frames, region / "M_orbits4_frame.nc")
+    write_stack(frames.assign_attrs(level="sequence"), region / "M_orbits4_sequence.nc")
+    write_stack(accumulate_sequences(frames), region / "M_orbits4_cumulative.nc")
+    # Same region and band, a different orbit set: not a sibling.
+    write_stack(frames.assign_attrs(level="sequence"), region / "M_orbits7_sequence.nc")
+    return root
+
+
+def test_listing_labels_links_and_orders_the_three_levels(levels_mirror):
+    entries = api_stacks.listing(levels_mirror)
+    by_id = {entry["id"]: entry for entry in entries}
+    assert len(entries) == 4
+
+    assert by_id["synthetic/M_orbits4_frame"]["label"] == "Instrument frames"
+    assert by_id["synthetic/M_orbits4_sequence"]["label"] == "Region snapshots"
+    assert by_id["synthetic/M_orbits4_cumulative"]["label"] == "Accumulating sweep"
+
+    siblings = by_id["synthetic/M_orbits4_sequence"]["siblings"]
+    assert siblings == {
+        "frame": "synthetic/M_orbits4_frame",
+        "sequence": "synthetic/M_orbits4_sequence",
+        "cumulative": "synthetic/M_orbits4_cumulative",
+    }
+    # Every member of a family sees the same family, itself included, so the
+    # mode selector can read siblings[mode] for all three buttons.
+    assert by_id["synthetic/M_orbits4_cumulative"]["siblings"] == siblings
+    # A different orbit token is a different stack, not another view of this one.
+    assert by_id["synthetic/M_orbits7_sequence"]["siblings"] == {
+        "sequence": "synthetic/M_orbits7_sequence"
+    }
+
+    # Region, then band, then sequence before cumulative before frame.
+    assert [entry["id"] for entry in entries] == [
+        "synthetic/M_orbits4_sequence",
+        "synthetic/M_orbits7_sequence",
+        "synthetic/M_orbits4_cumulative",
+        "synthetic/M_orbits4_frame",
+    ]
+
+
+def test_meta_per_time_carries_seq_index_and_seq_n(levels_mirror):
+    meta = api_stacks.per_time_records(
+        api_data.open_stack(levels_mirror / "regions" / "synthetic" / "M_orbits4_cumulative.nc")
+    )
+    assert [record["seq_index"] for record in meta] == [0, 1]
+    assert [record["seq_n"] for record in meta] == [2, 2]
+    # A stack without them does not grow empty keys.
+    frame_meta = api_stacks.per_time_records(
+        api_data.open_stack(levels_mirror / "regions" / "synthetic" / "M_orbits4_frame.nc")
+    )
+    assert "seq_index" not in frame_meta[0]
+
+
+def test_build_accepts_the_three_levels_and_rejects_the_rest(client):
+    for level in ("frame", "sequence", "cumulative"):
+        assert api_stacks.BuildRequest(region="r", band="M", level=level).level == level
+    assert api_stacks.BuildRequest(region="r", band="M", level="Cumulative").level == "cumulative"
+    with pytest.raises(ValueError):
+        api_stacks.BuildRequest(region="r", band="M", level="mosaic")
+    # ...and the route says so before any reprojection starts.
+    response = client.post(
+        "/api/stacks/build", json={"region": "synthetic", "band": "M", "level": "mosaic"}
+    )
+    assert response.status_code == 422
 
 
 # ---------------------------------------------------------------------------

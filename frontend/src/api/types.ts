@@ -41,6 +41,10 @@ export interface StackListing {
   region: string;
   band: string;
   level: string;
+  /** The browser's name for `level` ("Accumulating sweep", ...). */
+  label?: string;
+  /** Ids of the stacks of the same region, band and orbits, by level. */
+  siblings?: Partial<Record<string, string>>;
   path: string;
   n_time: number;
   shape: [number, number];
@@ -68,6 +72,9 @@ export interface PerTimeRecord {
   orbit?: number | null;
   n_frames?: number | null;
   bore_emission?: number | null;
+  /** Cumulative stacks only: position inside the sweep, and its length. */
+  seq_index?: number | null;
+  seq_n?: number | null;
 }
 
 export interface StackMeta {

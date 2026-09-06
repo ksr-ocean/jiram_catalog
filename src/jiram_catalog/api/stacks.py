@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ..config import mirror_root
 from . import data, images
@@ -38,10 +38,37 @@ DLAT = 2.0
 DLON = 30.0
 
 #: Per-time coordinates a stack may carry, in the order the contract lists.
-PER_TIME_COORDS: tuple[str, ...] = ("product_id", "seq_id", "orbit", "n_frames", "bore_emission")
+#: ``seq_index``/``seq_n`` come from a cumulative stack, where a step is one
+#: frame's worth of a sweep rather than a whole one.
+PER_TIME_COORDS: tuple[str, ...] = (
+    "product_id",
+    "seq_id",
+    "orbit",
+    "n_frames",
+    "bore_emission",
+    "seq_index",
+    "seq_n",
+)
 
 #: Suffixes a rendered movie may have, best first.
 MOVIE_SUFFIXES: tuple[str, ...] = (".mp4", ".gif")
+
+#: The three ways to watch a region, in the order the listing and the mode
+#: selector offer them: the snapshot per sweep first because it is what the
+#: velocity model eats, then the sweep filling in, then the raw frames.
+LEVEL_ORDER: tuple[str, ...] = ("sequence", "cumulative", "frame")
+
+#: What the browser calls each level.
+LEVEL_LABELS: dict[str, str] = {
+    "frame": "Instrument frames",
+    "sequence": "Region snapshots",
+    "cumulative": "Accumulating sweep",
+}
+
+#: ``<band>_orbits<token>_<level>``, the stem :func:`stacks.stack_output_path`
+#: writes.  The orbit token is greedy-free on the right so that a token with
+#: an underscore in it (``4_5_6``) still leaves the level behind.
+STEM_PATTERN = re.compile(r"(?P<band>[A-Za-z]+)_orbits(?P<orbits>.+)_(?P<level>[A-Za-z]+)")
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +222,70 @@ def per_time_records(dataset: xr.Dataset) -> list[dict[str, Any]]:
     return records
 
 
+def level_label(level: Any) -> str:
+    """The browser's name for a level; an unknown level names itself."""
+    text = "" if level is None else str(level)
+    return LEVEL_LABELS.get(text, text)
+
+
+def parse_stem(stem: str) -> dict[str, str] | None:
+    """``M_orbits4_frame`` -> band, orbit token and level, or ``None``.
+
+    Only the three known levels count: a file written with ``--out`` to some
+    other name has no orbit token the API can trust, and guessing one would
+    make two unrelated stacks each other's siblings.
+    """
+    match = STEM_PATTERN.fullmatch(str(stem))
+    if match is None or match.group("level").lower() not in LEVEL_LABELS:
+        return None
+    return {
+        "band": match.group("band").upper(),
+        "orbits": match.group("orbits").lower(),
+        "level": match.group("level").lower(),
+    }
+
+
+def sibling_key(identifier: str, entry: dict[str, Any]) -> tuple[str, str, str] | None:
+    """What makes two stacks two views of the same thing.
+
+    The region is the directory the file sits in rather than the ``region``
+    attribute, because that is what the identifier is built from: two stacks
+    are siblings only if a viewer can reach one from the other by name.
+    """
+    parsed = parse_stem(Path(identifier).name)
+    if parsed is None:
+        return None
+    band = str(entry.get("band") or parsed["band"]).upper()
+    return (str(Path(identifier).parent), band, parsed["orbits"])
+
+
+def listing_order(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """Region, band, then sequence before cumulative before frame."""
+    level = str(entry.get("level") or "")
+    rank = LEVEL_ORDER.index(level) if level in LEVEL_ORDER else len(LEVEL_ORDER)
+    return (str(entry.get("region") or ""), str(entry.get("band") or ""), rank, str(entry["id"]))
+
+
+def attach_siblings(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every entry the ids of the other levels of the same stack.
+
+    A stack lists itself under its own level, so the mode selector can read
+    ``siblings[mode]`` for all three buttons instead of special-casing the one
+    it is already showing.
+    """
+    families: dict[tuple[str, str, str], dict[str, str]] = {}
+    for entry in entries:
+        key = sibling_key(str(entry["id"]), entry)
+        level = str(entry.get("level") or "")
+        if key is None or level not in LEVEL_LABELS:
+            continue
+        families.setdefault(key, {}).setdefault(level, str(entry["id"]))
+    for entry in entries:
+        key = sibling_key(str(entry["id"]), entry)
+        entry["siblings"] = dict(families.get(key, {})) if key is not None else {}
+    return entries
+
+
 def listing(mirror: str | Path | None = None) -> list[dict[str, Any]]:
     """The stacks the mirror holds, with the sizes the browser shows."""
     entries: list[dict[str, Any]] = []
@@ -205,12 +296,14 @@ def listing(mirror: str | Path | None = None) -> list[dict[str, Any]]:
             LOGGER.warning("cannot open %s: %s", path, exc)
             continue
         movie = movie_path(path)
+        level = _scalar(dataset.attrs.get("level"))
         entries.append(
             {
                 "id": identifier,
                 "region": str(dataset.attrs.get("region", Path(path).parent.name)),
                 "band": _scalar(dataset.attrs.get("band")),
-                "level": _scalar(dataset.attrs.get("level")),
+                "level": level,
+                "label": level_label(level),
                 "path": str(path),
                 "n_time": int(dataset.sizes.get("time", 0)),
                 "shape": [int(dataset.sizes.get("y", 0)), int(dataset.sizes.get("x", 0))],
@@ -220,7 +313,7 @@ def listing(mirror: str | Path | None = None) -> list[dict[str, Any]]:
                 "movie_path": str(movie) if movie is not None else None,
             }
         )
-    return entries
+    return sorted(attach_siblings(entries), key=listing_order)
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +389,19 @@ class BuildRequest(BaseModel):
     selection_id: str | None = None
     max_emission: float | None = None
 
+    @field_validator("level")
+    @classmethod
+    def _known_level(cls, value: str) -> str:
+        """Reject a level the builder has no rule for, before the job starts.
+
+        A job that fails eight minutes into a reprojection because its level
+        was a typo is a worse answer than a 422 on the request.
+        """
+        text = str(value).strip().lower()
+        if text not in LEVEL_LABELS:
+            raise ValueError(f"level must be one of {', '.join(LEVEL_ORDER)}")
+        return text
+
 
 class ExportRequest(BaseModel):
     out_dir: str | None = None
@@ -352,11 +458,15 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
         # one, and a spawned pool inside a server worker thread would
         # re-import and re-serve the app in every child.
         dataset = stacks_module.build_stack(root, region, selected, band, jobs=1)
-        if str(level).lower() == "sequence":
+        wanted_level = str(level).lower()
+        if wanted_level == "sequence":
             progress(0.85, "compositing sequences")
             dataset = stacks_module.composite_sequences(dataset)
+        elif wanted_level == "cumulative":
+            progress(0.85, "accumulating sweeps")
+            dataset = stacks_module.accumulate_sequences(dataset)
         token = "all" if not orbits else ",".join(str(int(value)) for value in sorted(set(orbits)))
-        target = stacks_module.stack_output_path(root, region, band, token, str(level).lower())
+        target = stacks_module.stack_output_path(root, region, band, token, wanted_level)
         progress(0.92, f"writing {target.name}")
         stacks_module.write_stack(dataset, target)
         progress(1.0, "done")

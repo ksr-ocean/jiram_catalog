@@ -43,6 +43,7 @@ from .reproject import footprint_bbox, reproject_frame
 LOGGER = logging.getLogger(__name__)
 
 __all__ = [
+    "accumulate_sequences",
     "build_stack",
     "composite_sequences",
     "default_stack_jobs",
@@ -641,6 +642,99 @@ def composite_sequences(stack: xr.Dataset) -> xr.Dataset:
     for name in ("image", "emission", "valid"):
         composite[name].attrs.update(stack[name].attrs)
     return composite
+
+
+# --------------------------------------------------------------------------
+# cumulative sweeps
+# --------------------------------------------------------------------------
+def accumulate_sequences(stack: xr.Dataset) -> xr.Dataset:
+    """A frame stack turned into each sequence filling in, frame by frame.
+
+    Step ``t`` of the result is the composite of the frames of ``t``'s own
+    sequence up to and including ``t`` -- the same mean-of-valid-pixels,
+    validity-is-any, emission-is-best rule :func:`composite_sequences` applies
+    to a whole sequence, so the last step of every sequence *is* that
+    sequence's snapshot and the first is the bare frame.  The time axis, the
+    grid and the per-time coordinates are the frame stack's own, with
+    ``seq_index`` (0-based position inside the sequence) and ``seq_n`` (its
+    length) added, so a viewer can say "sweep k, frame i of n".
+
+    The sweep is accumulated rather than recomputed: one running sum, one
+    running count and one running best-emission array per sequence, and never
+    more than one frame of the input in hand at a time.  Compositing each
+    prefix from scratch would read the same frame up to twelve times and cost
+    a quadratic number of passes over a stack that is tens of gigabytes.
+    """
+    if "time" not in stack.sizes:
+        raise ValueError("a cumulative stack needs a time axis")
+    steps = int(stack.sizes["time"])
+    shape = (int(stack.sizes["y"]), int(stack.sizes["x"]))
+    names = np.asarray(stack["seq_id"].values).astype(str)
+
+    # Grouped by sequence in order of first appearance, and inside a sequence
+    # in time-axis order: one running state serves every sequence in turn even
+    # if two sequences were ever interleaved along the axis.
+    groups: dict[str, list[int]] = {}
+    for position in range(steps):
+        groups.setdefault(str(names[position]), []).append(position)
+    seq_index = np.zeros(steps, dtype=np.int32)
+    seq_n = np.zeros(steps, dtype=np.int32)
+    for members in groups.values():
+        for order, position in enumerate(members):
+            seq_index[position] = order
+            seq_n[position] = len(members)
+
+    out_image = np.full((steps, *shape), np.nan, dtype=np.float32)
+    out_emission = np.full((steps, *shape), np.nan, dtype=np.float32)
+    out_valid = np.zeros((steps, *shape), dtype=bool)
+
+    image, valid, emission = stack["image"], stack["valid"], stack["emission"]
+    # The sum is float64 while the frames are float32: twelve additions of a
+    # radiance are exact enough either way, and the running form has no
+    # pairwise cancellation to lean on.
+    total = np.zeros(shape, dtype=np.float64)
+    painted = np.zeros(shape, dtype=np.int32)
+    # np.inf rather than np.nan, exactly as composite_sequences: a pixel no
+    # frame has painted yet must not make the minimum warn.
+    best = np.full(shape, np.inf, dtype=np.float64)
+    for members in groups.values():
+        total[:] = 0.0
+        painted[:] = 0
+        best[:] = np.inf
+        for position in members:
+            frame = np.asarray(image.isel(time=position).values)
+            mask = np.asarray(valid.isel(time=position).values, dtype=bool)
+            angles = np.asarray(emission.isel(time=position).values)
+            total += np.where(mask, np.nan_to_num(frame, nan=0.0), 0.0)
+            painted += mask
+            np.minimum(best, np.where(mask & np.isfinite(angles), angles, np.inf), out=best)
+            with np.errstate(invalid="ignore"):
+                out_image[position] = np.where(
+                    painted > 0, total / np.maximum(painted, 1), np.nan
+                )
+            out_valid[position] = painted > 0
+            out_emission[position] = np.where(np.isfinite(best), best, np.nan)
+
+    coords: dict[str, Any] = {
+        str(name): (variable.dims, np.asarray(variable.values))
+        for name, variable in stack.coords.items()
+    }
+    coords["seq_index"] = ("time", seq_index)
+    coords["seq_n"] = ("time", seq_n)
+    cumulative = xr.Dataset(
+        data_vars={
+            "image": (("time", "y", "x"), out_image),
+            "valid": (("time", "y", "x"), out_valid),
+            "emission": (("time", "y", "x"), out_emission),
+        },
+        coords=coords,
+        attrs={**stack.attrs, "level": "cumulative"},
+    )
+    for name in ("image", "emission", "valid"):
+        cumulative[name].attrs.update(stack[name].attrs)
+    cumulative["seq_index"].attrs.update(long_name="frame position inside its sequence")
+    cumulative["seq_n"].attrs.update(long_name="frames in this sequence")
+    return cumulative
 
 
 # --------------------------------------------------------------------------

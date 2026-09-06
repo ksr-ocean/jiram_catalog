@@ -22,3 +22,10 @@
 .kv b { color: var(--text); font-weight: 600; }
 .muted { color: var(--muted); }
 .stack { display: flex; flex-direction: column; gap: 8px; }
+
+/* The three viewing modes: a badge for the open stack, the selector, and the
+   one-sentence explanation of each mode under the stack list. */
+.badge { padding: 2px 7px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); font-size: 12px; white-space: nowrap; }
+.modeButton { padding: 5px 10px; }
+.modeActive { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
+.modeHelp { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 12px; padding: 0 8px; }

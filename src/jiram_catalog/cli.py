@@ -178,15 +178,21 @@ def _region_stack(args: argparse.Namespace, root: Path, orbits: list[int] | None
     print(f"selected frames: {len(frames)}")
     if frames.empty:
         raise ValueError(f"no frame of orbits {args.orbits} overlaps region {args.region}")
-    dataset = build_stack(
-        root,
-        region,
-        frames,
-        args.band,
-        crop=not args.no_crop,
-        margin_px=args.margin_px,
-        jobs=args.jobs,
-    )
+    frame_file = stack_output_path(root, args.region, args.band, args.orbits, "frame")
+    if args.level in ("sequence", "cumulative") and not args.out and frame_file.exists():
+        # Reuse the frame-level product instead of reprojecting again (minutes and tens of GB).
+        print(f"reusing frame-level stack: {frame_file}")
+        dataset = read_stack(frame_file)
+    else:
+        dataset = build_stack(
+            root,
+            region,
+            frames,
+            args.band,
+            crop=not args.no_crop,
+            margin_px=args.margin_px,
+            jobs=args.jobs,
+        )
     if args.level == "sequence":
         dataset = composite_sequences(dataset)
     elif args.level == "cumulative":

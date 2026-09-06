@@ -6,6 +6,7 @@ export interface DebugState {
   selection_n: number;
   view: string;
   stack_id: string | null;
+  level: string | null;
   t: number;
   cmap: string;
   stats_visible: boolean;

@@ -219,20 +219,47 @@ are computed once per stack and cached under
 `<mirror>/gui_cache/meta_<key>.json`, keyed to the file's own size and
 modification time. Nothing here is auto-selected at first load.
 
+**The three modes.** The same frames can be watched three ways, and the
+three are three files that differ only in their `level`:
+
+| mode | file | what one step is |
+| --- | --- | --- |
+| Region snapshots | `<BAND>_orbits<token>_sequence.nc` | one averaged snapshot per spin sequence -- the velocity model's input |
+| Accumulating sweep | `<BAND>_orbits<token>_cumulative.nc` | that same sweep filling in frame by frame, emptied again at the next sequence |
+| Instrument frames | `<BAND>_orbits<token>_frame.nc` | one raw JIRAM frame, in the order the imager recorded them |
+
+The three buttons above the player switch between them. Because the
+three are separate files, a mode is only a click away when the mirror
+holds it; when it does not, the selector says so and offers **Build
+this view**, which starts the same background job the tray's "Build
+stack..." would with this stack's own region, band and orbits, and
+opens the new file when the job finishes. A cumulative stack has the
+frame stack's number of steps, so it is the largest of the three; the
+snapshots are the smallest.
+
+In the "Accumulating sweep" mode the time label reads
+`sweep k, frame i of n` beside `t/N`: which spin sequence is on screen,
+and how much of it has been painted so far. The last step of every
+sweep is exactly that sweep's snapshot in the sequence stack, so the
+two modes meet at the end of each sweep.
+
 **Toolbar and hints:**
 
 | control | does |
 | --- | --- |
-| stack | choose a stack from `<mirror>/regions/*/*.nc`, listed as `<id> - <band> <level>, <n> steps`, with `[movie]` when one has been rendered |
+| stack | choose a stack from `<mirror>/regions/*/*.nc`, listed as `<id> - <band> <mode>, <n> steps`, with `[movie]` when one has been rendered; the list is ordered by region, band, then snapshots, sweep, frames |
+| the mode badge | the open stack's mode, beside the chooser |
 | the summary line | shape, km/px, and file size of the chosen stack, from the listing |
 | the hint line | reminds you that frames selected in the Catalog can become a new stack via the tray's "Build stack..." |
+| the three sentences under it | one line each on what the three modes are |
 
 **Viewer controls**, once a stack is open:
 
 | control | does |
 | --- | --- |
+| Region snapshots / Accumulating sweep / Instrument frames | the mode selector: opens the sibling file of that mode, or offers to build it |
 | play / pause, < / > | step through time; playback speed is the `speed` field, keyboard left/right also step it while this tab is focused |
-| time | the slider and its `t/N` label |
+| time | the slider and its `t/N` label, plus `sweep k, frame i of n` on a cumulative stack |
 | speed | frames per second while playing (1-30) |
 | colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis` -- a 256-entry lookup table applied to pixels already in the browser, so changing it never needs a new request from the server |
 | graticule | overlays parallels every 2 deg and meridians every 30 deg, from the stack's own coordinate arrays (on by default) |
@@ -241,6 +268,7 @@ modification time. Nothing here is auto-selected at first load.
 | reset stretch | puts vmin/vmax back to the stack's own 1st/99th percentile |
 | the image itself | drag to pan, scroll to zoom (aspect ratio locked by construction, so it cannot distort); hovering shows an x/y (km) readout |
 | frame metadata | time, product id, sequence id, orbit, frame count, emission, km/px, and the served x/y range for the current step, from the stack's own per-time coordinates |
+| build dialog level | the tray's "Build stack..." names the same three modes |
 
 **Movie panel:**
 
@@ -268,8 +296,11 @@ by default. "Build stack..." (in the selection tray) writes
 from a tray selection rather than an explicit orbit range.
 
 **What to do when a stack is slow to open.** A frame-level stack (every
-contributing frame kept, not composited per sequence) can be 2 GB; a
-sequence-level composite of the same orbit is a fraction of that. The
+contributing frame kept, not composited per sequence) can be 2 GB; the
+cumulative stack of the same orbit has the same number of steps and is
+larger still, because a step late in a sweep has more painted pixels
+than the single frame it started from; a sequence-level composite is a
+fraction of either. The
 first time a given stack file is opened, the server computes its
 display stretch and graticule and writes them to
 `<mirror>/gui_cache/meta_<key>.json`; every later open of the same file

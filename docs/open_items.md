@@ -176,3 +176,10 @@ login node and has no login. Acceptable for an interactive session that
 is stopped afterwards; add basic authentication (e.g. FastAPI
 middleware in front of the routers in `src/jiram_catalog/api/app.py`)
 before anyone leaves it running unattended.
+
+## Cumulative stack build cost (added 2026-09-06)
+`region-stack --level cumulative` on the paper region takes about 7
+minutes and 29 GB from an existing frame stack (the frame stack is
+read whole; the zlib write of a 3.6 GB file dominates). Streaming the
+frame file step by step and writing with larger chunks would cut both;
+a job in the GUI shows progress meanwhile.

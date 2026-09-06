@@ -7,6 +7,11 @@
  * rendered movie is visible rather than merely written.  The player is an
  * `OrthographicView` with a scalar zoom, so panning and zooming cannot
  * distort the aspect ratio.
+ *
+ * A stack is one of three views of the same frames -- the snapshot per spin
+ * sequence, the sweep filling in, the raw frames -- and the mode selector
+ * moves between them by opening the sibling file, or by building it when the
+ * mirror does not have it yet.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Views.module.css';
@@ -15,6 +20,16 @@ import { api, fetchImage } from '../api/client';
 import { useStore } from '../store/store';
 import { fmt, fmtBytes } from '../lib/format';
 import { COLOR_MAPS, type ColorMapName } from '../lib/lut';
+import {
+  LEVEL_BLURBS,
+  LEVEL_LABELS,
+  STACK_LEVELS,
+  levelLabel,
+  orbitsOf,
+  siblingsOf,
+  sweepReadout,
+  type StackLevel,
+} from '../lib/stackModes';
 
 export function PolesView({ active }: { active: boolean }) {
   const stacks = useStore((s) => s.stacks);
@@ -46,9 +61,21 @@ export function PolesView({ active }: { active: boolean }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [draftStretch, setDraftStretch] = useState<[number, number]>([vmin, vmax]);
   const [movieNonce, setMovieNonce] = useState(0);
+  // The mode the user asked for and the mirror does not hold: the only thing
+  // that puts a "Build this view" button on screen.
+  const [missingMode, setMissingMode] = useState<StackLevel | null>(null);
+  const [building, setBuilding] = useState(false);
 
   const listing = useMemo(() => stacks.find((stack) => stack.id === stackId) ?? null, [stacks, stackId]);
   const nTimes = meta?.times.length ?? 0;
+  const level = meta?.level ?? listing?.level ?? null;
+  const siblings = useMemo(() => siblingsOf(listing, stacks), [listing, stacks]);
+  const sweep = sweepReadout(meta, t);
+
+  // A new stack answers whatever mode question was open.
+  useEffect(() => {
+    setMissingMode(null);
+  }, [stackId]);
 
   useEffect(() => setDraftStretch([vmin, vmax]), [vmin, vmax]);
 
@@ -96,6 +123,58 @@ export function PolesView({ active }: { active: boolean }) {
       cancelled = true;
     };
   }, [stackId, t, emissionAlpha]);
+
+  const chooseMode = useCallback(
+    (target: StackLevel) => {
+      const sibling = siblings[target];
+      if (sibling) {
+        setMissingMode(null);
+        if (sibling !== stackId) void openStack(sibling);
+        return;
+      }
+      setMissingMode(target);
+    },
+    [siblings, stackId, openStack],
+  );
+
+  const buildMode = useCallback(
+    (target: StackLevel) => {
+      if (!listing) return;
+      const orbits = orbitsOf(listing.id);
+      setBuilding(true);
+      void api
+        .buildStack({
+          region: listing.region,
+          band: listing.band,
+          level: target,
+          ...(orbits ? { orbits } : {}),
+        })
+        .then(({ job_id }) => {
+          pushToast('info', `building "${LEVEL_LABELS[target]}" (job ${job_id})`);
+          watchJob(job_id, (job) => {
+            setBuilding(false);
+            if (job.status !== 'done') {
+              pushToast('error', `build failed: ${job.message ?? ''}`);
+              return;
+            }
+            const result = job.result as { stack_id?: string } | null;
+            pushToast('info', `built "${LEVEL_LABELS[target]}"`);
+            void useStore
+              .getState()
+              .loadStacks()
+              .then(() => {
+                setMissingMode(null);
+                if (result?.stack_id) void openStack(result.stack_id);
+              });
+          });
+        })
+        .catch((error: Error) => {
+          setBuilding(false);
+          pushToast('error', `build: ${error.message}`);
+        });
+    },
+    [listing, openStack, pushToast, watchJob],
+  );
 
   const renderMovie = useCallback(() => {
     if (!stackId) return;
@@ -154,12 +233,17 @@ export function PolesView({ active }: { active: boolean }) {
             </option>
             {stacks.map((stack) => (
               <option key={stack.id} value={stack.id}>
-                {stack.id} - {stack.band} {stack.level}, {stack.n_time} steps
+                {stack.id} - {stack.band} {stack.label ?? levelLabel(stack.level)}, {stack.n_time} steps
                 {stack.has_movie ? ' [movie]' : ''}
               </option>
             ))}
           </select>
         </div>
+        {listing && (
+          <span className={styles.badge} data-testid="stack-label">
+            {listing.label ?? levelLabel(listing.level)}
+          </span>
+        )}
         {listing && (
           <span className={styles.muted} data-testid="stack-summary">
             {listing.shape[0]} x {listing.shape[1]} at {fmt(listing.km_per_px, 1)} km/px,{' '}
@@ -174,6 +258,12 @@ export function PolesView({ active }: { active: boolean }) {
         </span>
       </div>
 
+      <div className={styles.modeHelp} data-testid="mode-help">
+        {STACK_LEVELS.map((name) => (
+          <div key={name}>{LEVEL_BLURBS[name]}</div>
+        ))}
+      </div>
+
       {!stackId ? (
         <div className={styles.card}>
           <p className={styles.muted}>
@@ -184,6 +274,31 @@ export function PolesView({ active }: { active: boolean }) {
       ) : (
         <div className={styles.split}>
           <div className={styles.stack}>
+            <div className={styles.toolbar} data-testid="mode-bar" role="group" aria-label="viewing mode">
+              {STACK_LEVELS.map((name) => (
+                <button
+                  key={name}
+                  data-testid={`mode-${name}`}
+                  className={`${styles.modeButton} ${level === name ? styles.modeActive : ''}`}
+                  aria-pressed={level === name}
+                  onClick={() => chooseMode(name)}
+                >
+                  {LEVEL_LABELS[name]}
+                </button>
+              ))}
+              {missingMode && (
+                <>
+                  <div className={styles.sep} />
+                  <span className={styles.muted}>
+                    this region has no "{LEVEL_LABELS[missingMode]}" stack yet
+                  </span>
+                  <button data-testid="build-mode" disabled={building} onClick={() => buildMode(missingMode)}>
+                    {building ? 'building...' : 'Build this view'}
+                  </button>
+                </>
+              )}
+            </div>
+
             <div className={styles.toolbar}>
               <button
                 data-testid="play-pause"
@@ -199,8 +314,9 @@ export function PolesView({ active }: { active: boolean }) {
               <button aria-label="next frame" onClick={() => stepTime(1)}>
                 &gt;
               </button>
-              <label htmlFor="time-slider">
+              <label htmlFor="time-slider" data-testid="time-readout">
                 time {t + 1}/{nTimes}
+                {sweep ? ` -- ${sweep}` : ''}
               </label>
               <input
                 id="time-slider"

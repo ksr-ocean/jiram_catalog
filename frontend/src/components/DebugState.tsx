@@ -14,6 +14,7 @@ export function DebugState() {
   const selectionKeys = useStore((s) => s.selectionKeys);
   const viewMode = useStore((s) => s.viewMode);
   const stackId = useStore((s) => s.stackId);
+  const stackLevel = useStore((s) => s.stackMeta?.level ?? null);
   const t = useStore((s) => s.t);
   const cmap = useStore((s) => s.cmap);
   const statsVisible = useStore((s) => s.statsVisible);
@@ -24,6 +25,7 @@ export function DebugState() {
     selection_n: selectionKeys.size,
     view: viewMode,
     stack_id: stackId,
+    level: stackLevel,
     t,
     cmap,
     stats_visible: statsVisible,

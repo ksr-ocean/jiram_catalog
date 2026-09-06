@@ -77,7 +77,7 @@ selection a human makes.
 
 It should be noted that the store also renders a hidden `<pre id="debug-state">`
 element, `src/components/DebugState.tsx`, carrying
-`{n_points, n_filtered, selection_n, view, stack_id, t, cmap, stats_visible}`
+`{n_points, n_filtered, selection_n, view, stack_id, level, t, cmap, stats_visible}`
 as JSON. v1 could not be tested from the outside because everything it did
 happened inside a server-rendered canvas; the debug element gives the Playwright suite a
 number to wait on instead of a screenshot to compare, and it is the reason the
@@ -141,6 +141,26 @@ backend serves with byte ranges; "Render movie" and "Export triples" post
 their jobs and poll `/api/jobs/{id}` every two seconds, reloading the video
 element when the render finishes.
 
+The view offers three modes rather than one -- the snapshot per spin sequence,
+the sweep filling in frame by frame, the raw instrument frames -- and the
+mode selector is deliberately not a control over the open stack. The three
+modes are three files that differ only in the `level` in their name, so
+switching mode is opening a sibling, and the backend says which siblings exist
+in each listing item's `siblings` map alongside a human `label`
+(`stacks.attach_siblings`, keyed on region directory, band and orbit token, so
+a sibling is always a stack the viewer can actually open). The front end keeps
+`src/lib/stackModes.ts` able to resolve the same map from the naming
+convention on its own, which is what makes the selector testable without a
+server and what keeps it from going blank against an older backend. When a
+mode has no file, the selector offers to build it: the same
+`/api/stacks/build` job, with the region, band and orbit token read back out
+of the current stack's own name, and the job's returned `stack_id` opened when
+it finishes. The cumulative level is `stacks.accumulate_sequences`, a running
+sum, count and best-emission per sequence in one pass, so the last step of
+every sweep is bit-for-bit the snapshot `composite_sequences` would produce
+and the first is the bare frame; the extra `seq_index`/`seq_n` coordinates it
+carries are what the time label turns into "sweep k, frame i of n".
+
 The Strips view (`src/views/StripsView.tsx`) is the same viewer over
 `/api/strips/{id}/image.png`, with local-time contours as a second path layer,
 beside a filtered table of `strips.arrow` and a small map of strip centres
@@ -191,9 +211,12 @@ element and the DOM: the catalog draws at least forty thousand points, a
 filter reduces the count and the server agrees with it, hovering a dense area
 after zooming to it produces a tooltip with a product id, a box drag increases
 the selection count, opening the per-sequence stack sets `stack_id` and loads
-its first frame, changing the colour map changes both `cmap` and a sampled
-pixel of the colour-mapped canvas, the movie element reaches `readyState >= 1`,
-and the strip statistics render as Plotly figures.
+its first frame, switching mode to the instrument frames changes both
+`stack_id` and `level`, the accumulating sweep reads out
+`sweep k, frame i of n` and follows the slider, changing the colour map
+changes both `cmap` and a sampled pixel of the colour-mapped canvas, the movie
+element reaches `readyState >= 1`, and the strip statistics render as Plotly
+figures.
 
 There is no GPU on the cluster node, so all of this runs on Chromium's
 SwiftShader implementation of WebGL 2, which deck.gl accepts and which does

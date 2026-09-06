@@ -12,6 +12,7 @@ import { Modal } from './Modal';
 import { api } from '../api/client';
 import { fmtOrbits, fmtRange } from '../lib/format';
 import { selectionStats, useStore } from '../store/store';
+import { LEVEL_LABELS, STACK_LEVELS } from '../lib/stackModes';
 
 /** The four names in `configs/regions.yaml`, plus whatever stacks exist. */
 const REGISTRY_REGIONS = ['north_pole_paper', 'north_pole', 'south_pole', 'neb_15n'];
@@ -195,8 +196,11 @@ function BuildStackDialog({
         </select>
         <label htmlFor="build-level">level</label>
         <select id="build-level" value={level} onChange={(event) => setLevel(event.target.value)}>
-          <option value="sequence">sequence</option>
-          <option value="frame">frame</option>
+          {STACK_LEVELS.map((name) => (
+            <option key={name} value={name}>
+              {LEVEL_LABELS[name]}
+            </option>
+          ))}
         </select>
       </div>
       <div className={styles.row}>

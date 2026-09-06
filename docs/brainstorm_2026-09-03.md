@@ -101,7 +101,7 @@ place. This gate is RED today and defines done for L0–L5.
 (a) **No GUI.** CLI + notebooks + a generated static HTML catalog
     (thumbnails per perijove/region, links to movies). Cheapest; works
     over ssh; enough for one researcher.
-(b) **Thin web app** (Panel/Bokeh, run on a node with port forwarding):
+(b) **Thin web app** (server-rendered plotting, run on a node with port forwarding):
     footprint polygons on a polar or cylindrical map, time slider,
     draw-a-region tool, "make stack / make movie" buttons. Cartopy's
     Globe accepts Jupiter's radii, so map projections come for free.

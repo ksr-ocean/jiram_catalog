@@ -13,15 +13,6 @@ just for the browser.
 
 ![The Catalog tab: every frame that sees the planet, filterable and selectable](docs/gui_guide/01_catalog_overview.png)
 
-> **GUI v2 (2026-09-06).** The browser is now a React + deck.gl front
-> end served by a FastAPI backend; `jiram-catalog gui` serves it by
-> default and `--legacy` serves the earlier Panel version. Colour maps,
-> stretch, hover and selection run in the browser; movies play in a
-> native player; the selection tray replaces the old "send to" buttons.
-> The illustrated guide in `docs/gui_guide.md` still shows the earlier
-> version and will be regenerated; the v2 architecture is in
-> `docs/gui_v2_notes.md`.
-
 ## Start in five minutes
 
 For a collaborator who already has access to the group's shared
@@ -103,9 +94,11 @@ at any date -- see `docs/decisions.md`). This tool:
    triples in the layout a downstream optical-flow velocity model reads,
    and computes masked spectra, structure functions, and bicoherence for
    the strip library.
-5. **Serves the browser-based catalog** above (Panel/Bokeh): Catalog
-   (every frame, filterable and selectable), Poles (stack viewer,
-   movies, exports), Strips (the strip library, its statistics).
+5. **Serves the browser-based catalog** above (a React + deck.gl front
+   end over a FastAPI backend, `docs/gui_v2_notes.md`): Catalog (every
+   frame, filterable and selectable), Poles (stack viewer, movies,
+   exports), Strips (the strip library, its statistics), with a
+   selection tray that carries a selection between them.
 
 Every claim above is checked against a published result: the geometry
 engine, the reprojection, and the map grid it uses were all validated
@@ -131,10 +124,10 @@ Ingersoll et al. (2022) before anything downstream was built. See
 - The trackability report: which orbits and latitude bands have
   repeat-view geometry that supports velocity retrieval at all, and at
   what wind speed.
-- The three-tab GUI, first version (Catalog complete; Poles views
-  existing stacks; Strips has the table, map, viewer, and per-strip
-  statistics -- population statistics and in-app builds are deferred,
-  see `docs/open_items.md`).
+- The GUI (Catalog complete; Poles views existing stacks and can build
+  a new one from a Catalog selection; Strips has the table, map,
+  viewer, and per-strip statistics) -- population statistics across a
+  filtered set of strips are deferred, see `docs/open_items.md`.
 
 ## Building a mirror from scratch, from the command line
 

@@ -1,8 +1,8 @@
-.view { display: flex; flex-direction: column; gap: 8px; height: 100%; }
+.view { display: flex; flex-direction: column; gap: 8px; height: 100%; overflow-y: auto; min-height: 0; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; }
 .group { display: flex; gap: 5px; align-items: center; }
 .sep { width: 1px; height: 18px; background: var(--line); }
-.mapWrap { position: relative; height: 420px; border: 1px solid var(--line); border-radius: 5px; background: #0b0d11; overflow: hidden; }
+.mapWrap { position: relative; height: 420px; flex: 0 0 420px; min-height: 420px; border: 1px solid var(--line); border-radius: 5px; background: #0b0d11; overflow: hidden; }
 .overlay { position: absolute; inset: 0; z-index: 3; cursor: crosshair; }
 .tooltip {
   position: absolute; z-index: 6; pointer-events: none;

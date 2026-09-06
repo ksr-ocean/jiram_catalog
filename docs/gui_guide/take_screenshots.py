@@ -1,6 +1,7 @@
-"""Regenerate the screenshots in ``docs/gui_guide/`` from the live app.
+"""Regenerate the screenshots in ``docs/gui_guide/`` from the live v2 app.
 
-Starts ``jiram-catalog gui`` in a subprocess on a free loopback port,
+Starts ``jiram-catalog gui`` (the React + deck.gl front end; this script
+never passes ``--legacy``) in a subprocess on a free loopback port,
 drives it with headless Chromium (Playwright), saves PNGs into this
 directory, and stops the server again. Run it as::
 
@@ -10,38 +11,51 @@ Playwright and its Chromium build must already be installed (they are,
 under ``~/.cache/ms-playwright``, wherever this was developed). The
 default mirror (``JIRAM_MIRROR``, or the built-in default) supplies the
 data; nothing here writes anywhere except this directory and the
-mirror's own ``gui_cache/``.
+mirror's own ``gui_cache/`` (one selection is saved to demonstrate the
+tray, then deleted again at the end so reruns do not accumulate them).
 
-Two interactions are driven and their on-screen effect is *not*
-verified: switching tabs does not reliably swap the sidebar's filter
-panel away from the Catalog tab's, and the datashaded map, the coverage
-panels, and the Poles image do not reliably repaint after a filter,
-selection, or time-step change in this headless setup, even though the
-underlying data updates correctly (confirmed independently through the
-selection caption, the selection table's contents, and a direct
-comparison against ``apply_filters`` in a plain Python session). Those
-screenshots are still real, unedited captures of what the browser drew;
-see ``docs/gui_guide.md`` for the caveat in words, as the spec asks for
-where a headless interaction cannot be confirmed visually.
+Unlike GUI v1, every state this script waits on is read from the app's
+own hidden ``#debug-state`` element (``{n_points, n_filtered,
+selection_n, view, stack_id, t, cmap}``, `docs/gui_v2_notes.md`) rather
+than guessed from a fixed sleep or scraped from on-screen text -- v2 was
+built with that element specifically so a test (or this script) has a
+number to poll instead of a screenshot to eyeball. Every interaction
+below is one Playwright can drive headlessly and is also exercised by
+`frontend/e2e/*.spec.ts` against a live backend; none had to be
+described in words instead of captured, unlike GUI v1's second-strip
+click.
 """
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any, Callable
 
 from PIL import Image
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = Path(__file__).resolve().parent
-VIEWPORT = {"width": 1400, "height": 900}
+#: Width is what the deliverable requires (<= 1400 px); the height is taller
+#: than a browser window needs to be because the Catalog tab's `.view` is a
+#: column flexbox with no `min-height: 0` on the map -- at a short viewport
+#: (900 px, tried first) the coverage charts and table below the map starve
+#: it, and the deck.gl canvas settles at well under its intended 420 px
+#: (confirmed empirically: full height only from about 1280 px of viewport
+#: height up). No code here is in scope to fix that, so the honest way to
+#: get a screenshot that actually shows the map is a taller viewport, not a
+#: smaller one; a normal maximized browser window clears this easily.
+VIEWPORT = {"width": 1400, "height": 1300}
 MAX_BYTES = 300_000
 MAX_WIDTH = 1400
+DEMO_SELECTION_NAME = "gui guide demo selection"
 
 
 def free_port() -> int:
@@ -50,14 +64,8 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
-def wait_ready(url: str, timeout: float = 120.0) -> None:
-    """Poll until the server answers 200.
-
-    Each ``GET /`` runs the whole app once (server-side), which this
-    build takes several seconds to do, so the per-request timeout has
-    to be generous -- a short one just times out client-side moments
-    before the server would have answered, and retries forever.
-    """
+def wait_ready(url: str, timeout: float = 180.0) -> None:
+    """Poll ``GET /`` until it answers 200 (the built front end is served)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -87,67 +95,260 @@ def compress(path: Path) -> None:
     print(f"warning: {path.name} still {path.stat().st_size} bytes after quantizing")
 
 
-def save(page, name: str) -> None:
+def save(page: Page, name: str) -> None:
     path = OUT_DIR / name
     page.screenshot(path=str(path), full_page=False)
     compress(path)
     print(f"wrote {path} ({path.stat().st_size} bytes)")
 
 
-def scroll_to(page, text: str, exact: bool = True, margin: int = 60) -> None:
-    heading = page.get_by_text(text, exact=exact).first
-    box = heading.bounding_box()
-    if box is not None:
-        page.evaluate(f"document.getElementById('main').scrollTop = {box['y'] - margin}")
-        page.wait_for_timeout(1200)
+# ---------------------------------------------------------------------------
+# The debug-state contract (see frontend/e2e/helpers.ts, the TypeScript twin
+# of these two functions).
+# ---------------------------------------------------------------------------
+def debug_state(page: Page) -> dict[str, Any]:
+    text = page.locator("#debug-state").text_content()
+    return json.loads(text or "{}")
 
 
-def click_tab(page, name: str, wait_ms: int = 8000) -> None:
-    page.locator("div.bk-tab", has_text=name).first.click()
-    page.wait_for_timeout(wait_ms)
-
-
-def caption_text(page) -> str:
-    return page.get_by_text("frames see the planet", exact=False).first.inner_text()
-
-
-def wait_for_caption(page, substring: str, timeout_s: float = 30.0) -> str:
-    """Poll the Selection caption until it contains ``substring``.
-
-    Server-side recompute time varies with load (screenshot compression
-    in this same script competes for CPU), so a fixed sleep is not
-    reliable here -- poll instead of guessing a wait long enough.
-    """
-    deadline = time.time() + timeout_s
-    last = ""
+def wait_for_state(
+    page: Page,
+    predicate: Callable[[dict[str, Any]], bool],
+    timeout: float = 90.0,
+    interval_ms: int = 400,
+) -> dict[str, Any]:
+    deadline = time.time() + timeout
+    state = debug_state(page)
     while time.time() < deadline:
-        last = caption_text(page)
-        if substring in last:
-            return last
-        page.wait_for_timeout(1000)
-    print(f"warning: caption never contained {substring!r}; last saw {last!r}")
-    return last
+        state = debug_state(page)
+        if predicate(state):
+            return state
+        page.wait_for_timeout(interval_ms)
+    raise RuntimeError(f"debug state never matched; last saw {state!r}")
 
 
-def set_resolution(page, value: str) -> None:
-    """The pixel <= (km) EditableFloatSlider's numeric field.
+def open_app(page: Page, url: str) -> None:
+    """Load the app and wait for the catalog Arrow table to be parsed."""
+    page.goto(url)
+    page.wait_for_selector("#debug-state", state="attached", timeout=60_000)
+    wait_for_state(page, lambda s: s.get("n_points", 0) > 0, timeout=120.0)
 
-    Found by vertical proximity to its own label rather than by its
-    current value, so this works no matter how many times it has
-    already been changed in this session.
+
+def centre_of(locator: Any) -> dict[str, float]:
+    box = locator.bounding_box()
+    if box is None:
+        raise RuntimeError("element has no box")
+    return {"x": box["x"] + box["width"] / 2, "y": box["y"] + box["height"] / 2, "width": box["width"], "height": box["height"]}
+
+
+def video_ready_state(page: Page) -> int:
+    return page.evaluate(
+        "() => { const v = document.querySelector('[data-testid=\"stack-movie\"]'); return v ? v.readyState : -1; }"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The screenshot groups. Each function owns one browser page (one fresh
+# session with an empty localStorage) so that the interactions building
+# toward one screenshot cannot be thrown off by state left behind by another
+# group -- the same reasoning GUI v1's script used, even though v2's state
+# management does not actually drift the way v1's did.
+# ---------------------------------------------------------------------------
+def shot_first_loads(browser, url: str) -> None:
+    # 1. Catalog tab at first load (the default tab).
+    page = browser.new_page(viewport=VIEWPORT)
+    open_app(page, url)
+    page.wait_for_timeout(1500)
+    save(page, "01_catalog_overview.png")
+    page.close()
+
+    # 2. Poles tab at first load: no stack chosen yet, so this also shows
+    # the "no stack is open" placeholder and the stack chooser.
+    page = browser.new_page(viewport=VIEWPORT)
+    open_app(page, url)
+    page.locator('[data-testid="tab-poles"]').click()
+    page.locator('[data-testid="stack-select"] option').nth(1).wait_for(state="attached", timeout=60_000)
+    page.wait_for_timeout(800)
+    save(page, "02_poles_overview.png")
+    page.close()
+
+    # 3. Strips tab at first load: the library table and centres map, no
+    # strip opened yet (v2 does not auto-select one the way v1 did).
+    page = browser.new_page(viewport=VIEWPORT)
+    open_app(page, url)
+    page.locator('[data-testid="tab-strips"]').click()
+    page.locator('[data-testid="strips-table"] tbody tr').first.wait_for(state="attached", timeout=60_000)
+    page.wait_for_timeout(800)
+    save(page, "03_strips_overview.png")
+    page.close()
+
+
+def shot_catalog_workflow(browser, url: str) -> None:
+    """Filter -> polar view -> hover -> box-select -> save to the tray.
+
+    One session, in this order, because it is also the real workflow the
+    guide describes: narrow the map, look at one hemisphere, read a point,
+    select a cluster, and keep it.
     """
-    label_box = page.get_by_text("pixel <= (km):", exact=False).first.bounding_box()
-    for candidate in page.locator("input[type='text']").all():
-        if not candidate.is_visible():
-            continue
-        box = candidate.bounding_box()
-        if box is not None and abs(box["y"] - label_box["y"]) < 25:
-            candidate.click()
-            candidate.press("Control+A")
-            candidate.type(value)
-            candidate.press("Enter")
-            return
-    raise RuntimeError("resolution input not found")
+    page = browser.new_page(viewport=VIEWPORT)
+    open_app(page, url)
+    total = debug_state(page)["n_points"]
+
+    # 4. Filtered: band M, pixel <= 20 km, N polar.
+    page.locator('[data-testid="filter-half"]').select_option("M")
+    page.wait_for_timeout(300)
+    page.locator('[data-testid="filter-pixel-max"]').fill("20")
+    page.wait_for_timeout(300)
+    page.locator('[data-testid="filter-lat-band"]').select_option("N polar")
+    wait_for_state(page, lambda s: 0 < s["n_filtered"] < total, timeout=30.0)
+    page.wait_for_timeout(500)
+    save(page, "04_catalog_filtered.png")
+
+    # 5. Polar-view toggle, fit to the filtered set.
+    page.locator('[data-testid="view-mode-N"]').click()
+    wait_for_state(page, lambda s: s["view"] == "N")
+    page.locator('[data-testid="zoom-to-data"]').click()
+    page.wait_for_timeout(1500)
+    save(page, "05_catalog_polar_view.png")
+
+    # 6. Hover tooltip: switch to the pan tool (GPU picking, as
+    # frontend/e2e/catalog.spec.ts does) and probe a few points near the
+    # centre of the now-dense polar cluster.
+    page.locator('[data-testid="tool-pan"]').click()
+    page.wait_for_timeout(300)
+    map_box = centre_of(page.locator('[data-testid="catalog-map"]'))
+    tooltip = page.locator('[data-testid="catalog-map"] .tooltip')
+    shown = False
+    for dx, dy in [(0, 0), (10, 0), (-10, 8), (0, -14), (22, 18), (-28, -12), (36, 4), (0, 36)]:
+        page.mouse.move(map_box["x"] + dx, map_box["y"] + dy)
+        page.wait_for_timeout(250)
+        if tooltip.is_visible():
+            shown = True
+            break
+    if not shown:
+        print("warning: no tooltip appeared while probing the polar cluster")
+    save(page, "06_catalog_hover_tooltip.png")
+
+    # 7. Box selection: back to the box tool, drag over the same cluster.
+    page.locator('[data-testid="tool-box"]').click()
+    page.wait_for_timeout(200)
+    before_n = debug_state(page)["selection_n"]
+    page.mouse.move(map_box["x"] - map_box["width"] * 0.28, map_box["y"] - map_box["height"] * 0.28)
+    page.mouse.down()
+    page.mouse.move(map_box["x"], map_box["y"], steps=8)
+    page.mouse.move(map_box["x"] + map_box["width"] * 0.28, map_box["y"] + map_box["height"] * 0.28, steps=8)
+    page.mouse.up()
+    wait_for_state(page, lambda s: s["selection_n"] > before_n, timeout=15.0)
+    page.wait_for_timeout(400)
+    save(page, "07_catalog_box_selection.png")
+
+    # 8. The selection tray with that selection named and saved.
+    page.locator('[data-testid="selection-name"]').fill(DEMO_SELECTION_NAME)
+    page.locator('[data-testid="save-selection"]').click()
+    page.locator('[data-testid="saved-selections"]', has_text=DEMO_SELECTION_NAME).wait_for(
+        state="visible", timeout=20_000
+    )
+    page.wait_for_timeout(400)
+    save(page, "08_selection_tray_saved.png")
+    page.close()
+
+
+def shot_poles(browser, url: str, stack_id: str) -> None:
+    page = browser.new_page(viewport=VIEWPORT)
+    open_app(page, url)
+    page.locator('[data-testid="tab-poles"]').click()
+
+    select = page.locator('[data-testid="stack-select"]')
+    select.locator(f'option[value="{stack_id}"]').wait_for(state="attached", timeout=60_000)
+    select.select_option(stack_id)
+    wait_for_state(page, lambda s: s.get("stack_id") == stack_id, timeout=60.0)
+    page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
+        state="attached", timeout=90_000
+    )
+
+    # 9. Step to a non-zero time with the graticule on (it defaults on).
+    slider = page.locator('[data-testid="time-slider"]')
+    slider.fill("10")
+    wait_for_state(page, lambda s: s.get("t") == 10, timeout=30.0)
+    page.wait_for_timeout(1200)
+    save(page, "09_poles_stepped_graticule.png")
+
+    # 10. Colour map changed to magma -- a LUT redraw, no refetch.
+    page.locator('[data-testid="cmap-select"]').select_option("magma")
+    wait_for_state(page, lambda s: s.get("cmap") == "magma", timeout=15.0)
+    page.wait_for_function(
+        "document.querySelector('[data-testid=\"frame-canvas\"]')?.dataset.cmap === 'magma'",
+        timeout=15_000,
+    )
+    page.wait_for_timeout(500)
+    save(page, "10_poles_colormap_magma.png")
+
+    # 11. The movie player: this stack has a rendered movie, so the native
+    # <video> element is present without starting any render job. Play it
+    # (rather than just showing it paused at 0:00, indistinguishable from
+    # screenshot 10) so the controls' current-time and pause icon prove it
+    # actually plays.
+    video = page.locator('[data-testid="stack-movie"]')
+    video.scroll_into_view_if_needed()
+    video.wait_for(state="visible", timeout=30_000)
+    deadline = time.time() + 60.0
+    while time.time() < deadline and video_ready_state(page) < 1:
+        page.wait_for_timeout(500)
+    page.evaluate("document.querySelector('[data-testid=\"stack-movie\"]').play()")
+    page.wait_for_timeout(1500)
+    save(page, "11_poles_movie.png")
+    page.close()
+
+
+def shot_strips(browser, url: str) -> None:
+    page = browser.new_page(viewport=VIEWPORT)
+    open_app(page, url)
+    page.locator('[data-testid="tab-strips"]').click()
+
+    rows = page.locator('[data-testid="strips-table"] tbody tr')
+    rows.first.wait_for(state="attached", timeout=60_000)
+    rows.first.click()
+    page.locator('[data-testid="current-strip"]').wait_for(state="visible", timeout=90_000)
+    page.locator('[data-testid="strip-image"] canvas').first.wait_for(state="visible", timeout=120_000)
+
+    # 12. The statistics panel: three Plotly figures for the opened strip.
+    page.locator('[data-testid="plot-isotropic"] .js-plotly-plot').wait_for(state="visible", timeout=180_000)
+    page.locator('[data-testid="plot-structure"] .js-plotly-plot').wait_for(state="visible", timeout=30_000)
+    page.locator('[data-testid="current-strip"]').scroll_into_view_if_needed()
+    page.wait_for_timeout(1000)
+    save(page, "12_strips_statistics.png")
+    page.close()
+
+
+def cleanup_demo_selection(base_url: str) -> None:
+    """Delete every saved selection this script created, so reruns are idempotent."""
+    try:
+        with urllib.request.urlopen(f"{base_url}api/selections", timeout=20) as response:
+            records = json.load(response)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        print(f"warning: could not list selections for cleanup: {exc}")
+        return
+    for record in records:
+        if str(record.get("name", "")).startswith(DEMO_SELECTION_NAME):
+            request = urllib.request.Request(f"{base_url}api/selections/{record['id']}", method="DELETE")
+            try:
+                urllib.request.urlopen(request, timeout=20)
+                print(f"cleaned up saved selection {record['id']!r}")
+            except (OSError, urllib.error.URLError) as exc:
+                print(f"warning: could not delete selection {record['id']!r}: {exc}")
+
+
+def pick_movie_stack(base_url: str) -> str:
+    """The id of a stack with a rendered movie, or the first stack otherwise."""
+    with urllib.request.urlopen(f"{base_url}api/stacks", timeout=30) as response:
+        stacks = json.load(response)
+    if not stacks:
+        raise RuntimeError("no stacks under <mirror>/regions/ -- nothing for the Poles tab to show")
+    with_movie = [s for s in stacks if s.get("has_movie")]
+    chosen = with_movie[0] if with_movie else stacks[0]
+    if not with_movie:
+        print("warning: no stack on this mirror has a rendered movie; screenshot 11 will show the placeholder text")
+    return str(chosen["id"])
 
 
 def main() -> int:
@@ -162,108 +363,15 @@ def main() -> int:
     )
     try:
         wait_ready(url)
+        movie_stack = pick_movie_stack(url)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-
-            def fresh_page():
-                """A brand-new Bokeh session (fresh CatalogState, tab 0 active).
-
-                In testing, the app's reactive updates (the map, the
-                coverage panels, and even the Selection caption/table)
-                could stop following filter changes after several tab
-                switches or a box-select in the same session, even
-                though the sidebar widgets and ``state`` itself kept
-                the right values throughout. Reloading -- exactly what
-                a real second visit to the URL does -- side-steps it
-                reliably, so each independent group of screenshots
-                below starts from a clean session rather than carrying
-                interaction history from the last group.
-                """
-                p = browser.new_page(viewport=VIEWPORT)
-                p.goto(url)
-                p.wait_for_timeout(9000)
-                return p
-
-            # 1. Catalog tab at first load.
-            page = fresh_page()
-            save(page, "01_catalog_overview.png")
-            page.close()
-
-            # 2. Poles tab at first load (default stack, step 1).
-            page = fresh_page()
-            click_tab(page, "Poles")
-            save(page, "02_poles_overview.png")
-            page.close()
-
-            # 3. Strips tab at first load (default-selected first strip).
-            page = fresh_page()
-            click_tab(page, "Strips")
-            save(page, "03_strips_overview.png")
-            page.close()
-
-            # 4-7. Catalog tab: filter, polar-view toggle, an over-tight
-            # filter, then a box-select -- all in one session, without ever
-            # leaving the Catalog tab, which is what keeps the reactivity
-            # reliable (see fresh_page's docstring).
-            page = fresh_page()
-
-            # 4. Filtered: band M, pixel <= 20 km, N polar.
-            page.get_by_role("button", name="M", exact=True).click()
-            page.wait_for_timeout(1200)
-            set_resolution(page, "20")
-            page.wait_for_timeout(1200)
-            page.get_by_label("latitude band").select_option(label="N polar")
-            wait_for_caption(page, "1,895")
-            save(page, "04_catalog_filtered.png")
-
-            # 5. Polar-view toggle.
-            page.get_by_role("button", name="N", exact=True).click()
-            page.wait_for_timeout(6000)
-            save(page, "05_catalog_polar_view.png")
-
-            # 6. An over-tight filter: empty selection/table.
-            set_resolution(page, "0.5")
-            wait_for_caption(page, "0 filtered")
-            scroll_to(page, "Selection")
-            save(page, "06_catalog_empty.png")
-
-            # 7. Box-select on the map (back to a resolution with matches
-            # first); scroll to the Selection table.
-            set_resolution(page, "20")
-            wait_for_caption(page, "1,895")
-            page.evaluate("document.getElementById('main').scrollTop = 0")
-            page.wait_for_timeout(1000)
-            page.locator("[title='Box Select']").first.click()
-            page.wait_for_timeout(500)
-            page.mouse.move(500, 350)
-            page.mouse.down()
-            page.mouse.move(600, 420, steps=5)
-            page.mouse.move(760, 560, steps=5)
-            page.mouse.up()
-            wait_for_caption(page, "selected")
-            scroll_to(page, "Selection")
-            save(page, "07_catalog_selection.png")
-            page.close()
-
-            # 8. Poles tab, sequence stack stepped to a non-zero time, graticule on.
-            page = fresh_page()
-            click_tab(page, "Poles")
-            slider = page.locator("input[type='range']").first
-            box = slider.bounding_box()
-            page.mouse.click(box["x"] + box["width"] * (10 / 24), box["y"] + box["height"] / 2)
-            page.wait_for_timeout(6000)
-            save(page, "08_poles_stepped.png")
-            page.close()
-
-            # 9. Strips tab, default-selected strip's viewer and statistics panel.
-            page = fresh_page()
-            click_tab(page, "Strips")
-            scroll_to(page, "Statistics")
-            page.wait_for_timeout(6000)
-            save(page, "09_strips_statistics.png")
-            page.close()
-
+            shot_first_loads(browser, url)
+            shot_catalog_workflow(browser, url)
+            shot_poles(browser, url, movie_stack)
+            shot_strips(browser, url)
             browser.close()
+        cleanup_demo_selection(url)
     finally:
         server.terminate()
         try:

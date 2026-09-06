@@ -1,238 +1,346 @@
 # The catalog browser: a guide
 
-This is a walkthrough of `jiram-catalog gui`, the three-tab Panel
-application that browses this repository's products in a web browser.
-Every screenshot below is a real capture of the running app (headless
-Chromium via Playwright, against the group's shared mirror), not a
-mockup; `docs/gui_guide/take_screenshots.py` reproduces them. If you
-just want to get the server running and a browser pointed at it, skip
-to ["Serving and tunnelling"](#serving-and-tunnelling) -- the rest of
-this page assumes it is already open in front of you.
+This is a walkthrough of `jiram-catalog gui`, the browser-based catalog
+of this repository's products. The server started by this command is
+now GUI v2: a small FastAPI backend that answers Arrow, JSON and PNG
+under `/api`, and a React + deck.gl single-page front end that holds
+all of the state and does all of the drawing in the browser. Every
+screenshot below is a real capture of the running app (headless
+Chromium via Playwright), not a mockup; `docs/gui_guide/take_screenshots.py`
+reproduces every one of them. If you just want to get the server
+running and a browser pointed at it, skip to
+["Serving and tunnelling"](#serving-and-tunnelling) -- the rest of this
+page assumes it is already open in front of you.
 
 The GUI does not compute anything new: it is a view and a selector over
 files the command line already wrote (`docs/usage.md`). Nothing you do
 in the browser touches the published archive mirror except the app's
-own cache, `<mirror>/gui_cache/`.
+own cache, `<mirror>/gui_cache/`, and the region stacks you explicitly
+ask it to build under `<mirror>/regions/`.
 
 ## About these screenshots
 
-Two things about how they were taken are worth knowing before reading
-them literally. First, the sidebar's filter panel is meant to swap to
-match the active tab (`app.py`'s `page()`), but in headless testing it
-sometimes kept showing the Catalog tab's filters after switching to
-Poles or Strips. This does not block anything -- the Poles and Strips
-tabs' own controls (the stack chooser and player, the strip library's
-filters) are already inside the tab body, not only in the sidebar --
-but a screenshot below may show "Catalog filters" in the sidebar while
-the main panel is on a different tab. Second, after several tab
-switches or a box-select in the same browser session, the
-boresight-coverage map, the coverage panels, and the Poles image
-sometimes stopped visibly repainting after a further filter or
-time-step change, even though the underlying data kept updating
-correctly the whole time (checked independently three ways: the
-Selection caption's counts, the selection table's actual rows, and a
-direct call to `apply_filters()` in a plain Python session all agreed).
-See the [FAQ](#faq) for what to do if you notice this yourself; it did
-not stop any of the screenshots below from being real, taken from the
-actual running app, deliberately reordered where necessary to
-demonstrate the control before triggering the symptom.
+Two things worth knowing before reading them literally. First, the
+Catalog tab's map sits above the coverage charts and the table in one
+scrolling column, and at a short browser window the map can be squeezed
+down to a thin strip well under its intended size before the charts and
+table give it room back -- a real, reproducible layout behaviour, not a
+headless-only artifact (confirmed by resizing the same page at several
+heights). The screenshots below were taken from a tall enough window
+that this does not happen; if your own window shows a sliver instead of
+a map, make it taller.
 
-## The three tabs
+Second, hovering a point on the Catalog map is answered by GPU picking
+through deck.gl when it can, and by a roughly fourteen-pixel
+nearest-point search over the same data when it cannot; this cluster
+node has no GPU, so every screenshot here runs on Chromium's SwiftShader
+software implementation of WebGL 2, which deck.gl accepts and which
+does perform GPU picking correctly (`docs/gui_v2_notes.md`). Every
+interaction shown below -- filtering, the polar toggle, hovering,
+box-selecting, saving a selection to the tray, stepping the time slider,
+changing the colour map, and opening a strip's statistics -- was driven
+headlessly by the screenshot script exactly as captured, and the same
+interactions are asserted on by the automated end-to-end suite
+(`frontend/e2e/*.spec.ts`) against a live backend. None of it had to be
+described in words instead of shown.
 
-### Catalog
+## The layout
+
+A top bar names the app, shows the mirror path and its counts (frames
+on the planet, stacks, strips, saved selections, the app version) from
+`/api/config`, and carries a **jobs** button that opens the list of
+every background job started in this session (kind, status, progress,
+message; queued jobs can be cancelled), polled every two seconds. Below
+it, a column of three view tabs on the left -- **Catalog**, **Poles**,
+**Strips** -- and, on the right, the **selection tray**, which is always
+visible no matter which tab is active. The middle is the active view.
+All three views stay mounted underneath even when their tab is not
+showing, so switching tabs never throws away a loaded stack or strip.
+
+![Catalog tab at first load](gui_guide/01_catalog_overview.png)
+
+![Poles tab at first load: no stack chosen yet](gui_guide/02_poles_overview.png)
+
+![Strips tab at first load: the library table and centres map, no strip opened yet](gui_guide/03_strips_overview.png)
+
+Neither Poles nor Strips auto-selects anything when the page loads --
+that is a deliberate difference from the previous version, where the
+Strips tab always opened on some strip whether you wanted one or not.
+Here both tabs start empty and wait for you to choose.
+
+## The selection tray
+
+This is the one part of the window every other view writes into, and it
+replaces the earlier "send to Poles" / "send to Strips" buttons, whose
+effect used to be invisible. The tray is a permanent column showing
+exactly what is selected, where it can be saved, and the two things you
+can do with a selection once you have one.
+
+**What can add to it.** A box or lasso drag on the Catalog map, a row's
+checkbox in the Catalog table, "add this page to selection" in the
+Catalog table's toolbar, "add to selection" on a frame's detail card,
+or "all `N` filtered" in the tray itself, which replaces the working
+selection with every row currently passing the Catalog's filters
+regardless of which tab you are looking at.
+
+**Tray controls**, one sentence each:
+
+| control | does |
+| --- | --- |
+| frames / orbits / latitude / band halves | a live summary of the working selection: frame count, the orbit numbers as compressed ranges (e.g. `4-11, 14, 16-17`), the min-to-max boresight latitude span, and which detector halves are present |
+| all `N` filtered | replaces the working selection with every row the Catalog's current filters pass |
+| clear | empties the working selection |
+| name | a text field for the selection's name, used when you save it |
+| Save selection | posts the working selection to `/api/selections` under this name (disabled until something is selected) |
+| Build stack... | opens a dialog to build a new region stack from the selection (disabled until something is selected) |
+| Show in Strips | filters the Strips tab to strips whose orbit is one of the selection's orbits, and switches to that tab (disabled until something is selected) |
+| saved selections list | every selection saved on this mirror (by anyone), each with **load** (replaces the working selection with the saved one) and **del** (deletes it) |
+
+The **Build stack...** dialog asks for a region (the four names in
+`configs/regions.yaml` plus any region that already has a stack), band
+(`M` or `L`), level (`sequence` or `frame`), and a maximum emission
+angle (default 80 deg). Submitting it saves the selection first, then
+posts `/api/stacks/build` with that selection's id, so the job is
+restricted to exactly those frames; the new file lands under
+`<mirror>/regions/<region>/` and the stack list on the Poles tab
+refreshes when the job finishes.
+
+The working selection and its name persist in your browser's
+`localStorage` across a reload; a **saved** selection is a small JSON
+file under `<mirror>/gui_cache/selections/<id>.json` that anyone
+pointed at this mirror can load by name -- the two are not the same
+thing, and only the second survives switching browsers or machines.
+
+![The selection tray, holding a named, saved selection made from a Catalog box-select](gui_guide/08_selection_tray_saved.png)
+
+## Catalog
 
 **What it shows.** Every camera frame that sees the planet -- about
 47,600 of the archive's 113,000 (frame, band-half) rows, the rest
 excluded because `on_planet_frac` is zero or the geometry engine could
-not fix the frame at all (`data.py`'s `catalog_table`) -- as boresight
-points on a longitude-latitude map, drawn with datashader so filtering
-redraws instantly regardless of point count. Below it, three coverage
-panels (by latitude band, by orbit, passes in time) track the same
-filtered set. Below that, a selection table lists whichever rows are
-currently selected (or, with nothing selected, whichever rows pass the
-filters), with CSV export and hand-off to the other two tabs.
+not fix the frame at all -- as boresight points on a map, drawn as GPU
+point primitives rather than rasterised, which is what makes hovering
+and picking work at full point count. Below the map, three coverage
+charts (frames per latitude band, per orbit, per month) come from
+`/api/catalog/summary` computed by the server with the same filter
+parameters the map applies on the client, so the two cannot disagree
+about what "the current set" is -- the table's caption prints both
+counts side by side for exactly this reason. Below that, a paginated
+table of the filtered rows with checkboxes into the selection tray.
 
-![Catalog tab at first load](gui_guide/01_catalog_overview.png)
-
-**Sidebar controls**, one sentence each:
+**Filter toolbar**, one sentence each:
 
 | control | does |
 | --- | --- |
-| orbit | inclusive range of orbit directories to include (1-99) |
-| date | inclusive start-time range |
+| orbit | inclusive numeric range of orbit directories to include (default 1 to 99, effectively all) |
 | band half | `all`, `L`, or `M` -- which detector half's frames to keep |
-| pixel <= (km) | drop frames whose median pixel size exceeds this |
-| emission <= (deg) | drop frames whose boresight emission angle exceeds this |
-| on-planet >= | drop frames whose on-planet pixel fraction is below this |
+| pixel <= km | drop frames whose median pixel size exceeds this (blank = no limit) |
+| emission <= deg | drop frames whose boresight emission angle exceeds this (blank = no limit) |
+| on-planet >= | drop frames whose on-planet pixel fraction is below this (blank = no limit) |
+| latitude band | one of the seven trackability-table bands, or `all` |
 | dayside only | keep only frames with a nonzero dayside fraction |
-| latitude band | restrict to one of the seven trackability-table bands, or `all` |
-| same-pass revisit only | keep only frames with a same-pass revisit partner (checkbox is hidden entirely when `index/trackability_frames.parquet` does not exist) |
-| view | `cyl` (longitude/latitude), `N`, or `S` (azimuthal-equidistant polar, `rho = 90 - |lat|`) |
+| same-pass revisit only | keep only frames with a same-pass revisit partner (hidden entirely when `has_trackability` is false, i.e. `index/trackability_frames.parquet` does not exist) |
+| reset filters | puts every filter above back to its default (disabled once they already are) |
 
-All the threshold filters *exclude*, they do not *require*: a frame
-whose emission angle the geometry engine could not resolve stays on the
-map rather than vanishing the moment a slider moves (`data.py`'s
-`apply_filters` docstring).
+Every threshold above *excludes*, it does not *require*: a frame whose
+emission angle the geometry engine could not resolve stays on the map
+instead of vanishing the moment a slider moves. The two exceptions are
+on-planet fraction and the latitude band, which drop a row outright when
+its value is missing -- a frame whose boresight misses the planet has no
+latitude to be inside a band (the toolbar says as much beneath the
+filters).
 
-**Panel controls:**
+**Map toolbar and map**, one sentence each:
 
 | control | does |
 | --- | --- |
-| the map itself | box-select (drag with the box-select tool active) sets the selection to every point inside the box, in whichever view (`cyl`/`N`/`S`) is current |
-| hover | below 5,000 filtered rows, individual points appear with product id, start time, pixel size, and emission angle in the hover; above that only the density raster is drawn |
-| CSV | downloads the current selection (or filtered set) as `jiram_selection.csv`, columns listed in `views_catalog.py`'s `TABLE_COLUMNS` |
-| Send to Poles | sets the Poles tab's stack list to the orbits present in the current selection |
-| Send to Strips | sets the Strips tab's latitude-band filter to the most common band in the selection, and its band-half filter too if the selection is single-band |
-| Clear selection | empties the selection; the table reverts to showing the filtered set |
+| tool: pan / box / lasso | pan drags the view and scrolls to zoom; box and lasso drag a rectangle or a free-form outline that adds the enclosed points to the selection on release |
+| replace instead of add | when checked, a box or lasso selection replaces the working selection instead of adding to it |
+| view: cyl / N / S | longitude-latitude, or azimuthal-equidistant polar centred on the north or south pole (`rho = 90 - abs(lat)`) |
+| colour by | orbit, year, pixel size (km), or emission (deg) -- the first two are categorical, the last two a viridis ramp, with a legend in the corner |
+| zoom to data | fits the view to the extent of whatever currently passes the filters |
+| reset view | fits the view to the fixed limits of the current projection (the whole globe in `cyl`, the whole cap in `N`/`S`) |
+| the map | hover for a tooltip (product id, time, orbit, sequence, pixel size, emission); click a point to open its frame detail card |
+
+**Table toolbar and table:**
+
+| control | does |
+| --- | --- |
+| caption | `N rows pass the filters (server agrees: M)` -- the client and server counts for the same filters |
+| prev / next, page label | 200 rows a page |
+| add this page to selection | adds the 200 rows currently shown to the working selection |
+| download CSV | downloads every filtered row (not just the current page, and independent of what is selected) as `jiram_catalog_filtered.csv`, a browser download |
+| row checkbox | adds or removes that one row from the working selection |
+| product id link | opens the frame's detail card: every column of `frames_with_geo` for that product, plus an "add to selection" button for whichever detector halves it has |
 
 **Typical workflow.**
-1. Narrow the sidebar filters until the coverage panels show the
-   subset you care about.
+1. Narrow the filter toolbar until the coverage charts show the subset
+   you care about.
 2. Optionally switch to a polar view for a pole-centred look.
-3. Box-select on the map, or leave the selection empty to work with
-   everything the filters pass.
-4. Read the selection table, or download it as CSV.
-5. Send the selection's orbits to Poles, or its latitude band to
-   Strips, to carry the context into the next tab.
+3. Box- or lasso-select on the map, check rows in the table, or use
+   "all `N` filtered" in the tray -- or do nothing and work with the
+   filtered set as it is.
+4. Read the table, or download it as CSV.
+5. Save the selection by name in the tray, and use it to build a stack
+   or jump to the matching strips.
 
-![Catalog tab filtered to band M, pixel size <= 20 km, N polar](gui_guide/04_catalog_filtered.png)
+![Filtered to band M, pixel size <= 20 km, N polar](gui_guide/04_catalog_filtered.png)
 
-![The N polar view, azimuthal-equidistant from the pole](gui_guide/05_catalog_polar_view.png)
+![The N polar view, azimuthal-equidistant from the pole, same filters](gui_guide/05_catalog_polar_view.png)
 
-![Selection table with rows, after a box-select](gui_guide/07_catalog_selection.png)
+![Hovering the polar cluster: a tooltip with a real product id](gui_guide/06_catalog_hover_tooltip.png)
 
-**What the exports produce and where they land.** The CSV button is a
-browser download (`jiram_selection.csv` or `jiram_strips.csv` on the
-Strips tab) -- it goes wherever your browser puts downloads, not onto
-the mirror. "Send to Poles" and "Send to Strips" only change filter
-state in this session; they write nothing.
+![A box selection over the same cluster: 1,627 frames added to the tray](gui_guide/07_catalog_box_selection.png)
 
-**What to do when the map looks empty.** The caption above the
-selection table reads `0 filtered of 0 filtered` when every row has
-been excluded. The two easiest filters to over-tighten are pixel size
-and on-planet fraction; the fastest fix is usually to set latitude band
-back to `all` or loosen whichever slider you touched last.
+**What the exports produce and where they land.** "download CSV" is a
+browser download; it goes wherever your browser puts downloads, not
+onto the mirror. "Save selection" writes
+`<mirror>/gui_cache/selections/<id>.json`, shared with anyone using this
+mirror. "Build stack..." writes a new NetCDF under
+`<mirror>/regions/<region>/`.
 
-![An over-tight filter: nothing left to select](gui_guide/06_catalog_empty.png)
+**What to do when the map looks empty.** The table caption reads `0
+rows pass the filters` when every row has been excluded. The two
+easiest filters to over-tighten are pixel size and on-planet fraction;
+the fastest fix is usually "reset filters" or loosening whichever
+slider you touched last. If the map looks like a thin coloured sliver
+rather than empty, that is the short-window layout behaviour described
+above, not an empty result -- check the "N of M drawn" count next to the
+map toolbar before assuming nothing survived the filters.
 
-### Poles
+## Poles
 
 **What it shows.** A viewer for the region time stacks
-`jiram-catalog region-stack` already wrote under `<mirror>/regions/`
-(`docs/gui_design.md`'s "First version": Poles is a viewer only in this
-build -- it cannot build a stack itself, see `docs/open_items.md`). A
-stack is never loaded whole: it is opened lazily and one time step is
-read when the player moves; the display stretch comes from a strided
-subsample of a few steps, not every pixel of every step
-(`data.py`'s `stack_stretch`).
+`jiram-catalog region-stack` already wrote under `<mirror>/regions/`,
+plus the means to build a new one from a tray selection. A stack is
+never loaded whole: it is opened lazily server-side and one time step
+is read when the player moves; the display stretch and the graticule
+are computed once per stack and cached under
+`<mirror>/gui_cache/meta_<key>.json`, keyed to the file's own size and
+modification time. Nothing here is auto-selected at first load.
 
-![Poles tab at first load](gui_guide/02_poles_overview.png)
-
-**Sidebar.** Just a note pointing at where stacks live
-(`<mirror>/regions/`); every actual control is in the tab body.
-
-**Panel controls:**
+**Toolbar and hints:**
 
 | control | does |
 | --- | --- |
-| stack | choose a stack from `<mirror>/regions/*/*.nc`; the list narrows to whichever orbits a Catalog-tab selection sent over, when any did |
-| or a path | type any NetCDF stack's path directly, anywhere on disk |
-| time (player) | steps through the stack's time axis; play/pause, step, and loop-policy (once/loop/reflect) controls |
-| stretch percentiles | the display's low/high percentile clip |
-| colour map | `gray`, `viridis`, `magma`, `inferno`, `cividis`, `bone` |
-| graticule | overlays parallels every 2 deg and meridians every 30 deg, computed from the stack's own `lat`/`lon_east` coordinate arrays |
-| emission overlay | overlays the stack's per-pixel emission angle (when the stack carries one) at 40% opacity |
-| metadata line | stack file, level (`frame`/`sequence`), band, region, km/px, current step and its timestamp, `seq_id`/orbit/`n_frames` where the stack carries them, and the current stretch's numeric limits |
+| stack | choose a stack from `<mirror>/regions/*/*.nc`, listed as `<id> - <band> <level>, <n> steps`, with `[movie]` when one has been rendered |
+| the summary line | shape, km/px, and file size of the chosen stack, from the listing |
+| the hint line | reminds you that frames selected in the Catalog can become a new stack via the tray's "Build stack..." |
 
-**Actions**, all three running in a background thread with a spinner
-and a status line that reports where the result landed:
+**Viewer controls**, once a stack is open:
 
-| action | writes |
+| control | does |
 | --- | --- |
-| Render movie | an MP4 via `movie.write_movie`, to the path in the "movie file" field (default `<mirror>/gui_cache/exports/<stack-stem>.mp4`) |
-| Export goflow triples | a constant-cadence dataset via `export_goflow.export_stack`, to the "goflow dataset" directory (default `<mirror>/gui_cache/exports/goflow_<stack-stem>`) |
-| Save PNG | a single-frame PNG of the current time step, matplotlib-rendered, to `<mirror>/gui_cache/exports/<stack-stem>_t<step>.png` |
+| play / pause, < / > | step through time; playback speed is the `speed` field, keyboard left/right also step it while this tab is focused |
+| time | the slider and its `t/N` label |
+| speed | frames per second while playing (1-30) |
+| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis` -- a 256-entry lookup table applied to pixels already in the browser, so changing it never needs a new request from the server |
+| graticule | overlays parallels every 2 deg and meridians every 30 deg, from the stack's own coordinate arrays (on by default) |
+| emission overlay | a 0-1 opacity slider blending in the per-pixel emission-angle PNG (always drawn with an inferno ramp), fetched only once you raise this above zero |
+| vmin / vmax | the display stretch's numeric limits; editing either refetches the frame at the new stretch, debounced by 350 ms so you can type without a flood of requests |
+| reset stretch | puts vmin/vmax back to the stack's own 1st/99th percentile |
+| the image itself | drag to pan, scroll to zoom (aspect ratio locked by construction, so it cannot distort); hovering shows an x/y (km) readout |
+| frame metadata | time, product id, sequence id, orbit, frame count, emission, km/px, and the served x/y range for the current step, from the stack's own per-time coordinates |
 
-All three destination fields are plain text inputs and can be pointed
-anywhere writable.
+**Movie panel:**
 
-**Typical workflow.**
-1. Pick a stack (or type a path to one).
-2. Step through time with the player; adjust the stretch, colour map,
-   and overlays as needed.
-3. Render a movie, export goflow triples, or save a PNG of the current
-   frame.
+| control | does |
+| --- | --- |
+| the player | a native `<video controls>` element over `/api/stacks/{id}/movie`, present only when the stack has a rendered movie |
+| Render movie | starts a background job (current speed as fps, 1st/99th percentile stretch, current colour map); reloads the video element when the job finishes |
+| Export triples | starts a background job that writes a constant-cadence velocity-model dataset; a toast reports where it landed and how many realizations |
 
-![The sequence stack at a non-zero time step, graticule on](gui_guide/08_poles_stepped.png)
+The next two frames are prefetched into a twenty-entry cache while
+playing, so playback should not stutter once it gets going.
+
+![A sequence stack stepped to a non-zero time, graticule on, gray colour map](gui_guide/09_poles_stepped_graticule.png)
+
+![The same frame with the colour map changed to magma -- an instant redraw, no new request](gui_guide/10_poles_colormap_magma.png)
+
+![The rendered movie, playing, beside the frame viewer](gui_guide/11_poles_movie.png)
+
+**What the exports produce and where they land.** A rendered movie is
+written next to its stack, `<mirror>/regions/<region>/<stem>.mp4`.
+"Export triples" writes under `<mirror>/gui_cache/exports/goflow_<id>/`
+by default. "Build stack..." (in the selection tray) writes
+`<mirror>/regions/<region>/<BAND>_orbits<token>_<level>.nc`, where
+`<token>` is the orbit list the job ran on, or `all` when it was built
+from a tray selection rather than an explicit orbit range.
 
 **What to do when a stack is slow to open.** A frame-level stack (every
 contributing frame kept, not composited per sequence) can be 2 GB; a
-sequence-level composite of the same orbit is a fraction of that and is
-what `_default_stack` in `views_poles.py` picks first for exactly this
-reason. On the current mirror, opening the 294-step, 2.25 GB
-`M_orbits4_frame.nc` costs under a second and about 280 MB of resident
-memory, and each further step reads in about 0.2 s (`docs/gui_usage.md`)
--- so a stack that stays slow past its first open is more likely a busy
-shared filesystem than the app; the busy spinner next to the metadata
-line is the honest signal to wait for rather than re-clicking.
+sequence-level composite of the same orbit is a fraction of that. The
+first time a given stack file is opened, the server computes its
+display stretch and graticule and writes them to
+`<mirror>/gui_cache/meta_<key>.json`; every later open of the same file
+(even after restarting the server) reads that cache instead of
+recomputing, so a stack that stays slow past its first open on this
+mirror is more likely a busy shared filesystem than the app itself.
+Stepping through time should stay fast throughout, since each frame is
+downsampled server-side before it is sent.
 
-### Strips
+## Strips
 
 **What it shows.** The per-pass strip library: a filterable table, a
-map of strip centres coloured by year, a viewer for the current strip,
-and that strip's statistics. Unlike Poles, Strips has no time axis --
-each strip is one independent look, reprojected onto its own
-tangent-plane grid (`docs/architecture.md`, "The two regimes, side by
-side"). On load, the first strip that passes the current filters is
-selected automatically, so the tab never opens on an empty viewer.
+small map of strip centres coloured by year, a viewer for whichever
+strip you open, and that strip's statistics. Unlike Poles, Strips has no
+time axis -- each strip is one independent look, reprojected onto its
+own tangent-plane grid (`docs/architecture.md`, "The two regimes, side
+by side"). Nothing is opened automatically; the table and centres map
+are there from the first load, and clicking a row or a point opens a
+strip.
 
-![Strips tab at first load](gui_guide/03_strips_overview.png)
-
-**Sidebar controls:**
+**Filter toolbar:**
 
 | control | does |
 | --- | --- |
+| latitude band | one of the seven trackability-table bands, or `all`; a strip is kept when its own latitude span overlaps the band, not just its centre |
 | band | `all`, `L`, or `M` |
-| latitude band | one of the seven trackability-table bands, or `all`; kept when the strip's own latitude span overlaps the band, not just its centre |
-| epoch | date range, kept when the strip's time span overlaps it |
-| km/px <= | resolution-class threshold |
-| valid fraction >= | threshold on the strip's own valid-pixel fraction |
-| dayside fraction >= | threshold on the strip's own dayside fraction |
+| resolution class | whichever resolution-class labels are present in this library's strips, or `all` |
+| valid frac >= | threshold on the strip's own valid-pixel fraction (default 0, i.e. no filter) |
+| dayside only | keep only strips with a nonzero dayside fraction |
+| strip count | `N of M strips` |
+| the tray's orbit note | shown only after "Show in Strips" in the tray; names the orbits it limited the table to, with a **clear** button |
 
-**Panel controls:**
+**Viewer and statistics**, once a strip is open:
 
 | control | does |
 | --- | --- |
-| library table | click a row to make that strip the current one; sortable, paginated |
-| centres map | strip centres coloured by year, hover shows id/orbit/band/resolution/latitude span |
-| colour map | the strip viewer's colour map |
-| the strip image | shown with its graticule and dashed local-time contours (every 2 h); the mask is transparent, not drawn |
-| cursor readout | latitude, longitude, local time, emission, and the pixel value under the pointer |
-| Export filtered list (CSV) | downloads the currently filtered library rows as `jiram_strips.csv` |
-
-**Statistics panel**, computed for the current strip only: isotropic
-spectrum `E(k)`, the one-dimensional spectra along `x` and `y`, and the
-second- and third-order structure functions (`S2`, signed `S3`). These
-come from `stats2d.strip_statistics` and are cached on first
-computation at `<mirror>/gui_cache/stats_<strip_id>.nc` -- the same
-Dataset a later population-level run would read (`data.py`'s
-`strip_stats`).
-
-![The default-selected strip's viewer and statistics](gui_guide/09_strips_statistics.png)
+| library table row / a point on the centres map | click either to open that strip |
+| current strip | the open strip's id |
+| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis`, same LUT mechanism as Poles |
+| graticule | parallels every 2 deg, meridians every 30 deg |
+| local-time contours | dashed contours every 2 h from the strip's own local-time field |
+| the image itself | drag to pan, scroll to zoom, hover for an x/y (km) readout |
+| Download stats (JSON) | downloads the current strip's statistics payload as `<strip_id>_stats.json`, a browser download (disabled until the statistics have loaded) |
+| isotropic spectrum | `E(k)` on log-log axes, annotated with the wavelength range it spans |
+| 1-D spectra (x, y) | the along-track and cross-track power spectra |
+| structure functions | `S2` (log-log) and the signed `S3` (linear, secondary axis) |
 
 **Typical workflow.**
-1. Filter the library down to the strips you want.
-2. Click a row (or start from the default selection) to open a strip.
-3. Read the image, the cursor readout, and the statistics below it.
-4. Export the filtered list as CSV if you need it outside the browser.
+1. Filter the library table down to the strips you want, or arrive here
+   from the tray's "Show in Strips".
+2. Click a row or a point on the centres map to open a strip.
+3. Read the image and its statistics; download the stats JSON if you
+   need them outside the browser.
 
-**What to do when a strip has no statistics yet.** `strip_stats` checks
-the on-disk cache first; if a strip has never been opened before, it
-computes `strip_statistics` synchronously -- unlike the Poles actions,
-this is not backgrounded, so the whole session pauses for a few seconds
-the first time a given strip is opened, then is instant on every later
-visit to that strip (the same cache file also survives a restart of the
-server).
+![The default gray-colour-map view of an opened strip, with graticule, local-time contours, and its three statistics plots](gui_guide/12_strips_statistics.png)
+
+**What the exports produce and where they land.** "Download stats
+(JSON)" is a browser download. There is no bulk CSV export of the
+filtered library on this tab (the Catalog tab's CSV export is the one
+that writes a file); the library table itself is the way to read many
+strips' metadata at once.
+
+**What to do when a strip has no statistics yet.** `/api/strips/{id}/stats`
+checks an on-disk cache first (`<mirror>/gui_cache/stats_<strip_id>.nc`,
+the same file `stats2d.strip_statistics` writes); if a strip has never
+been opened before, the server computes it on that request, which takes
+a few seconds. The three plot panels are simply absent until the
+request returns -- like every other network call here, it runs through
+the loading/error machinery rather than freezing the page, so the rest
+of the tab stays usable while you wait. Every later visit to that strip,
+including after a server restart, is instant.
 
 ## The two regimes, and how the tabs map to them
 
@@ -248,17 +356,23 @@ different products (`docs/architecture.md`):
 | designed for | velocity retrieval at a cadence | distribution-level statistics across many independent looks |
 | ground truth | Ingersoll et al. (2022) PJ4 maps and TRACKER4 vectors | none published; internal consistency only |
 
-**Catalog** sits above both regimes: it is the one place that shows
-every frame regardless of which regime (if either) it ends up feeding,
-and the "Send to Poles" / "Send to Strips" buttons are the intended
-route from a Catalog selection into whichever regime you are working
-in.
+**Catalog** sits above both regimes, as the one place that shows every
+frame regardless of which regime (if either) it ends up feeding, and
+the **selection tray** is the route from a Catalog selection into
+whichever regime you are working in: "Build stack..." feeds regime 1,
+"Show in Strips" feeds regime 2.
 
 ## Serving and tunnelling
 
 Exact commands, copied from `docs/gui_usage.md` (see that file for the
-full explanation of each flag). On a compute node, from an interactive
-allocation:
+full explanation of each flag; the same command now serves GUI v2 by
+default -- `--legacy` would serve the earlier Panel version instead,
+and nothing here uses it).
+
+Run the server on a compute node from an interactive allocation
+(Expanse discourages running work on the login nodes; an interactive
+node with tens of cores and 128 GB is the normal home for this tool).
+On the node:
 
 ```
 cd <repository>
@@ -266,59 +380,73 @@ uv run jiram-catalog gui --port 5006 --address 0.0.0.0 --no-browser
 ```
 
 `--address 0.0.0.0` is needed on a compute node because the login node
-has to be able to reach the server over the cluster network when it
-forwards your port. Then, from your laptop, in a second terminal:
+must be able to reach the server over the cluster network when it
+forwards your port; the default loopback binding only works when the
+browser tunnel terminates on the same machine. Then, from your laptop,
+in a second terminal:
 
 ```
 ssh -N -L 5006:<compute-node>:5006 <user>@login.expanse.sdsc.edu
 ```
 
-where `<compute-node>` is what `hostname` prints on the allocation.
-Open `http://localhost:5006` in your browser. The server has no
-authentication and the web socket origin check is disabled by default
-(needed for the tunnelled `localhost:5006` address to be accepted), so
-stop the server (Ctrl-C on the node) when you are done.
+where `<compute-node>` is the name printed by `hostname` on the
+allocation (for example `exp-2-45`). Open `http://localhost:5006` in
+your browser. The server has no authentication, so while it runs any
+process on the cluster network can open it; stop it when you are done
+(Ctrl-C on the node). The web socket origin check is disabled by
+default so the tunnelled `localhost:5006` address is accepted.
 
 ## FAQ
 
-**Why does the sidebar sometimes show the wrong tab's filters?** The
-sidebar is meant to swap to match whichever tab is active
-(`app.py`'s `page()`, bound to `tabs.param.active`). In headless
-testing this swap sometimes lagged behind a tab switch. It does not
-block any control -- Poles' and Strips' own controls are inside the tab
-body already, not only in the sidebar -- so if you see this, it is
-cosmetic; nothing is missing, just possibly mislabeled.
+**Why does the Catalog map sometimes look like a thin strip instead of
+filling its box?** The map sits above the coverage charts and the table
+in one column, and at a short browser window that column runs out of
+room and squeezes the map down before it touches the charts or table --
+confirmed by resizing the same page at several heights, not a headless
+quirk. Maximizing the browser window, or using a portrait-oriented
+screen, gives it back its full height; the "N of M drawn" count next to
+the map toolbar tells you the real point count regardless of how big
+the map is drawn.
 
-**I changed a filter, moved the time slider, or toggled the view, and
-the map/image looks unchanged. Is my change lost?** In headless
-testing this happened after several tab switches or a box-select in
-one session; the underlying value was still correct every time it was
-checked directly (the Selection caption and table, and a plain-Python
-call to `apply_filters()`, all agreed with what the sidebar showed).
-Trust the caption and table over the plot in that case. If it persists,
-reloading the page opens a fresh session and clears it.
+**Where does anything I export actually go?** Saved selections under
+`<mirror>/gui_cache/selections/`; a built stack under
+`<mirror>/regions/<region>/`; a rendered movie next to its stack; a
+goflow export under `<mirror>/gui_cache/exports/` by default; strip
+statistics cached at `<mirror>/gui_cache/stats_<strip_id>.nc`; stack
+metadata cached at `<mirror>/gui_cache/meta_<key>.json`. CSV and JSON
+downloads are browser downloads, not files on the mirror. Nothing else
+under the mirror is touched, and no request leaves the node.
 
-**Where does anything I export actually go?** Everything the GUI writes
-lands under `<mirror>/gui_cache/`: per-strip statistics as
-`stats_<strip_id>.nc`, and, by default, movies/PNGs/goflow datasets
-under `gui_cache/exports/`. CSV downloads are a browser download, not a
-file on the mirror. Nothing else under the mirror is touched, and no
-request leaves the node (`docs/gui_usage.md`).
+**Does it remember my filters and selection?** The Catalog's filters
+and the working selection persist in your browser's own `localStorage`,
+so a reload of the page lands you back where you were -- but only in
+that browser, on that machine; a private window or a browser with site
+data disabled will not remember anything, and it degrades quietly
+rather than erroring. A **saved** selection (the tray's "Save
+selection" button) is different: it is a small named file on the
+mirror itself, visible to anyone pointed at the same mirror, and is the
+way to hand a selection to a collaborator or to yourself on another
+machine.
 
-**Can I save and reload a session?** Yes -- the sidebar's "Save
-session" button writes the filters, the selection, and the current
-stack/strip as a small JSON file (`CatalogState.to_json`); the "load
-session" file input below it restores one. A session file is worth
-keeping next to a figure it produced: it is the selection the figure
-was made from.
+**What changed from the previous version?** State and rendering now
+live in the browser rather than the server: colour map changes are an
+instant redraw (no request that can silently fail to arrive), hovering
+works at full point count because the points are on the client, a
+rendered movie plays in a native video element, and zooming cannot
+distort the aspect ratio. The selection tray replaces the earlier
+"send to Poles" / "send to Strips" buttons with a permanent, visible
+object. Two things the earlier version had are gone: an explicit
+"save session" file and a single-frame PNG export from the Poles tab;
+saved selections and the stats JSON download cover the corresponding
+uses that carried over.
 
-**Which interactions could this guide not verify visually?** Clicking a
-different row in the Strips library table to change the current strip
-could not be driven reliably through headless Chromium for this guide
-(the row highlights, but the viewer did not always follow within a
-reasonable wait); the default-selected strip shown in the screenshots
-above is genuine and its statistics are real, but a screenshot of a
-*second*, explicitly clicked strip is not included for that reason.
-Everything else described above -- filters, the box-select, the polar
-toggle, the time-step player, tab switching -- was driven headlessly
-and is described from what `src/jiram_catalog/gui/` actually does.
+**Which interactions could this guide not verify visually?** None, this
+time -- every screenshot above, including the box-select, the polar
+toggle, the hover tooltip, saving a selection, stepping the time slider
+and changing the colour map, opening a strip, and reading its
+statistics, was driven headlessly by
+`docs/gui_guide/take_screenshots.py` and is also exercised by the
+automated end-to-end suite. The one caveat in this guide is the
+short-window map-squeeze behaviour described above, which is a real
+layout behaviour of the app rather than something the guide could not
+capture.

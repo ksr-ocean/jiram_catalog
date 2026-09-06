@@ -1,0 +1,32 @@
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+
+.body { display: grid; grid-template-columns: 92px 1fr 300px; min-height: 0; }
+
+.tabs { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--line); background: var(--panel); }
+.tab { text-align: left; padding: 7px 8px; background: none; border: 1px solid transparent; }
+.tabActive { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
+
+.main { min-width: 0; min-height: 0; overflow: auto; padding: 8px; }
+
+.topbar { display: flex; align-items: center; gap: 14px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { font-weight: 700; letter-spacing: 0.02em; }
+.meta { color: var(--muted); font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+.spacer { flex: 1; }
+
+.tray { border-left: 1px solid var(--line); background: var(--panel); padding: 8px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.trayStat { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.trayStat b { color: var(--text); font-weight: 600; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.savedList { max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+.savedItem { display: flex; gap: 4px; align-items: center; padding: 3px 5px; border-bottom: 1px solid var(--line); }
+.savedName { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.toasts { position: fixed; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 40; max-width: 420px; }
+.toast { padding: 7px 10px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel-2); box-shadow: 0 6px 18px #0008; }
+.toastError { border-color: var(--error); }
+
+.modalBackdrop { position: fixed; inset: 0; background: #000a; display: grid; place-items: center; z-index: 50; }
+.modal { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; min-width: 340px; max-width: 80vw; max-height: 80vh; overflow: auto; }
+
+.spinner { color: var(--accent); font-size: 12px; }
+.error { color: var(--error); }

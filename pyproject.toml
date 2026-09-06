@@ -8,6 +8,7 @@ dependencies = [
     "bokeh>=3.9.2",
     "certifi>=2026.7.22",
     "datashader>=0.19.1",
+    "fastapi>=0.141.1",
     "holoviews>=1.23.2",
     "hvplot>=0.12.2",
     "imageio>=2.37.4",
@@ -22,6 +23,7 @@ dependencies = [
     "pyarrow>=25.0.1",
     "pyyaml>=6.0.3",
     "spiceypy>=8.2.0",
+    "uvicorn[standard]>=0.52.4",
     "xarray>=2026.7.0",
 ]
 
@@ -34,5 +36,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
 ]

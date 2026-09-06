@@ -1,0 +1,10 @@
+.wrap { position: relative; width: 100%; background: #0b0d11; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.deck { position: absolute; inset: 0; }
+.readout {
+  position: absolute; left: 6px; bottom: 6px; z-index: 2;
+  background: #0b0d11cc; border: 1px solid var(--line); border-radius: 4px;
+  padding: 2px 6px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.colorbar { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.bar { width: 140px; height: 10px; border: 1px solid var(--line); border-radius: 2px; }
+.hidden { display: none; }

@@ -13,6 +13,15 @@ just for the browser.
 
 ![The Catalog tab: every frame that sees the planet, filterable and selectable](docs/gui_guide/01_catalog_overview.png)
 
+> **GUI v2 (2026-09-06).** The browser is now a React + deck.gl front
+> end served by a FastAPI backend; `jiram-catalog gui` serves it by
+> default and `--legacy` serves the earlier Panel version. Colour maps,
+> stretch, hover and selection run in the browser; movies play in a
+> native player; the selection tray replaces the old "send to" buttons.
+> The illustrated guide in `docs/gui_guide.md` still shows the earlier
+> version and will be regenerated; the v2 architecture is in
+> `docs/gui_v2_notes.md`.
+
 ## Start in five minutes
 
 For a collaborator who already has access to the group's shared

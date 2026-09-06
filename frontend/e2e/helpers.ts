@@ -8,6 +8,7 @@ export interface DebugState {
   stack_id: string | null;
   t: number;
   cmap: string;
+  stats_visible: boolean;
 }
 
 /** The app's own state, read from the hidden `#debug-state` element. */

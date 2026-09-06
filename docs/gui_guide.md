@@ -365,9 +365,7 @@ whichever regime you are working in: "Build stack..." feeds regime 1,
 ## Serving and tunnelling
 
 Exact commands, copied from `docs/gui_usage.md` (see that file for the
-full explanation of each flag; the same command now serves GUI v2 by
-default -- `--legacy` would serve the earlier Panel version instead,
-and nothing here uses it).
+full explanation of each flag).
 
 Run the server on a compute node from an interactive allocation
 (Expanse discourages running work on the login nodes; an interactive

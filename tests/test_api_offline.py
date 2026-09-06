@@ -3,9 +3,9 @@
 Everything the API answers is built here in a temporary directory -- a
 twenty-row catalog, a two-step stack, one strip -- so the suite says
 nothing about the archive and everything about the service that serves
-it.  The stack and strip builders are the GUI v1 ones
-(``test_gui_offline``), which is the point: the two front ends draw the
-same objects, so they should be tested against the same fakes.
+it.  The stack, strip and statistics builders live here rather than in a
+fixture module because they are the contract's own objects: a change to
+what a strip carries should break this file and nothing else.
 """
 
 from __future__ import annotations
@@ -23,11 +23,10 @@ import xarray as xr
 from fastapi.testclient import TestClient
 
 from jiram_catalog.api import catalog as api_catalog
+from jiram_catalog.api import data as api_data
 from jiram_catalog.api.app import create_app
-from jiram_catalog.gui import data as gui_data
 from jiram_catalog.stacks import write_stack
 from jiram_catalog.strips import write_strip
-from test_gui_offline import synthetic_stack, synthetic_stats, synthetic_strip
 
 FRAMES = 10
 STRIP_ID = "04_L_synth_00"
@@ -62,6 +61,100 @@ EXPECTED_TYPES: dict[str, object] = {
     "has_partner": pa.bool_(),
     "best_dt_s": pa.float32(),
 }
+
+
+# ---------------------------------------------------------------------------
+# synthetic products
+# ---------------------------------------------------------------------------
+def _grid(size: int = 32) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """A 32 x 32 polar patch whose longitudes cross the 0/360 seam."""
+    x_km = np.linspace(-480.0, 480.0, size)
+    y_km = np.linspace(-480.0, 480.0, size)
+    xx, yy = np.meshgrid(x_km, y_km)
+    radius = np.hypot(xx, yy)
+    lat = 90.0 - radius / 100.0
+    lon = np.degrees(np.arctan2(yy, xx)) % 360.0
+    return x_km, y_km, lat.astype("float32"), lon.astype("float32")
+
+
+def synthetic_stack(steps: int = 2, size: int = 32) -> xr.Dataset:
+    """A two-step stack with the coordinates a region stack carries."""
+    x_km, y_km, lat, lon = _grid(size)
+    rng = np.random.default_rng(4)
+    image = rng.normal(1.0, 0.1, (steps, size, size)).astype("float32")
+    valid = np.ones((steps, size, size), dtype=bool)
+    valid[:, :2, :] = False
+    return xr.Dataset(
+        data_vars={
+            "image": (("time", "y", "x"), image),
+            "valid": (("time", "y", "x"), valid),
+            "emission": (("time", "y", "x"), (60.0 * np.ones_like(image)).astype("float32")),
+        },
+        coords={
+            "time": pd.to_datetime(["2017-02-02T08:10", "2017-02-02T08:20"])[:steps],
+            "x_km": ("x", x_km),
+            "y_km": ("y", y_km),
+            "lat": (("y", "x"), lat),
+            "lon_east": (("y", "x"), lon),
+            "product_id": ("time", np.array([f"JIR_IMG_RDR_{i}" for i in range(steps)])),
+            "seq_id": ("time", np.array(["04_M_seq"] * steps)),
+            "orbit": ("time", np.full(steps, 4, dtype="int32")),
+        },
+        attrs={"region": "synthetic", "band": "M", "level": "sequence", "km_per_px": 15.0},
+    )
+
+
+def synthetic_strip(strip_id: str, size: int = 32) -> xr.Dataset:
+    """A strip Dataset with the mask, the angles and the local-time clock."""
+    x_km, y_km, lat, lon = _grid(size)
+    rng = np.random.default_rng(7)
+    image = rng.normal(1.0, 0.05, (size, size)).astype("float32")
+    valid = np.ones((size, size), dtype=bool)
+    valid[:3, :] = False
+    local_time = (lon / 15.0) % 24.0
+    return xr.Dataset(
+        data_vars={
+            "image": (("y", "x"), image),
+            "valid": (("y", "x"), valid),
+            "emission": (("y", "x"), (45.0 * np.ones((size, size))).astype("float32")),
+            "incidence": (("y", "x"), (70.0 * np.ones((size, size))).astype("float32")),
+        },
+        coords={
+            "x_km": ("x", x_km),
+            "y_km": ("y", y_km),
+            "lat": (("y", "x"), lat),
+            "lon_east": (("y", "x"), lon),
+            "local_time_h": (("y", "x"), local_time.astype("float32")),
+        },
+        attrs={
+            "strip_id": strip_id,
+            "km_per_px": 30.0,
+            "band": "L",
+            "orbit": 4,
+            "valid_frac": 0.9,
+            "rows": size,
+            "cols": size,
+        },
+    )
+
+
+def synthetic_stats() -> xr.Dataset:
+    """The shape ``stats2d.strip_statistics`` returns, without the cost."""
+    k = np.linspace(0.0, 3e-5, 40)
+    r = np.linspace(3e4, 9e5, 20)
+    with np.errstate(divide="ignore"):
+        spectrum = np.where(k > 0, k ** -2.0, np.nan)
+    return xr.Dataset(
+        data_vars={
+            "E": ("k", spectrum),
+            "P_x": ("kx", spectrum),
+            "P_y": ("ky", spectrum),
+            "S2": ("r", (r / 1e5) ** 0.66),
+            "S3": ("r", -((r / 1e5) ** 1.0)),
+        },
+        coords={"k": k, "kx": k, "ky": k, "r": r},
+        attrs={"km_per_px": 30.0, "band": "L", "orbit": 4, "valid_frac": 0.9},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +524,7 @@ def test_strip_meta_and_image(client):
 
 
 def test_strip_stats_uses_the_contract_names(client, monkeypatch):
-    monkeypatch.setattr(gui_data, "strip_stats", lambda mirror, strip: synthetic_stats())
+    monkeypatch.setattr(api_data, "strip_stats", lambda mirror, strip: synthetic_stats())
     payload = client.get(f"/api/strips/{STRIP_ID}/stats").json()
     assert len(payload["k"]) == len(payload["E"]) == 40
     assert len(payload["r_m"]) == len(payload["S2"]) == len(payload["S3"]) == 20

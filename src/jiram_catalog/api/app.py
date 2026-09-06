@@ -20,9 +20,8 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from ..config import mirror_root, paper_data_root
-from ..gui import data as gui_data
 from ..webapp import dist_dir
-from . import catalog, selections, stacks, strips
+from . import catalog, data, selections, stacks, strips
 from .jobs import JobManager
 
 LOGGER = logging.getLogger(__name__)
@@ -65,7 +64,7 @@ def config(request: Request) -> dict[str, Any]:
     mirror = request.app.state.mirror
     counts = {
         "frames_on_planet": _count(lambda: len(catalog.catalog_frame(mirror))),
-        "strips": _count(lambda: len(gui_data.strips_table(mirror))),
+        "strips": _count(lambda: len(data.strips_table(mirror))),
         "stacks": _count(lambda: len(stacks.stack_index(mirror))),
         "selections": _count(lambda: len(selections.load_all(mirror))),
     }
@@ -74,7 +73,7 @@ def config(request: Request) -> dict[str, Any]:
         "paper_data": str(paper_data_root()),
         "version": version(),
         "counts": counts,
-        "has_trackability": bool(_safe(lambda: gui_data.has_trackability(mirror), False)),
+        "has_trackability": bool(_safe(lambda: data.has_trackability(mirror), False)),
     }
 
 
@@ -132,7 +131,7 @@ def create_app(mirror: str | Path | None = None) -> FastAPI:
 
     app = FastAPI(title=TITLE, version=version(), lifespan=lifespan)
     app.state.mirror = root
-    app.state.jobs = JobManager(gui_data.gui_cache_dir(root) / "jobs")
+    app.state.jobs = JobManager(data.gui_cache_dir(root) / "jobs")
     stacks.register_jobs(app.state.jobs, root)
 
     app.include_router(meta_router)

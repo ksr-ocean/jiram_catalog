@@ -59,6 +59,11 @@ that safe. Colleagues and future agents should follow the same loop.
   `certifi` CA bundle; no system ffmpeg (use `imageio-ffmpeg`); the
   session scratch directory is wiped between sessions, so durable
   notes go in `docs/`.
+- Executors do not edit the committed front-end build
+  (`src/jiram_catalog/webapp/dist/`) directly: it is generated from
+  `frontend/` by `npm run build`, and a hand edit there is invisible
+  the next time someone rebuilds. Change `frontend/src/` and rebuild
+  instead.
 
 ## Experience so far (2026-09-04/05)
 - Two-stage reconnaissance (archive, geometry) cost about 230k Sonnet

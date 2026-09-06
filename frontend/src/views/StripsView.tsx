@@ -2,6 +2,10 @@
  * The Strips view: library table, a map of strip centres, the viewer, and
  * the per-strip statistics.
  *
+ * The statistics are behind a toggle and start hidden: they are three Plotly
+ * figures over a server round trip, and what the user is usually looking at
+ * is the image, which takes the free space back whenever they are away.
+ *
  * "Show in Strips" from the selection tray sets the orbit filter here, and
  * the filter row says so in words -- v1's "send to Strips" changed a hidden
  * filter and looked like it had done nothing.
@@ -23,6 +27,11 @@ import { categoricalColor, rgbCss } from '../lib/colorScale';
 import { graticule } from '../lib/projection';
 import { COLOR_MAPS, type ColorMapName } from '../lib/lut';
 
+/** Viewer height with the statistics panel open, and with it away: the three
+ *  cards are about 260 px of chart, and the image takes every one of them. */
+const VIEWER_HEIGHT = 380;
+const VIEWER_HEIGHT_ALONE = 640;
+
 export function StripsView({ active }: { active: boolean }) {
   const strips = useStore((s) => s.strips);
   const stripId = useStore((s) => s.stripId);
@@ -34,6 +43,8 @@ export function StripsView({ active }: { active: boolean }) {
   const setStripOrbitFilter = useStore((s) => s.setStripOrbitFilter);
   const showGraticule = useStore((s) => s.showGraticule);
   const setShowGraticule = useStore((s) => s.setShowGraticule);
+  const statsVisible = useStore((s) => s.statsVisible);
+  const setStatsVisible = useStore((s) => s.setStatsVisible);
 
   const [filters, setFilters] = useState<StripFilters>(DEFAULT_STRIP_FILTERS);
   const [cmap, setCmap] = useState<ColorMapName>('gray');
@@ -246,6 +257,13 @@ export function StripsView({ active }: { active: boolean }) {
               local-time contours
             </label>
             <button
+              data-testid="toggle-stats"
+              aria-pressed={statsVisible}
+              onClick={() => setStatsVisible(!statsVisible)}
+            >
+              {statsVisible ? 'Hide statistics' : 'Show statistics'}
+            </button>
+            <button
               data-testid="download-stats"
               disabled={!stats}
               onClick={() => stats && downloadText(`${stripId}_stats.json`, JSON.stringify(stats, null, 1), 'application/json')}
@@ -261,60 +279,63 @@ export function StripsView({ active }: { active: boolean }) {
             contours={showContours ? stripMeta?.local_time_contours ?? null : null}
             showGraticule={showGraticule}
             testId="strip-image"
-            height={380}
+            height={statsVisible ? VIEWER_HEIGHT : VIEWER_HEIGHT_ALONE}
+            grow={!statsVisible}
             emptyMessage="loading the strip..."
           />
 
-          <div className={styles.charts}>
-            <div className={styles.card}>
-              <h3>isotropic spectrum</h3>
-              {active && stats && (
-                <Plot
-                  testId="plot-isotropic"
-                  data={isotropic}
-                  height={210}
-                  layout={{
-                    xaxis: { type: 'log', title: { text: 'k (rad/m)' } },
-                    yaxis: { type: 'log', title: { text: 'E(k)' } },
-                    annotations: annotateWavelengths(stats.k),
-                  }}
-                />
-              )}
+          {statsVisible && (
+            <div className={styles.charts} data-testid="strip-stats">
+              <div className={styles.card}>
+                <h3>isotropic spectrum</h3>
+                {active && stats && (
+                  <Plot
+                    testId="plot-isotropic"
+                    data={isotropic}
+                    height={210}
+                    layout={{
+                      xaxis: { type: 'log', title: { text: 'k (rad/m)' } },
+                      yaxis: { type: 'log', title: { text: 'E(k)' } },
+                      annotations: annotateWavelengths(stats.k),
+                    }}
+                  />
+                )}
+              </div>
+              <div className={styles.card}>
+                <h3>1-D spectra (x, y)</h3>
+                {active && stats && (
+                  <Plot
+                    testId="plot-1d"
+                    data={oneD}
+                    height={210}
+                    layout={{
+                      showlegend: true,
+                      legend: { x: 0.6, y: 1 },
+                      xaxis: { type: 'log', title: { text: 'k (rad/m)' } },
+                      yaxis: { type: 'log', title: { text: 'P' } },
+                    }}
+                  />
+                )}
+              </div>
+              <div className={styles.card}>
+                <h3>structure functions</h3>
+                {active && stats && (
+                  <Plot
+                    testId="plot-structure"
+                    data={structure}
+                    height={210}
+                    layout={{
+                      showlegend: true,
+                      legend: { x: 0.05, y: 1 },
+                      xaxis: { type: 'log', title: { text: 'r (m)' } },
+                      yaxis: { type: 'log', title: { text: 'S2' } },
+                      yaxis2: { overlaying: 'y', side: 'right', title: { text: 'S3 (signed)' } },
+                    }}
+                  />
+                )}
+              </div>
             </div>
-            <div className={styles.card}>
-              <h3>1-D spectra (x, y)</h3>
-              {active && stats && (
-                <Plot
-                  testId="plot-1d"
-                  data={oneD}
-                  height={210}
-                  layout={{
-                    showlegend: true,
-                    legend: { x: 0.6, y: 1 },
-                    xaxis: { type: 'log', title: { text: 'k (rad/m)' } },
-                    yaxis: { type: 'log', title: { text: 'P' } },
-                  }}
-                />
-              )}
-            </div>
-            <div className={styles.card}>
-              <h3>structure functions</h3>
-              {active && stats && (
-                <Plot
-                  testId="plot-structure"
-                  data={structure}
-                  height={210}
-                  layout={{
-                    showlegend: true,
-                    legend: { x: 0.05, y: 1 },
-                    xaxis: { type: 'log', title: { text: 'r (m)' } },
-                    yaxis: { type: 'log', title: { text: 'S2' } },
-                    yaxis2: { overlaying: 'y', side: 'right', title: { text: 'S3 (signed)' } },
-                  }}
-                />
-              )}
-            </div>
-          </div>
+          )}
         </>
       )}
     </div>

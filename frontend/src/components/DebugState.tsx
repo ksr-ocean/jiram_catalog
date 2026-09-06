@@ -16,6 +16,7 @@ export function DebugState() {
   const stackId = useStore((s) => s.stackId);
   const t = useStore((s) => s.t);
   const cmap = useStore((s) => s.cmap);
+  const statsVisible = useStore((s) => s.statsVisible);
 
   const state = {
     n_points: columns.n,
@@ -25,6 +26,7 @@ export function DebugState() {
     stack_id: stackId,
     t,
     cmap,
+    stats_visible: statsVisible,
   };
   return (
     <pre id="debug-state" style={{ display: 'none' }}>

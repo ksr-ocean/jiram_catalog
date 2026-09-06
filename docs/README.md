@@ -29,10 +29,13 @@ one line each; follow the links for the rest.
 
 ## The GUI
 
-- [`gui_design.md`](gui_design.md) -- the agreed design (three tabs,
-  two regimes, what ships in the first version vs. later).
 - [`gui_usage.md`](gui_usage.md) -- serving it, tunnelling to it from a
   laptop, what each tab does, what it writes.
+- [`gui_guide.md`](gui_guide.md) -- the full walkthrough, tab by tab,
+  with real screenshots.
+- [`gui_v2_notes.md`](gui_v2_notes.md) -- the React + deck.gl front
+  end's architecture, state model, and design intent, for anyone
+  extending it.
 
 ## Process
 
@@ -79,8 +82,11 @@ you need the exact column list, formula, or CLI signature it specifies.
   library: chunking, grids, the index.
 - [`specs/2026-09-05_trackability.md`](specs/2026-09-05_trackability.md)
   -- the repeat-view and displacement-resolvability analysis.
-- [`specs/2026-09-05_gui_v1.md`](specs/2026-09-05_gui_v1.md) -- the
-  Panel application's first version.
+- [`specs/2026-09-06_api_contract.md`](specs/2026-09-06_api_contract.md)
+  -- the GUI v2 API contract shared by the backend and the front end.
+- [`specs/2026-09-06_frontend_v2.md`](specs/2026-09-06_frontend_v2.md)
+  -- the React + deck.gl front end that replaced the first version's
+  server-rendered GUI.
 - [`specs/2026-09-05_generalize_paths.md`](specs/2026-09-05_generalize_paths.md)
   -- removing hardcoded paths, `config.py`, `jiram-catalog config`.
 - [`specs/2026-09-05_documentation.md`](specs/2026-09-05_documentation.md)

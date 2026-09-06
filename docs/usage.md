@@ -222,8 +222,12 @@ uv run jiram-catalog strip-stats --orbits 4,24 --band M --resolution-class 150 -
 usage: jiram-catalog gui [-h] [--mirror MIRROR] [--port PORT]
                          [--address ADDRESS] [--no-browser] [-v]
 ```
-Serves the three-tab Panel application. See `docs/gui_usage.md` for the
-SSH-tunnel workflow, what each tab shows, and what it writes.
+Serves the three-tab browser application: a FastAPI backend under
+`src/jiram_catalog/api/` answering Arrow/JSON/PNG, and a React + deck.gl
+front end (`frontend/`, committed as a built bundle) that holds all
+state and does all drawing in the browser. See `docs/gui_usage.md` for
+the SSH-tunnel workflow, what each tab shows, and what it writes, and
+`docs/gui_v2_notes.md` for the front end's architecture.
 
 ```
 uv run jiram-catalog gui --port 5006 --no-browser

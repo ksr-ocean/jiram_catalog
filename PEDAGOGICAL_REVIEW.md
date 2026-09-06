@@ -375,10 +375,13 @@ SPICE dependency):
   pipeline stage but the tool used to validate every geometric claim
   above it against the one published result this project can check
   itself against.
-- **`gui/`** (`state.py`, `data.py`, `views_catalog.py`,
-  `views_poles.py`, `views_strips.py`, `app.py`) plus **`gui_cmd.py`**
-  — a three-tab Panel web application that reads everything the
-  command line already wrote and computes no science of its own.
+- **`api/`** (`app.py`, `catalog.py`, `stacks.py`, `strips.py`,
+  `selections.py`, `jobs.py`, `images.py`, `arrow.py`) plus
+  **`frontend/`** (a separate TypeScript build, not under `src/`) and
+  **`gui_cmd.py`** — a three-tab browser application, a FastAPI
+  backend paired with a React + deck.gl front end, that reads
+  everything the command line already wrote and computes no science of
+  its own.
 - **`cli.py`** — the argparse entry point; wires every subcommand
   together, and is the one file only the project lead edits (see
   section 4.16).
@@ -1995,7 +1998,7 @@ quantitative counts.
 rows passing `geo_ok`, `on_planet_frac >= 0.3`, `bore_emission <= 70`,
 each labelled with one of seven latitude bands (`LAT_BAND_NAMES` — S
 polar/mid/low, equator, N low/mid/polar — the same seven bands the GUI
-uses for its coverage panel). `build_pairs`: every *candidate* repeat
+uses for its coverage charts). `build_pairs`: every *candidate* repeat
 view — two frames of the same orbit and band half, 90 seconds to 6
 hours apart, whose boresights fall within a generous separation
 threshold. `add_per_frame_stats`: per-frame `has_partner`,
@@ -2090,135 +2093,164 @@ across 61 orbits (`docs/reports/trackability.md`, "Totals").
 **Scars.** The best-baseline redefinition above is the headline scar,
 discussed further in section 5 and section 6.
 
-### 4.16. `gui/` — the three-tab browser
+### 4.16. `api/` and `frontend/` — the browser
 
-**Purpose.** A Panel/Bokeh web application, served from a cluster
-compute node and reached through an SSH tunnel, that displays every
-product the command line already writes and computes no science of
-its own: "everything the GUI shows is a product the command line
-already makes; the GUI is a view and a selector"
-(`docs/gui_design.md`). Three tabs, matching the two regimes plus the
+**Purpose.** A FastAPI backend (`src/jiram_catalog/api/`, JSON, Arrow
+and PNG under `/api`) paired with a React + TypeScript + deck.gl
+single-page front end (`frontend/`, built to `webapp/dist/` and served
+by the backend at `/`), one process for both halves so there is one
+port to tunnel and no cross-origin story to get wrong. It displays
+every product the command line already writes and computes no science
+of its own — the same governing rule the first version stated, "the
+GUI is a view and a selector" — but it moves *state and rendering* into
+the browser and leaves the server the two jobs it is uniquely suited to,
+reading NetCDF and Parquet off Lustre and running long jobs. The
+division between the two halves is written down once, as
+`docs/specs/2026-09-06_api_contract.md`, and it is normative for both:
+neither side improvises a field name or a filter semantic the other
+does not already expect. Three tabs, the same two regimes plus the
 global overview that ties them together: Catalog (every frame,
-filterable and selectable — the entry point), Poles (a viewer for
-region stacks, regime 1), Strips (the strip library, its viewer, and
-its per-strip statistics, regime 2).
+filterable and selectable — the entry point), Poles (a viewer and now
+also a *builder* for region stacks, regime 1), Strips (the strip
+library, its viewer, and its per-strip statistics, regime 2).
 
-**Key data structures.** `state.py`'s `CatalogState` is a single
-`param.Parameterized` object holding every filter, the current
-selection, and the currently-open stack/strip — deliberately one
-object shared by all three tabs, "so views stay consistent"
-(`docs/gui_design.md`) rather than each tab keeping its own
-independent copy of overlapping state; `to_json()`/`from_json()` turn
-the whole thing into a small, human-diffable session file. `data.py`
-is the loader/cache layer: every table is read once per server process
-and memoised on the mirror path (`_CATALOG_CACHE` and friends, plain
-module-level dicts, valid for the lifetime of one `jiram-catalog gui`
-process, which serves every browser tab that connects to it).
+**Key data structures.** All front-end state lives in one `zustand`
+store, `src/store/store.ts`: the config, the catalog columns and a
+`product_id|half → row` index, the filters, the filtered index array,
+the working selection, the saved selections, the current stack/strip,
+the job list, and a loading/toast map. Every remote call is routed
+through `store.run(key, work)`, which sets a loading flag, turns a
+failure into a toast carrying the contract's `detail` string, and
+clears the flag in a `finally` — "shows a loading state and never
+freezes on a failed request" is a property of one function, not a
+discipline every view has to remember. The catalog itself never
+becomes an array of JavaScript objects: `/api/catalog/frames.arrow`
+arrives as one Arrow IPC stream of about 47,600 rows (built once on
+the server, kept in memory, served with an `ETag` thereafter) and
+`src/lib/catalogTable.ts` splits it into contiguous typed arrays
+(`Float32Array` for geometry, a `Float64Array` of epoch milliseconds,
+plain string arrays for the four text columns); a filter is one pass
+over those arrays producing a `Uint32Array` of surviving row indices,
+and deck.gl is handed packed binary attributes rather than accessor
+callbacks per point.
 
-**Lazy stacks — a memory design decision, not an afterthought.** A
-frame-level region stack can be 2.25 GB (section 4.10). `data.
-open_stack` opens it with `xarray.open_dataset` and *never* calls
-`.load()` — every subsequent read (one time step for the player, a
-strided subsample for the brightness stretch) touches only the bytes
-it actually needs, via `xarray`'s lazy, dask-free NetCDF backend.
-`docs/gui_usage.md` reports the measured consequence directly: opening
-the 294-step, 2.25 GB `M_orbits4_frame.nc` costs about 280 MB of
-resident memory and under a second, and each subsequent time step read
-costs about 0.2 s — a small, bounded cost per interaction rather than
-one large cost paid once at open time (an earlier informal benchmark
-during the milestone's own build recorded a higher 663 MB peak,
-`docs/build_log_2026-09-04.md`, step 9f, which does not contradict the
-later, more careful measurement in `docs/gui_usage.md` so much as
-reflect that "resident memory while opening" and "resident memory
-after some navigation" are two different, both legitimate, numbers to
-report).
+**The colour map moved into the browser — why it cannot fail to
+arrive.** The server sends a stack or strip frame as an 8-bit grayscale
+PNG (`src/jiram_catalog/api/images.py`), value in the red channel,
+validity in alpha (0 for an invalid pixel, so a viewer can put a map
+under the image and see through the gaps), integer-strided down so the
+served image's longer side never exceeds `max_px` — a real subsample,
+not a blur, and the served bounds and stride travel back as
+`X-Rows`/`X-Cols`/`X-Stride`/`X-Bounds` headers because the server
+decides the geometry, not the browser. The front end draws that PNG
+into a canvas and maps it through a 256-entry lookup table
+(`src/lib/lut.ts`, gray/viridis/magma/inferno/cividis, each generated
+from nine anchors) before handing the canvas to deck.gl as a
+`BitmapLayer` via `createImageBitmap`. Changing the colour map is
+therefore one pass over pixels already sitting in browser memory: there
+is no request in the loop to silently not arrive, which is exactly what
+made the first version's colour-map control unreliable.
 
-**Rasterisation — why the Catalog map does not choke on 47,600
-points.** `views_catalog.build` draws boresight points with
-`datashader` (`hd.rasterize`, aggregating points into pixels
-server-side before anything is sent to the browser) for the *entire*
-filtered set unconditionally, and only *additionally* overlays
-individually-interactive points with hover metadata when the filtered
-set drops below 5,000 rows (`HOVER_LIMIT`). This is a deliberate
-two-tier design, not a performance hack bolted on afterward: at
-coverage-survey scale (tens of thousands of frames) the user is
-looking at *density*, and a rasterised heatmap is the right visual
-object; once a filter has narrowed the view down to a scale a human
-can meaningfully inspect frame by frame, individual points with hover
-detail become the right one, and the transition between the two modes
-is automatic rather than a separate toggle the user has to remember to
-flip.
+**`OrthographicView` and GPU picking.** deck.gl's `OrthographicView`
+has a scalar zoom rather than an independent x/y pair, so a locked
+aspect ratio is not a rule anyone enforces, it is what the view class
+*is*; the Catalog map's ~47,600 boresights are drawn as a
+`ScatterplotLayer` over the same typed arrays the filter pass produces,
+never rasterised, so hovering is real GPU point picking (with a
+fourteen-pixel nearest-point search over the same arrays as a
+fallback) and box/lasso selection is a polygon test over the filtered
+indices after one unprojection through the view's scalar zoom.
 
-**Graticule seams — the wraparound problem, solved once and reused.**
-Drawing latitude/longitude gridlines on a reprojected canvas by
-contouring the raw `lon_east` array directly would draw one spurious
-line straight across the map wherever longitude wraps from 359° back
-to 0°, because `matplotlib.contour` sees that as a discontinuous jump
-worth drawing a level crossing through. `data.contour_paths` avoids
-this by contouring a *wrapped difference* instead of the raw field
-when a `period` is given: for each target longitude level, it computes
-`((lon - level + period/2) mod period) - period/2` (the signed angular
-distance from that level, always in `[-period/2, period/2)`) and masks
-out anywhere that distance exceeds a quarter-period before contouring
-the *zero* crossing of that wrapped field — which draws the 0°
-meridian as one continuous line and never draws the seam at all. The
-same helper, with `period=None`, handles ordinary (non-wrapping)
-latitude contours; `graticule_paths` calls it twice, once per axis,
-and this one function is reused identically by both the Poles and
-Strips tabs (the Strips tab additionally reuses it a third time, with
-`period=24.0`, for local-time-of-day contours) — a good example of
-finding the one correct primitive and then never needing a
-special-cased second version of it.
+**The selection tray — a visible object instead of a metaphor.**
+`src/components/SelectionTray.tsx` holds the working selection as a
+`Set` of `product_id|half` keys, not row indices, so a selection saved
+to `/api/selections` and reloaded later survives a catalog that has
+grown, and its summary (frame count, orbits, latitude span, band
+halves) is derived from those keys on every render rather than kept as
+a second, driftable copy. Every other view only *adds to* this one
+object; the tray *consumes* it, via "Build stack…" (saves the
+selection, then posts `/api/stacks/build` with its `selection_id`) and
+"Show in Strips" (filters the Strips tab to the selection's orbits).
+
+**Jobs.** Rendering a movie, building a stack, and exporting a goflow
+dataset are too slow for one request; each goes to a two-worker
+in-process thread pool (`api/jobs.py` — two workers deliberately, since
+a build and a movie render are both bound by the mirror's I/O and a
+third job on a login node buys queue depth, not throughput), and the
+browser polls `/api/jobs` every two seconds. Records are mirrored as
+JSON under `<mirror>/gui_cache/jobs/` so a restarted server can still
+report what the last run produced.
 
 **What a modifier must know.**
-- `CatalogState.from_json` is deliberately permissive: an unknown key
-  in a loaded session is silently ignored (so a session saved by an
-  older version of the app still loads), and a value a parameter
-  rejects (an out-of-range band name, say) leaves that one parameter
-  at its current value rather than failing the entire load — this
-  favours "load what you can" over "load everything or nothing" for a
-  tool whose sessions are meant to be shared and re-opened casually
-  next to a figure.
-- The GUI writes to exactly one place under the mirror,
-  `<mirror>/gui_cache/` (per-strip statistics as
-  `stats_<strip_id>.nc`, plus a user's exports under
-  `gui_cache/exports/` by default, though every export destination is
-  a plain text field the user can redirect anywhere they can write) —
-  nothing else under the mirror is ever touched by the GUI, and no
-  request ever leaves the compute node it runs on.
-- **Thresholds in `apply_filters` exclude, they do not require**: a
-  row is dropped only when its value is both *known* and *fails* the
-  threshold — a frame whose emission angle the geometry engine could
-  not compute (roughly a quarter of the archive, per section 4.6)
-  therefore stays on the map when an emission-angle slider is touched,
-  rather than vanishing the instant any numeric filter is engaged.
-  This is a deliberate design rule stated directly in the `data.py`
-  docstring, and it is the opposite of the more common "missing means
-  fails" convention — worth knowing before you add a new filter and
-  assume the usual behaviour.
+- The missing-value rule is written once and shared: a threshold
+  excludes a row only when its value is both known and fails it, with
+  two exceptions — `on_planet_min` and the latitude bounds drop a row
+  outright when the value is missing, because a frame whose boresight
+  misses the planet has no latitude to be inside a band. `src/lib/
+  filters.ts` applies it client-side for the map; the summary endpoint
+  in `src/jiram_catalog/api/catalog.py` applies "the same missing-value
+  rule as GUI v1" (its own docstring's words) server-side for the
+  coverage charts, so the two counts cannot disagree.
+- All three views stay mounted at all times; only the active tab is
+  hidden. Unmounting a view is what made the first version's tabs stop
+  repainting when a user returned to them, so v2's rule is that nothing
+  is ever torn down and rebuilt just because a user looked away from
+  it.
+- A hidden `<pre id="debug-state">` (`src/components/DebugState.tsx`)
+  carries `{n_points, n_filtered, selection_n, view, stack_id, t,
+  cmap}` as JSON, updated on every state change. The first version
+  could not be tested from the outside because everything it did
+  happened inside a server-rendered canvas the test runner could not
+  introspect; this element gives the end-to-end suite a number to
+  assert on instead of a screenshot to eyeball, which is why those
+  tests are assertions rather than smoke tests.
+- The GUI still writes to exactly one place under the mirror,
+  `<mirror>/gui_cache/` (selections, per-strip statistics, per-stack
+  meta caches, job records, and a user's exports under
+  `gui_cache/exports/` by default, every export destination a plain
+  text field the user can redirect) — nothing else under the mirror is
+  ever touched, and no request leaves the node.
 
-**Validation gate.** `tests/test_gate_gui.py`: `app.build` succeeds
-against the real mirror with a catalog table of at least 40,000 rows
-and a strips table of at least 200; opening the orbit-4 sequence
-composite in the Poles view yields exactly 25 time steps with a finite
-first frame; the Strips view computes statistics for the library's
-first strip; every tab saves to a non-trivial HTML file; and a
-`panel serve` subprocess, started on a free port, answers `GET /` with
-HTTP 200 within 90 seconds. On the real data this milestone measured a
-1.7 s first render of the catalog map and a 17 s total time to first
-answered request (`docs/build_log_2026-09-04.md`, step 9f).
+**Validation gate.** Two gates, split along the same seam as the code.
+`tests/test_gate_api.py` drives the FastAPI app directly (no browser):
+the Arrow catalog has the contract's required columns and an `int64`
+`start_time_ms`; a known sequence stack's meta has exactly 25 time
+steps and a `FeatureCollection` graticule, its frame PNG has both
+alpha-0 and alpha-255 pixels and headers matching the served shape, and
+its movie answers a `Range` request with `206`; a strip's stats have
+matching, finite spectral arrays; a selection round-trips through
+`POST`/`GET`/`DELETE`. `tests/test_gate_frontend.py` checks the
+committed bundle is under 8 MB and that `index.html` references hashed
+assets, then starts the backend as a subprocess on a free port, polls
+`/api/health` until it answers, and runs `npx playwright test` against
+it end to end — the catalog renders at least 40,000 points, a filter
+changes `n_filtered` and the server agrees, hovering a dense cluster
+produces a tooltip with a real product id, a box selection increases
+`selection_n`, opening a stack sets `stack_id` and loads a frame,
+changing the colour map changes both `cmap` and a sampled canvas pixel,
+the movie element reaches `readyState >= 1`, and a strip's statistics
+render as Plotly figures.
 
-**Scars.** None distinct from the design decisions already described.
-Three features remain explicitly deferred rather than built and then
-cut: in-app stack/strip *builds* (the GUI can only open products
-`region-stack`/`strips` already wrote from the command line, never
-trigger a new build itself), population statistics in the Strips tab
-(the underlying `stats2d.population_statistics` function exists and is
-reachable from the command line, but no GUI panel calls it yet), and a
-tracking-vector overlay on the Poles viewer (designed in `docs/
-gui_design.md` but never implemented, so `tracking.py`'s output is not
-currently wired into any GUI view at all) — `docs/open_items.md`, "GUI
-features deferred past the first version."
+**Scars.** This module's scars are not new failures found while
+building it; they are the first version's failures, kept on record
+because they are the reason this version has the shape it has
+(`docs/gui_v2_notes.md`, "Why v2"). Colour maps that did not apply are
+now a client-side LUT over pixels already downloaded, with no request
+in the loop to fail to arrive. Tabs that stopped repainting are now
+views that never unmount. A movie that rendered but was never shown is
+now a native `<video controls>` element instead of a custom player
+inside a reactive framework. Hover that did nothing because the
+catalog's points had been rasterised away is now a `ScatterplotLayer`
+over typed arrays, GPU-picked directly. A zoom that changed the aspect
+ratio is now impossible by construction, because `OrthographicView`'s
+zoom is a scalar. And "send to Poles/Strips", whose effect was
+invisible, is now the selection tray, a permanent column that shows
+exactly what is selected before anything consumes it. One genuinely new
+condition had to be verified rather than assumed: this cluster node has
+no GPU, so every one of those end-to-end assertions runs against
+Chromium's software `SwiftShader` implementation of WebGL 2 — deck.gl
+accepts it, and, checked directly rather than taken on faith, it
+performs GPU picking correctly there too.
 
 ### 4.17. `config.py`, and the subcommand-registration pattern
 

@@ -187,14 +187,23 @@ answers, per latitude band and per orbit, where the archive actually
 supports velocity retrieval before any pixel is reprojected -- see
 `docs/reports/trackability.md` and the totals in `docs/decisions.md`.
 
-### 10. GUI (`gui/`, `gui_cmd.py`)
+### 10. GUI (`src/jiram_catalog/api/`, `frontend/`, `gui_cmd.py`)
 
-A three-tab Panel/Bokeh web application (Catalog, Poles, Strips) that
-reads the products above and writes nothing except its own cache
-(`<mirror>/gui_cache/`) and files a user explicitly exports. It computes
-no science of its own: every number it shows is something a command-line
-subcommand already wrote or could write. See `docs/gui_design.md` for
-the design and `docs/gui_usage.md` for running it.
+A three-tab browser application (Catalog, Poles, Strips) split across a
+FastAPI backend (`api/`, JSON/Arrow/PNG under `/api`) and a React +
+deck.gl front end (`frontend/`, built to `webapp/dist/` and served by
+the backend at `/`) that holds all state and does all drawing in the
+browser, one process serving both from the same origin. It reads the
+products above and writes nothing except its own cache
+(`<mirror>/gui_cache/`) and files a user explicitly exports; it computes
+no science of its own, every number it shows is something a command-line
+subcommand already wrote or could write. The split exists because the
+first version kept state and rendering on the server and pushed rasters
+to the browser, which produced synchronisation failures a client that
+holds its own state and does its own drawing cannot have by
+construction -- see `docs/gui_v2_notes.md` for the architecture and
+design intent, `docs/specs/2026-09-06_api_contract.md` for the contract
+the two halves share, and `docs/gui_usage.md` for running it.
 
 ## Cross-cutting: classical tracking and the validation gate (`tracking.py`)
 
@@ -233,7 +242,8 @@ geometry and reprojection together.
 | `tracking.py` | classical template-matching tracker (validation tool) |
 | `config.py` | mirror/paper-data path resolution |
 | `config_cmd.py` | `config` subcommand |
-| `gui/` | Panel application (`state.py`, `data.py`, three `views_*.py`, `app.py`) |
+| `api/` | FastAPI backend for GUI v2 (`app.py`, `catalog.py`, `stacks.py`, `strips.py`, `selections.py`, `jobs.py`, `images.py`, `arrow.py`) |
+| `frontend/` | React + deck.gl front end (TypeScript, built to `src/jiram_catalog/webapp/dist/`) |
 | `gui_cmd.py` | `gui` subcommand |
 | `cli.py` | argparse entry point, wires every subcommand together |
 

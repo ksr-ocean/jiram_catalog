@@ -1,11 +1,10 @@
 """``jiram-catalog gui``: serve the catalog browser.
 
-Two front ends live behind this one subcommand.  The default is GUI v2 --
-a FastAPI service (:mod:`jiram_catalog.api.app`) that answers Arrow, JSON
-and PNG under ``/api`` and hands the compiled single-page front end to
-the browser at ``/``.  ``--legacy`` serves the Panel application of GUI
-v1 instead, which is still the fastest way to look at something without a
-front-end build.
+One process serves the whole browser: a FastAPI service
+(:mod:`jiram_catalog.api.app`) that answers Arrow, JSON and PNG under
+``/api`` and hands the compiled single-page front end to the browser at
+``/``.  There is nothing else to choose between, so the subcommand takes
+no front-end switch.
 
 The subcommand lives in its own module, as the harness requires, and is
 registered with :func:`add_subparser`; ``python -m jiram_catalog.gui_cmd``
@@ -48,9 +47,6 @@ def _add_arguments(parser: argparse.ArgumentParser) -> None:
         "--no-browser", action="store_true", help="do not try to open a browser"
     )
     parser.add_argument(
-        "--legacy", action="store_true", help="serve the Panel GUI v1 instead of the v2 app"
-    )
-    parser.add_argument(
         "--reload",
         action="store_true",
         help="restart the server when the source changes (development only)",
@@ -88,19 +84,7 @@ def _open_browser(address: str, port: int, delay: float = 1.5) -> None:
     threading.Timer(delay, lambda: webbrowser.open(f"http://{host}:{port}")).start()
 
 
-def _serve_legacy(args: argparse.Namespace) -> int:
-    from .gui import app
-
-    app.serve(
-        mirror=getattr(args, "mirror", None),
-        port=args.port,
-        address=args.address,
-        show=not getattr(args, "no_browser", False),
-    )
-    return 0
-
-
-def _serve_v2(args: argparse.Namespace) -> int:
+def _serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from .api.app import create_app
@@ -138,9 +122,7 @@ def run(args: argparse.Namespace) -> int:
     LOGGER.info("%s", _banner(args.address, args.port))
     print(_banner(args.address, args.port), flush=True)
     try:
-        if getattr(args, "legacy", False):
-            return _serve_legacy(args)
-        return _serve_v2(args)
+        return _serve(args)
     except KeyboardInterrupt:
         return 0
 

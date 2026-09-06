@@ -7,7 +7,7 @@ viewer: a plane on a kilometre grid with a validity mask.  What a strip
 adds is the local-time clock, contoured every two hours, which is what
 turns "where did the spacecraft look" into "at what hour of the Jovian
 day", and the turbulence statistics, which are cached under the mirror by
-:func:`gui.data.strip_stats` and therefore computed once ever.
+:func:`data.strip_stats` and therefore computed once ever.
 """
 
 from __future__ import annotations
@@ -19,9 +19,8 @@ import numpy as np
 import xarray as xr
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from ..gui import data as gui_data
+from . import data, images
 from .arrow import ARROW_MEDIA_TYPE, generic_ipc
-from . import images
 from .stacks import DLAT, DLON, attrs_of, graticule_geojson, linestrings
 
 LOGGER = logging.getLogger(__name__)
@@ -39,7 +38,7 @@ STATS_VARIABLES: tuple[str, ...] = ("E", "P_x", "P_y", "S2", "S3")
 def open_strip(mirror: Any, strip_id: str) -> xr.Dataset:
     """One strip by identifier, or 404."""
     try:
-        return gui_data.open_strip(mirror, str(strip_id))
+        return data.open_strip(mirror, str(strip_id))
     except (ValueError, KeyError, FileNotFoundError, OSError) as exc:
         raise HTTPException(status_code=404, detail=f"unknown strip: {strip_id}") from exc
 
@@ -55,7 +54,7 @@ def local_time_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
     levels = np.arange(0.0, 24.0, LOCAL_TIME_STEP_H)
     try:
         field = np.asarray(dataset["local_time_h"].values, dtype=np.float64)
-        paths = gui_data.contour_paths(
+        paths = data.contour_paths(
             field,
             np.asarray(dataset["x_km"].values, dtype=np.float64),
             np.asarray(dataset["y_km"].values, dtype=np.float64),
@@ -70,7 +69,7 @@ def local_time_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
 
 def stretch_of(dataset: xr.Dataset, key: str) -> dict[str, float]:
     """The strip's display limits, from the same subsampler the stacks use."""
-    low, high = gui_data.stack_stretch(dataset, key=key)
+    low, high = data.stack_stretch(dataset, key=key)
     return {"p1": float(low), "p99": float(high)}
 
 
@@ -108,7 +107,7 @@ def _attr(value: Any) -> Any:
 @router.get("/api/strips.arrow")
 def strips_arrow(request: Request) -> Response:
     """The strip index as an Arrow IPC stream; datetimes as ``<name>_ms``."""
-    table = gui_data.strips_table(request.app.state.mirror)
+    table = data.strips_table(request.app.state.mirror)
     return Response(
         content=generic_ipc(table),
         media_type=ARROW_MEDIA_TYPE,
@@ -165,7 +164,7 @@ def strip_stats(request: Request, strip_id: str) -> dict[str, Any]:
     """Spectra and structure functions, computed once and cached on disk."""
     mirror = request.app.state.mirror
     try:
-        statistics = gui_data.strip_stats(mirror, str(strip_id))
+        statistics = data.strip_stats(mirror, str(strip_id))
     except (ValueError, KeyError, FileNotFoundError, OSError) as exc:
         raise HTTPException(status_code=404, detail=f"unknown strip: {strip_id}") from exc
     return statistics_payload(statistics)

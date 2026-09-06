@@ -1,11 +1,11 @@
-"""Loaders, caches and table transforms behind the three tabs.
+"""Loaders, caches and table transforms behind the HTTP service.
 
-Every table the GUI draws is read once per process and shared read-only
-(Panel serves one session per browser tab, all of them in this process),
+Every table the API answers is read once per process and shared read-only,
 so the loaders here are memoised on the mirror path.  Frame stacks are
 opened lazily and never loaded: a frame stack is 2 GB and the viewer
 reads one time step at a time.  The only thing written under the mirror
-is ``<mirror>/gui_cache/``, which holds per-strip statistics as NetCDF.
+is ``<mirror>/gui_cache/``, which holds per-strip statistics as NetCDF,
+the saved selections and the job records.
 """
 
 from __future__ import annotations
@@ -19,12 +19,24 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from ..config import mirror_root
 from ..geo import frames_with_geo
-from ..pds import mirror_root
 from ..stacks import read_stack
 from ..stats2d import strip_statistics
 from ..strips import load_index, read_strip
-from .state import LAT_BAND_EDGES, LAT_BAND_NAMES, CatalogState
+
+#: Latitude band edges and names, degrees; the same seven bands the
+#: trackability table uses (half-open ``[lo, hi)`` except the last).
+LAT_BAND_EDGES: tuple[float, ...] = (-90.0, -60.0, -30.0, -10.0, 10.0, 30.0, 60.0, 90.0)
+LAT_BAND_NAMES: tuple[str, ...] = (
+    "S polar",
+    "S mid",
+    "S low",
+    "equator",
+    "N low",
+    "N mid",
+    "N polar",
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -103,14 +115,6 @@ def lat_band(lat: Any) -> np.ndarray:
     names = np.asarray(LAT_BAND_NAMES, dtype=object)
     labels = names[np.clip(np.digitize(values, edges, right=False), 0, len(names) - 1)]
     return np.where(np.isnan(values), None, labels)
-
-
-def lat_band_limits(name: str) -> tuple[float, float]:
-    """The ``[lo, hi]`` degrees of a band name; the whole sphere for ``all``."""
-    if name not in LAT_BAND_NAMES:
-        return (-90.0, 90.0)
-    index = LAT_BAND_NAMES.index(name)
-    return (float(LAT_BAND_EDGES[index]), float(LAT_BAND_EDGES[index + 1]))
 
 
 # ---------------------------------------------------------------------------
@@ -317,100 +321,6 @@ def stack_stretch(
         limits = (low, high if high > low else low + 1.0)
     _STRETCH_CACHE[identity] = limits
     return limits
-
-
-# ---------------------------------------------------------------------------
-# filters
-# ---------------------------------------------------------------------------
-def apply_filters(table: pd.DataFrame, state: CatalogState) -> pd.DataFrame:
-    """The catalog table under the sidebar's filters.
-
-    Thresholds are exclusions: a row is dropped only when its value is
-    known and fails.  A frame whose emission angle the geometry engine
-    could not fix (about a quarter of them) therefore stays on the map
-    instead of disappearing the moment a slider is touched.
-    """
-    if table.empty:
-        return table
-    keep = np.ones(len(table), dtype=bool)
-    low, high = state.orbit_range
-    orbit = _numeric(table, "orbit", table.get("orbit_dir"))
-    if orbit is not None:
-        keep &= (orbit >= float(low)) & (orbit <= float(high))
-    if "start_time" in table.columns:
-        start, end = state.date_range
-        times = pd.to_datetime(table["start_time"])
-        keep &= (times >= pd.Timestamp(start)).to_numpy() & (
-            times <= pd.Timestamp(end)
-        ).to_numpy()
-    if state.band != "all":
-        column = "half" if "half" in table.columns else "band"
-        if column in table.columns:
-            keep &= table[column].astype(str).str.upper().to_numpy() == state.band
-    keep &= _below(table, "median_pixel_km", state.resolution_max_km)
-    keep &= _below(table, "bore_emission", state.emission_max)
-    keep &= _above(table, "on_planet_frac", state.on_planet_min)
-    if state.dayside_only:
-        keep &= _above(table, "dayside_frac", np.nextafter(0.0, 1.0))
-    if state.lat_band != "all" and "lat_band" in table.columns:
-        keep &= table["lat_band"].to_numpy(dtype=object) == state.lat_band
-    if state.revisit_only and "trackable_30" in table.columns:
-        keep &= table["trackable_30"].fillna(False).to_numpy(dtype=bool)
-    return table.loc[keep].reset_index(drop=True)
-
-
-def apply_strip_filters(table: pd.DataFrame, state: CatalogState) -> pd.DataFrame:
-    """The strip index under the Strips tab's filters.
-
-    Latitude and epoch are overlap tests, as in ``strips.load_strips``: a
-    strip is kept when its own span meets the query's span, which is what
-    a coverage question asks.  Resolution, valid fraction and dayside
-    fraction are thresholds on the strip's own scalar.
-    """
-    if table.empty:
-        return table
-    keep = np.ones(len(table), dtype=bool)
-    if state.strip_band != "all" and "band" in table.columns:
-        keep &= table["band"].astype(str).str.upper().to_numpy() == state.strip_band
-    if state.strip_lat_band != "all":
-        low, high = lat_band_limits(state.strip_lat_band)
-        span_low = _numeric(table, "lat_min", table.get("center_lat"))
-        span_high = _numeric(table, "lat_max", table.get("center_lat"))
-        if span_low is not None and span_high is not None:
-            keep &= (span_high >= low) & (span_low <= high)
-    if "time_start" in table.columns and "time_end" in table.columns:
-        start, end = state.strip_date_range
-        first = pd.to_datetime(table["time_start"])
-        last = pd.to_datetime(table["time_end"])
-        keep &= (last >= pd.Timestamp(start)).to_numpy() & (
-            first <= pd.Timestamp(end)
-        ).to_numpy()
-    keep &= _below(table, "km_per_px", state.strip_resolution_max_km)
-    keep &= _above(table, "valid_frac", state.strip_valid_min)
-    keep &= _above(table, "dayside_frac", state.strip_dayside_min)
-    return table.loc[keep].reset_index(drop=True)
-
-
-def _numeric(table: pd.DataFrame, name: str, fallback: Any = None) -> np.ndarray | None:
-    if name in table.columns:
-        return table[name].to_numpy(dtype=np.float64, na_value=np.nan)
-    if fallback is not None:
-        return np.asarray(fallback, dtype=np.float64)
-    return None
-
-
-def _below(table: pd.DataFrame, name: str, threshold: float) -> np.ndarray:
-    values = _numeric(table, name)
-    if values is None:
-        return np.ones(len(table), dtype=bool)
-    return ~(values > float(threshold))
-
-
-def _above(table: pd.DataFrame, name: str, threshold: float) -> np.ndarray:
-    values = _numeric(table, name)
-    if values is None:
-        return np.ones(len(table), dtype=bool)
-    return ~(values < float(threshold))
 
 
 # ---------------------------------------------------------------------------

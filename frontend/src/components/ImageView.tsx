@@ -48,6 +48,8 @@ export interface ImageViewProps {
   contours?: GeoJsonCollection | null;
   showGraticule?: boolean;
   height?: number;
+  /** Take the container's free space as well, never less than `height`. */
+  grow?: boolean;
   testId?: string;
   unit?: string;
   emptyMessage?: string;
@@ -62,6 +64,7 @@ export function ImageView({
   contours = null,
   showGraticule = true,
   height = 460,
+  grow = false,
   testId = 'image-view',
   unit = 'km',
   emptyMessage = 'nothing loaded',
@@ -231,7 +234,12 @@ export function ImageView({
   }, [image, bitmap, overlayBitmap, overlayAlpha, showGraticule, graticule, contours, testId]);
 
   return (
-    <div className={styles.wrap} style={{ height }} ref={wrapRef} data-testid={testId}>
+    <div
+      className={styles.wrap}
+      style={grow ? { height, minHeight: height, flex: '1 1 auto' } : { height }}
+      ref={wrapRef}
+      data-testid={testId}
+    >
       {image ? (
         <DeckGL
           style={{ position: 'absolute', inset: '0' }}

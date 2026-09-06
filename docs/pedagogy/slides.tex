@@ -246,7 +246,7 @@ new sequence starts when:
     \item \texttt{regions.py} $\to$ \texttt{stacks.py} / \texttt{strips.py} --- the two regimes
     \item \texttt{movie.py}, \texttt{export\_goflow.py}, \texttt{stats2d.py}, \texttt{trackability.py} --- exports and analysis
     \item \texttt{tracking.py} --- the standing acceptance test, not a pipeline stage
-    \item \texttt{gui/} --- a view over everything above; computes nothing new
+    \item \texttt{api/} + \texttt{frontend/} --- a view over everything above; computes nothing new
   \end{enumerate}
 \end{frame}
 
@@ -620,31 +620,31 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   Totals: 29{,}862 unit frames, 16{,}541 with a partner, 7{,}493 trackable @ 30~m/s, 61 orbits.
 \end{frame}
 
-\begin{frame}{\texttt{gui/}: one state, three tabs}
+\begin{frame}{\texttt{api/} + \texttt{frontend/}: one store, typed arrays}
   \revsec{4.16}
   \begin{itemize}
-    \item One \texttt{CatalogState} object shared by Catalog, Poles, Strips --- so the tabs cannot disagree with each other
+    \item One \texttt{zustand} store shared by Catalog, Poles, Strips --- so the tabs cannot disagree with each other
     \item Computes \textbf{no science}: every number shown is something the command line already wrote or could write
-    \item \texttt{to\_json}/\texttt{from\_json}: a session is a small, shareable, human-diffable file
+    \item Catalog (\texttt{/api/catalog/frames.arrow}, $\sim$47{,}600 rows) split client-side into typed arrays; a filter is one pass producing a \texttt{Uint32Array} of surviving indices
   \end{itemize}
 \end{frame}
 
-\begin{frame}{\texttt{gui/}: lazy stacks \& rasterisation}
+\begin{frame}{\texttt{api/} + \texttt{frontend/}: colour maps that cannot fail to arrive}
   \revsec{4.16}
   \begin{itemize}
-    \item A frame stack can be 2.25~GB --- \texttt{open\_stack} never calls \texttt{.load()}; one time step read per player move
-    \item Measured: 280~MB resident, $<1$~s to open; $\sim$0.2~s per subsequent step
-    \item Catalog map: \texttt{datashader} rasterisation for \emph{all} 47{,}600 points; individual hover points added only below 5{,}000 filtered rows
+    \item Server sends grayscale PNG, value in R, validity in alpha; browser maps it through a 256-entry lookup table (5 colour maps) --- changing it is a redraw of pixels already in memory
+    \item \texttt{OrthographicView}: zoom is a \emph{scalar}, so aspect ratio is locked by construction, not by convention
+    \item Catalog points drawn as a \texttt{ScatterplotLayer}, never rasterised --- hover is real GPU picking over $\sim$47{,}600 points
   \end{itemize}
 \end{frame}
 
-\begin{frame}{\texttt{gui/}: the graticule seam}
+\begin{frame}{\texttt{api/} + \texttt{frontend/}: the selection tray \& jobs}
   \revsec{4.16}
-  Contouring raw longitude draws a spurious line straight across the map at the 359$^\circ\to$0$^\circ$ wrap.
-  \begin{block}{Fix: contour a wrapped difference, not the raw field}
-    $((\text{lon} - \text{level} + P/2) \bmod P) - P/2$, masked beyond a quarter period, then contour its \emph{zero} crossing.
-  \end{block}
-  One helper, reused for latitude, longitude, \emph{and} local-time-of-day contours (period 24~h).
+  \begin{itemize}
+    \item Selection tray: a \texttt{Set} of \texttt{product\_id|half} keys, not row indices --- survives a catalog that grows; feeds ``Build stack…'' and ``Show in Strips''
+    \item Long jobs (movie render, stack build, goflow export) run on a two-worker thread pool, polled from \texttt{/api/jobs} every 2~s
+    \item Two gates: \texttt{test\_gate\_api.py} against the backend directly, \texttt{test\_gate\_frontend.py} running Playwright end to end against a live server
+  \end{itemize}
 \end{frame}
 
 \begin{frame}{\texttt{config.py} + the subcommand pattern}

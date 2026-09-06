@@ -311,9 +311,14 @@ attrs and a standard error alongside each mean.
 
 Written only by the GUI (`jiram-catalog gui`), never read by any other
 command: `stats_<strip_id>.nc` (the file described just above, one per
-strip the Strips tab has computed statistics for) and, by default,
-`exports/` holding movies, PNGs and goflow datasets the app renders on
-request. See `docs/gui_usage.md`.
+strip the Strips tab has computed statistics for), `meta_<key>.json`
+(a stack's display stretch and graticule, cached on first open),
+`selections/<id>.json` (named frame selections saved from the
+selection tray, `POST /api/selections`), `jobs/` (a JSON record per
+background job, mirrored so a restarted server can still report what
+the last run produced), and, by default, `exports/` holding movies,
+PNGs and goflow datasets the app renders on request. See
+`docs/gui_usage.md`.
 
 ## SPICE kernel mirror (`<mirror>/spice/{lsk,pck,fk,ik,sclk,spk,ck}/`)
 

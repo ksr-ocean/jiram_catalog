@@ -2,9 +2,9 @@
 
 Nothing here computes anything the command line cannot; the package
 exists so that a browser can ask the same questions over HTTP.  The
-loaders, caches and transforms are the GUI v1 ones
-(:mod:`jiram_catalog.gui.data`), which is what keeps the two front ends
-from disagreeing about what a filter means.
+loaders, caches and transforms live in :mod:`jiram_catalog.api.data`, so
+every endpoint reads a table through the same memoised loader and none of
+them can disagree about what a filter means.
 """
 
 from __future__ import annotations

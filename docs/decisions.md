@@ -203,6 +203,15 @@ repairs speckle-like masking. Enforced throughout `stats2d.py`
 (`power_spectrum_2d`, `isotropic_spectrum`); see `docs/data_products.md`
 for the units this implies.
 
+## GUI
+
+**2026-09-06. GUI rebuilt as a FastAPI backend and a React/deck.gl
+front end** after the owner's test of the Panel version (colour maps
+not applying, no repaint, movie not shown, no hover on rasterised
+points, aspect drift, confusing send-to); the Panel version was removed
+the same day. Enforced in `gui_cmd.py`, `src/jiram_catalog/api/`,
+`frontend/`.
+
 ## Documentation and process
 
 **2026-09-05. Shared documentation names no AI product or vendor.**

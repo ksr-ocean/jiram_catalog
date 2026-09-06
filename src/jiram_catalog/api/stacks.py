@@ -2,7 +2,7 @@
 
 A frame stack is two gigabytes and the browser wants one time step of it
 at a few hundred pixels a side, so nothing here loads a stack: the
-dataset is opened lazily once and kept (:func:`gui.data.open_stack`), one
+dataset is opened lazily once and kept (:func:`data.open_stack`), one
 plane is read when a frame is asked for, and the display stretch comes
 from a strided subsample of a few steps that is computed once and written
 next to the mirror's other caches.
@@ -27,14 +27,13 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 
 from ..config import mirror_root
-from ..gui import data as gui_data
-from . import images
+from . import data, images
 
 LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stacks", tags=["stacks"])
 
-#: Graticule spacing, degrees; the GUI v1 Poles tab draws the same one.
+#: Graticule spacing, degrees; the Poles view draws the same one.
 DLAT = 2.0
 DLON = 30.0
 
@@ -56,7 +55,7 @@ def stack_id(path: Path) -> str:
 def stack_index(mirror: str | Path | None = None) -> dict[str, Path]:
     """Every ``<mirror>/regions/<region>/*.nc``, by identifier."""
     root = mirror_root(mirror)
-    return {stack_id(path): path for path in gui_data.stack_paths(root)}
+    return {stack_id(path): path for path in data.stack_paths(root)}
 
 
 def resolve(mirror: str | Path | None, identifier: str) -> Path:
@@ -83,7 +82,7 @@ def cache_key(identifier: str) -> str:
 
 
 def meta_cache_path(mirror: str | Path | None, identifier: str) -> Path:
-    return gui_data.gui_cache_dir(mirror) / f"meta_{cache_key(identifier)}.json"
+    return data.gui_cache_dir(mirror) / f"meta_{cache_key(identifier)}.json"
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +135,7 @@ def linestrings(paths: list[np.ndarray], properties: list[dict[str, Any]] | None
 def graticule_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
     """Parallels every 2 deg and meridians every 30 deg, in km."""
     try:
-        paths = gui_data.graticule_for(dataset, key, dlat=DLAT, dlon=DLON)
+        paths = data.graticule_for(dataset, key, dlat=DLAT, dlon=DLON)
     except (ValueError, KeyError) as exc:
         LOGGER.warning("no graticule for %s: %s", key, exc)
         paths = []
@@ -148,7 +147,7 @@ def stretch_of(
 ) -> dict[str, float]:
     """The 1st and 99th percentiles, computed once and cached on disk.
 
-    The subsample is :func:`gui.data.stack_stretch`'s: a few time steps,
+    The subsample is :func:`data.stack_stretch`'s: a few time steps,
     strided to a couple of million values.  Reading every pixel of every
     step would cost a gigabyte of I/O for a number the eye cannot tell
     apart from this one.
@@ -166,7 +165,7 @@ def stretch_of(
                 return {"p1": float(stored["stretch"]["p1"]), "p99": float(stored["stretch"]["p99"])}
         except (OSError, ValueError, KeyError, TypeError) as exc:
             LOGGER.warning("unreadable stretch cache %s: %s", cache, exc)
-    low, high = gui_data.stack_stretch(dataset, key=str(identifier))
+    low, high = data.stack_stretch(dataset, key=str(identifier))
     stretch = {"p1": float(low), "p99": float(high)}
     try:
         cache.write_text(json.dumps({"signature": signature, "stretch": stretch}), encoding="utf-8")
@@ -201,7 +200,7 @@ def listing(mirror: str | Path | None = None) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for identifier, path in sorted(stack_index(mirror).items()):
         try:
-            dataset = gui_data.open_stack(path)
+            dataset = data.open_stack(path)
         except (OSError, ValueError) as exc:
             LOGGER.warning("cannot open %s: %s", path, exc)
             continue
@@ -314,7 +313,7 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
 
         path = resolve(root, stack)
         progress(0.05, f"rendering {stack}")
-        dataset = gui_data.open_stack(path)
+        dataset = data.open_stack(path)
         target = Path(path).with_suffix(".mp4")
         summary = write_movie(
             dataset, target, fps=float(fps), percentiles=(float(pct[0]), float(pct[1])), cmap=str(cmap)
@@ -375,8 +374,8 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
         from ..export_goflow import export_stack
 
         path = resolve(root, stack)
-        dataset = gui_data.open_stack(path)
-        destination = Path(out_dir) if out_dir else gui_data.export_dir(root) / f"goflow_{cache_key(stack)}"
+        dataset = data.open_stack(path)
+        destination = Path(out_dir) if out_dir else data.export_dir(root) / f"goflow_{cache_key(stack)}"
         progress(0.1, f"exporting to {destination}")
         options: dict[str, Any] = {}
         if dt_tol is not None:
@@ -422,7 +421,7 @@ def post_build(request: Request, body: BuildRequest) -> dict[str, str]:
 def get_meta(request: Request, identifier: str) -> dict[str, Any]:
     mirror = request.app.state.mirror
     path = resolve(mirror, identifier)
-    dataset = gui_data.open_stack(path)
+    dataset = data.open_stack(path)
     x_km = np.asarray(dataset["x_km"].values, dtype=np.float64)
     y_km = np.asarray(dataset["y_km"].values, dtype=np.float64)
     times = (
@@ -451,7 +450,7 @@ def get_meta(request: Request, identifier: str) -> dict[str, Any]:
 def get_emission_png(
     request: Request, identifier: str, index: int, max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000)
 ) -> Response:
-    dataset = gui_data.open_stack(resolve(request.app.state.mirror, identifier))
+    dataset = data.open_stack(resolve(request.app.state.mirror, identifier))
     plane, valid = _plane(dataset, "emission", index)
     payload, stride, shape = images.emission_png(plane, valid, max_px=max_px)
     return _png_response(dataset, payload, stride, shape)
@@ -468,7 +467,7 @@ def get_frame_png(
 ) -> Response:
     mirror = request.app.state.mirror
     path = resolve(mirror, identifier)
-    dataset = gui_data.open_stack(path)
+    dataset = data.open_stack(path)
     stretch = stretch_of(mirror, identifier, dataset, path)
     plane, valid = _plane(dataset, "image", index)
     payload, stride, shape = images.plane_png(

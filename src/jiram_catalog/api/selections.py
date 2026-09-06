@@ -30,8 +30,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..config import mirror_root
-from ..gui.data import gui_cache_dir
 from .catalog import catalog_frame
+from .data import gui_cache_dir
 
 LOGGER = logging.getLogger(__name__)
 

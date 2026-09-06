@@ -9,8 +9,8 @@ when the mirror's index files have changed.
 
 The summary endpoint exists anyway, for a client that wants the counts
 without the table (a link, a report, a smoke test), and it applies the
-same missing-value rule as GUI v1: a threshold drops a row only when the
-row's value is known and fails it.
+same missing-value rule the browser does: a threshold drops a row only
+when the row's value is known and fails it.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from ..config import mirror_root
 from ..geo import frames_with_geo
-from ..gui import data as gui_data
-from ..gui.state import LAT_BAND_NAMES
+from . import data
 from .arrow import ARROW_MEDIA_TYPE, epoch_ms, frame_to_ipc
+from .data import LAT_BAND_NAMES
 
 LOGGER = logging.getLogger(__name__)
 
@@ -162,13 +162,13 @@ def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     table["min_lat"] = pd.to_numeric(_first_present(source, "min_lat_geo", "min_lat"), errors="coerce")
     table["max_lat"] = pd.to_numeric(_first_present(source, "max_lat_geo", "max_lat"), errors="coerce")
     table["pole_inside"] = source["pole_inside"].fillna(False).astype(bool) if "pole_inside" in source else False
-    table["lat_band"] = gui_data.lat_band(table["bore_lat"].to_numpy(dtype=np.float64))
+    table["lat_band"] = data.lat_band(table["bore_lat"].to_numpy(dtype=np.float64))
     table["month"] = table["start_time"].dt.strftime("%Y-%m")
 
     table["has_partner"] = False
     table["best_dt_s"] = np.nan
     table["trackable_30"] = False
-    revisits = gui_data.trackability_table(root)
+    revisits = data.trackability_table(root)
     if revisits is not None:
         columns = ["product_id", "half"] + [
             name for name in ("has_partner", "best_dt_s", "trackable_30") if name in revisits.columns

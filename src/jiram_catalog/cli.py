@@ -126,7 +126,7 @@ def make_parser() -> argparse.ArgumentParser:
     _common(stack)
     stack.add_argument("--region", required=True, help="region name in the registry")
     stack.add_argument("--band", required=True, choices=["L", "M"])
-    stack.add_argument("--level", default="frame", choices=["frame", "sequence"])
+    stack.add_argument("--level", default="frame", choices=["frame", "sequence", "cumulative"], help="frame: one step per raw frame; sequence: one snapshot per spin sequence; cumulative: the sweep filling in frame by frame")
     stack.add_argument("--out", help="output NetCDF path")
     stack.add_argument("--config", help="path to regions.yaml")
     stack.add_argument("--no-crop", action="store_true", help="keep the full canvas")
@@ -189,6 +189,10 @@ def _region_stack(args: argparse.Namespace, root: Path, orbits: list[int] | None
     )
     if args.level == "sequence":
         dataset = composite_sequences(dataset)
+    elif args.level == "cumulative":
+        from jiram_catalog.stacks import accumulate_sequences  # defined by the cumulative-stacks task
+
+        dataset = accumulate_sequences(dataset)
     output = (
         Path(args.out)
         if args.out

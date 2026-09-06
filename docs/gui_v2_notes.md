@@ -1,6 +1,6 @@
 # The GUI v2 front end: architecture, state, and how to extend it
 
-GUI v1 was a Panel application in which the server held the state, computed
+The earlier GUI was a server-rendered application in which the server held the state, computed
 the pictures, and pushed rasters to the browser; the browser was, in effect, a
 screen. That arrangement is what produced the five failures the owner found in
 his first test: a colour map change that did not apply, panels that stopped
@@ -77,11 +77,11 @@ selection a human makes.
 
 It should be noted that the store also renders a hidden `<pre id="debug-state">`
 element, `src/components/DebugState.tsx`, carrying
-`{n_points, n_filtered, selection_n, view, stack_id, t, cmap}` as JSON. v1
-could not be tested from the outside because everything it did happened inside
-a Bokeh canvas; the debug element gives the Playwright suite a number to wait
-on instead of a screenshot to compare, and it is the reason the end-to-end
-tests are assertions rather than smoke tests.
+`{n_points, n_filtered, selection_n, view, stack_id, t, cmap, stats_visible}`
+as JSON. v1 could not be tested from the outside because everything it did
+happened inside a server-rendered canvas; the debug element gives the Playwright suite a
+number to wait on instead of a screenshot to compare, and it is the reason the
+end-to-end tests are assertions rather than smoke tests.
 
 ## Where the client-side and server-side filters meet
 
@@ -147,10 +147,13 @@ beside a filtered table of `strips.arrow` and a small map of strip centres
 coloured by year. Latitude and epoch filter as overlap tests, matching
 `strips.load_strips`, while resolution, valid fraction and dayside are
 thresholds on the strip's own scalar. The statistics panel draws three Plotly
-figures from `/api/strips/{id}/stats`: the isotropic spectrum on log-log axes
+figures from `/api/strips/{id}/stats` -- the isotropic spectrum on log-log axes
 annotated with the wavelength range it spans, the two one-dimensional spectra
 along x and y, and the structure functions with S2 on a log axis and the
-signed S3 on a linear secondary axis.
+signed S3 on a linear secondary axis -- and it starts hidden behind the
+toolbar's "Show statistics" toggle, whose state lives in the store, is mirrored
+into `localStorage`, and gives the image viewer the panel's height whenever the
+figures are away.
 
 The selection tray, `src/components/SelectionTray.tsx`, is the organising
 object and is always visible. v1 had "Send to Poles" and "Send to Strips"
@@ -201,3 +204,33 @@ user is looking at, before compositing) and because it does not depend on
 `preserveDrawingBuffer`. Population statistics across a filtered set of
 strips, tracking-vector overlays, and figure export as SVG remain unbuilt and
 are tracked in `docs/open_items.md`.
+
+## Design intent
+
+The original design note (2026-09-05, superseded by this document)
+sketched the GUI before either implementation existed, and most of it
+survived the rewrite exactly because it was never about which framework
+rendered it: three tabs over two regimes (Catalog as the global overview and
+selection surface, Poles for the time-stack regime, Strips for the
+per-pass library), one shared state object so the tabs cannot disagree
+with each other, long operations run as background jobs with progress
+rather than blocking a request, and every write confined to
+`<mirror>/gui_cache/` plus files the user explicitly exports. v2 keeps
+all of that; what changed is where the state and the drawing live, for
+the reasons above. `zustand`'s single store is that one shared state
+object, realised in the browser instead of on the server; the job pool
+in `src/jiram_catalog/api/jobs.py` is the "worker thread with a progress
+indicator" the note asked for, polled instead of pushed; the selection
+tray is the note's cross-tab selection made into a permanent, visible
+object instead of a "send to" side effect.
+
+Three pieces of the original intent did not make it into this version
+and remain open rather than abandoned (`docs/open_items.md`):
+population statistics and a bicoherence map for a filtered set of
+strips, a tracking-vector overlay on the Poles viewer, and a "save
+figure" export to SVG (CSV and the stats JSON download cover the raster
+and numeric cases, but not a redrawn vector figure). None of the three
+was cut for a v2-specific reason -- they were deferred from the very
+first version for the same reason, running out of first-version scope
+before running out of design -- and the note that designed them is
+folded into this paragraph now that the document itself is gone.

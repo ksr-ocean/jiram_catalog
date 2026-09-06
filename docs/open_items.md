@@ -133,27 +133,31 @@ holes), and no diagnostic currently flags which strips have which kind
 of mask geometry before their spectra are trusted or pooled into a
 population statistic.
 
-## GUI features deferred past the first version
+## GUI features not yet built
 
-Per `docs/gui_design.md`, "First version": the Catalog tab is complete,
-Poles is a viewer only (opens stacks that already exist; cannot build
-one from the GUI), and Strips has the table, map, viewer and per-strip
-statistics panel, but not the population-level view. Explicitly
-deferred to a later version:
+The Catalog tab is complete; Poles can both view existing stacks and
+build a new one from a Catalog selection (`POST /api/stacks/build`);
+Strips has the table, map, viewer and per-strip statistics view, but
+not the population-level view. Still deferred, tracked here since the
+original design note that first listed them (`docs/gui_v2_notes.md`,
+"Design intent") no longer exists as a separate document:
 
-- **In-app stack/strip builds.** `region-stack` and `strips` still have
-  to be run from the command line; the GUI can only open what already
-  exists under `<mirror>/regions/` or `<mirror>/strips/`.
+- **In-app strip builds.** `strips` still has to be run from the
+  command line; the GUI can only open what already exists under
+  `<mirror>/strips/` (region stacks, by contrast, can now be built from
+  the Poles tab -- see above).
 - **Population statistics in the GUI.** `stats2d.population_statistics`
   exists and is reachable from `strip-stats --population` on the
-  command line, but the Strips tab's "population mean spectrum with
-  standard error, and the bicoherence map, computed on demand and
-  cached" (`docs/gui_design.md`, "3. Strips") was not built into the
-  first version.
-- **Tracking-vector overlay** on the Poles viewer ("overlay tracking
-  vectors when a vector file exists, published or ours",
-  `docs/gui_design.md`, "2. Poles") was designed but not implemented;
-  `tracking.py`'s output is not currently wired into any GUI view.
+  command line, but the Strips tab's population mean spectrum with
+  standard error, and a bicoherence map, computed on demand and cached,
+  were not built into this version.
+- **Tracking-vector overlay** on the Poles viewer (overlay tracking
+  vectors when a vector file exists, published or ours) was designed
+  but not implemented; `tracking.py`'s output is not currently wired
+  into any GUI view.
+- **Figure export as SVG.** Every plot has a CSV or JSON download
+  (filtered catalog rows, strip statistics), but no "save figure"
+  export of a redrawn vector graphic.
 
 ## Regions beyond the initial registry
 
@@ -167,17 +171,8 @@ and is a one-line addition to `configs/regions.yaml` plus a
 `RegionGrid` construction once someone names a target.
 
 ## GUI: no authentication (added 2026-09-06)
-The Panel server binds to the cluster network when tunnelled through
-the login node and has no login. Acceptable for an interactive session
-that is stopped afterwards; add basic authentication (Panel supports
-`--basic-auth`) before anyone leaves it running unattended.
-
-## GUI: reactivity in headless Chromium (added 2026-09-06)
-While taking screenshots headlessly, the map, coverage panels and the
-Poles image did not always repaint after a filter, selection or
-time-step change, and a row click in the Strips table did not reliably
-switch the viewer, although the underlying state was verified correct.
-The screenshot script works around it with a fresh page per
-interaction. Check in a real browser; if reproducible, it is the first
-item for GUI v1.1 (likely a Panel/Bokeh update-batching issue around
-the rasterised map and DynamicMap callbacks).
+The backend binds to the cluster network when tunnelled through the
+login node and has no login. Acceptable for an interactive session that
+is stopped afterwards; add basic authentication (e.g. FastAPI
+middleware in front of the routers in `src/jiram_catalog/api/app.py`)
+before anyone leaves it running unattended.

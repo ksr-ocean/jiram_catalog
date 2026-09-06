@@ -14,6 +14,9 @@ Rules that apply to every agent, whatever tool runs it:
 - Do not edit `src/jiram_catalog/cli.py`, `pyproject.toml`, or
   `uv.lock` inside a delegated task; expose subcommands through
   `add_subparser(subparsers)` / `run(args)` in your module.
+- Do not hand-edit the committed front-end build
+  (`src/jiram_catalog/webapp/dist/`); change `frontend/src/` and
+  regenerate it with `npm run build`, then commit the rebuilt bundle.
 - Never write under the published ground-truth data directory or
   under another user's scratch space. Product writes go under the
   mirror root (`JIRAM_MIRROR`), in the directory the spec names.

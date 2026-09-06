@@ -94,6 +94,7 @@ interface State {
   stripImage: ImagePayload | null;
   stripStats: StripStats | null;
   stripOrbitFilter: number[] | null;
+  statsVisible: boolean;
 
   jobs: JobRecord[];
 }
@@ -142,6 +143,7 @@ interface Actions {
   loadStrips(): Promise<void>;
   openStrip(id: string): Promise<void>;
   setStripOrbitFilter(orbits: number[] | null): void;
+  setStatsVisible(visible: boolean): void;
 
   pollJobs(): Promise<void>;
   watchJob(id: string, onDone: (job: JobRecord) => void): void;
@@ -151,6 +153,9 @@ export type Store = State & Actions;
 
 const persistedFilters = loadPersisted<CatalogFilters>('filters', DEFAULT_FILTERS);
 const persistedSelection = loadPersisted<{ keys: string[]; name: string }>('selection', { keys: [], name: '' });
+// The statistics panel costs three Plotly figures and a server round trip, so
+// it starts hidden and the choice is remembered per browser.
+const persistedUi = loadPersisted<{ statsVisible: boolean }>('ui', { statsVisible: false });
 
 let toastId = 0;
 
@@ -226,6 +231,7 @@ export const useStore = create<Store>((set, get) => ({
   stripImage: null,
   stripStats: null,
   stripOrbitFilter: null,
+  statsVisible: persistedUi.statsVisible,
 
   jobs: [],
 
@@ -518,6 +524,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setStripOrbitFilter: (stripOrbitFilter) => set({ stripOrbitFilter }),
+
+  setStatsVisible(statsVisible) {
+    savePersisted('ui', { statsVisible });
+    set({ statsVisible });
+  },
 
   async pollJobs() {
     try {

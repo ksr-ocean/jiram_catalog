@@ -1,12 +1,26 @@
-name: offline tests
+name: offline tests and front-end build
 on:
   push:
   pull_request:
 jobs:
-  test:
+  python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: JIRAM_SKIP_GATES=1 uv run pytest -q
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

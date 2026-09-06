@@ -1,9 +1,74 @@
 # jiram_catalog
 
-A catalog, geometry engine, and region-extraction toolkit for the full
-Juno JIRAM infrared imager archive (PDS4 bundle `juno_jiram_bundle`,
-Atmospheres node), built to feed cloud-tracking and optical-flow style
-velocity retrieval at Jupiter.
+A browser-based catalog and toolkit for the full Juno JIRAM infrared
+imager archive (PDS4 bundle `juno_jiram_bundle`, Atmospheres node),
+built to feed cloud-tracking and optical-flow style velocity retrieval
+at Jupiter. The primary way to use it is the catalog browser below:
+every camera frame that sees the planet on one filterable map, a viewer
+for the polar time stacks, and a library of per-pass strips with their
+statistics -- all served from a cluster node and opened in an ordinary
+browser over an SSH tunnel. Everything the GUI shows is a product the
+command line underneath it already wrote to disk; nothing is computed
+just for the browser.
+
+![The Catalog tab: every frame that sees the planet, filterable and selectable](docs/gui_guide/01_catalog_overview.png)
+
+## Start in five minutes
+
+For a collaborator who already has access to the group's shared
+cluster copies (the default paths below), there is nothing to build --
+clone the repository, sync the environment, and point a browser at a
+server you start on a compute node.
+
+```
+git clone git@github.com:ksr-ocean/jiram_catalog.git
+cd jiram_catalog
+uv sync
+uv run jiram-catalog config        # confirm which mirror/paper-data paths you'll use
+```
+
+`jiram-catalog config` prints the two paths that matter -- the local
+**mirror** (`JIRAM_MIRROR`) and the read-only **paper data**
+(`JIRAM_PAPER_DATA`) -- and where each came from. Both default to this
+group's shared copies on the cluster, so doing nothing reproduces the
+existing setup; working from a different mirror or checkout just means
+exporting the corresponding environment variable first:
+
+```
+export JIRAM_MIRROR=/expanse/lustre/projects/cla119/<you>/jiram_mirror
+export JIRAM_PAPER_DATA=/expanse/lustre/projects/cla119/<you>/JIRAM
+```
+
+Then, on a compute node (from an interactive allocation -- Expanse
+discourages running work on the login nodes):
+
+```
+uv run jiram-catalog gui --address 0.0.0.0 --port 5006 --no-browser
+```
+
+`--address 0.0.0.0` is needed because the login node has to be able to
+reach the server over the cluster network when it forwards your port.
+From your laptop, in a second terminal:
+
+```
+ssh -N -L 5006:<compute-node>:5006 <user>@login.expanse.sdsc.edu
+```
+
+where `<compute-node>` is what `hostname` prints on the allocation.
+Open `http://localhost:5006` in your browser. The server has no
+authentication, so stop it (Ctrl-C on the node) when you are done. Full
+walkthrough of every tab, every control, and what each export writes:
+**`docs/gui_guide.md`**.
+
+## Working with an agent
+
+If you are an AI agent (or a human following the same process) about to
+change anything in this repository: **read `AGENTS.md` first, then
+`docs/agent_harness.md`.** Every change here goes through a spec in
+`docs/specs/` and a gate in `tests/test_gate_*.py` before it is written
+-- gates, fixtures, and specs are read-only to executors, and passing a
+gate by editing it is task failure. This is not a suggestion; it is how
+every file in this repository, including this README, was produced.
 
 ## What it does
 
@@ -29,10 +94,9 @@ at any date -- see `docs/decisions.md`). This tool:
    triples in the layout a downstream optical-flow velocity model reads,
    and computes masked spectra, structure functions, and bicoherence for
    the strip library.
-5. **Serves a browser-based catalog** (Panel/Bokeh) with three tabs --
-   Catalog (every frame, filterable and selectable), Poles (stack
-   viewer, movies, exports), Strips (the strip library, its statistics)
-   -- over an SSH tunnel from a cluster node.
+5. **Serves the browser-based catalog** above (Panel/Bokeh): Catalog
+   (every frame, filterable and selectable), Poles (stack viewer,
+   movies, exports), Strips (the strip library, its statistics).
 
 Every claim above is checked against a published result: the geometry
 engine, the reprojection, and the map grid it uses were all validated
@@ -63,11 +127,14 @@ Ingersoll et al. (2022) before anything downstream was built. See
   statistics -- population statistics and in-app builds are deferred,
   see `docs/open_items.md`).
 
-## Quickstart
+## Building a mirror from scratch, from the command line
+
+Everything the GUI shows is written by these subcommands; a
+collaborator using the shared mirror does not need to run them, but
+building your own (or extending the shared one to more orbits) starts
+here:
 
 ```
-uv sync
-uv run jiram-catalog config                 # confirm which mirror/paper-data paths you'll use
 uv run jiram-catalog manifest --orbits 4
 uv run jiram-catalog mirror --orbits 4 --kinds labels,data --jobs 3 --verify
 uv run jiram-catalog index --orbits 4
@@ -79,34 +146,21 @@ uv run jiram-catalog region-stack --region north_pole_paper --orbits 4 --band M 
 
 `uv run jiram-catalog --help` lists every subcommand; `docs/usage.md`
 has the full reference and more worked examples (a movie, a
-velocity-model export, strips, statistics, the GUI).
+velocity-model export, strips, statistics, the GUI). Path resolution
+(mirror and paper-data precedence, the optional TOML config file) is in
+`docs/configuration.md`.
 
-## Configuration
-
-Two paths matter: the local **mirror** (everything this tool downloads
-or writes) and the published **paper data** (read-only ground truth for
-the gates). Both resolve as `explicit argument > environment variable >
-TOML config file > built-in default`, and both default to this group's
-shared copies on the cluster, so doing nothing reproduces the existing
-setup:
-
-| setting | environment variable | default |
-| --- | --- | --- |
-| mirror | `JIRAM_MIRROR` | `/expanse/lustre/projects/cla119/kaushiks/jiram_mirror` |
-| paper data | `JIRAM_PAPER_DATA` | `/expanse/lustre/projects/cla119/kaushiks/JIRAM` |
-
-Run `uv run jiram-catalog config` to see what will actually be used and
-where it came from. Full details, including the optional TOML file, are
-in `docs/configuration.md`.
-
-## Where to read next
+## What is in the box
 
 - `docs/README.md` -- index of every document in this repository.
 - `docs/architecture.md` -- the system as built, module by module.
-- `docs/data_products.md` -- the schema of every file this tool writes.
 - `docs/usage.md` -- the command reference and worked examples.
-- `docs/decisions.md` / `docs/open_items.md` -- what was settled, and
-  what is still open.
+- `docs/gui_guide.md` -- the catalog browser, tab by tab, with real
+  screenshots.
+- `PEDAGOGICAL_REVIEW.md` -- a teaching-oriented walk through how this
+  codebase was built and reviewed.
+- `docs/decisions.md` -- one entry per settled choice, with evidence.
+- `docs/open_items.md` -- known gaps, honestly listed.
 - `AGENTS.md` -- start here before changing any code; this repository
   is built by a spec -> gate -> execute -> verify loop
   (`docs/agent_harness.md`), and gates, fixtures, and specs are

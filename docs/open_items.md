@@ -171,3 +171,13 @@ The Panel server binds to the cluster network when tunnelled through
 the login node and has no login. Acceptable for an interactive session
 that is stopped afterwards; add basic authentication (Panel supports
 `--basic-auth`) before anyone leaves it running unattended.
+
+## GUI: reactivity in headless Chromium (added 2026-09-06)
+While taking screenshots headlessly, the map, coverage panels and the
+Poles image did not always repaint after a filter, selection or
+time-step change, and a row click in the Strips table did not reliably
+switch the viewer, although the underlying state was verified correct.
+The screenshot script works around it with a fresh page per
+interaction. Check in a real browser; if reproducible, it is the first
+item for GUI v1.1 (likely a Panel/Bokeh update-batching issue around
+the rasterised map and DynamicMap callbacks).

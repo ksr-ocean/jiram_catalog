@@ -142,6 +142,9 @@ def write_realization(
     times = pd.to_datetime(np.asarray(stack["time"].values)[members])
     gaps = np.diff(_seconds(np.asarray(stack["time"].values)[members]))
     dt_img_s = float(np.median(gaps))
+    units_image = str(stack["image"].attrs.get("units", UNITS_IMAGE))
+    norm = str(stack.attrs.get("norm", "none"))
+    analysis_provenance = str(stack.attrs.get("analysis_provenance", "{}"))
 
     dataset = xr.Dataset(
         data_vars={
@@ -153,7 +156,10 @@ def write_realization(
             "dx_img_m": dx_img_m,
             "dt_img_s": dt_img_s,
             "units_velocity": UNITS_VELOCITY,
-            "units_image": UNITS_IMAGE,
+            "units_image": units_image,
+            "instrument": str(stack.attrs.get("instrument", "JIRAM")),
+            "norm": norm,
+            "analysis_provenance": analysis_provenance,
             "region": str(stack.attrs.get("region", "")),
             "band": str(stack.attrs.get("band", "")),
             "level": str(stack.attrs.get("level", "")),
@@ -164,9 +170,9 @@ def write_realization(
             "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         },
     )
-    dataset["image"].attrs.update(units=UNITS_IMAGE, long_name="reprojected radiance")
+    dataset["image"].attrs.update(units=units_image, long_name="reprojected physical band")
     dataset["loggrad"].attrs.update(
-        units="log10(W m-2 sr-1 um-1 / m)", long_name="log10 of the image gradient"
+        units=f"log10({units_image} / m)", long_name="log10 of the image gradient"
     )
     dataset["valid"].attrs.update(long_name="pixel carries an observation")
     chunks = (1, image.shape[1], image.shape[2])
@@ -180,6 +186,10 @@ def write_realization(
 
     product_ids = _coordinate(stack, "product_id", members)
     sequence_ids = _coordinate(stack, "seq_id", members)
+    source_indices = (
+        np.asarray(stack["source_time_index"].values)[members]
+        if "source_time_index" in stack.coords else members
+    )
     manifest = {
         "realization": directory.name,
         "n_frames": int(len(members)),
@@ -189,10 +199,14 @@ def write_realization(
         "crop_origin": [int(top), int(left)],
         "region": str(stack.attrs.get("region", "")),
         "band": str(stack.attrs.get("band", "")),
+        "instrument": str(stack.attrs.get("instrument", "JIRAM")),
+        "units_image": units_image,
+        "norm": norm,
+        "provenance": json.loads(analysis_provenance),
         "level": str(stack.attrs.get("level", "")),
         "frames": [
             {
-                "index": int(members[position]),
+                "index": int(source_indices[position]),
                 "product_id": None if product_ids is None else product_ids[position],
                 "seq_id": None if sequence_ids is None else sequence_ids[position],
                 "time": pd.Timestamp(times[position]).isoformat(),
@@ -213,12 +227,22 @@ def export_stack(
     min_frames: int = 3,
     crop_to_valid: bool = False,
     source: str | Path | None = None,
+    band: str | None = None,
+    norm: str = "none",
 ) -> dict[str, Any]:
     """Cut a stack into constant-cadence runs and write the dataset directory."""
+    from .science import _select_stack, prepare_stack, stack_readiness
+
+    readiness = stack_readiness(stack, band=band, norm=norm, dt_tol=dt_tol, min_frames=min_frames)
+    if not readiness["ready"]:
+        raise ValueError("stack is not export-ready: " + "; ".join(readiness["reasons"]))
+    # Read only the run being written. Preflight has inspected masks one plane
+    # at a time, and no destination exists until the request is known to work.
+    stack, _ = _select_stack(stack, band)
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
     times = np.asarray(stack["time"].values)
-    runs = constant_cadence_runs(times, dt_tol=dt_tol, min_frames=min_frames)
+    runs = [(run["first"], run["last"]) for run in readiness["runs"]]
     LOGGER.info("%d constant-cadence run(s) in %d time step(s)", len(runs), len(times))
 
     manifests: list[dict[str, Any]] = []
@@ -226,7 +250,10 @@ def export_stack(
         members = np.arange(first, last + 1)
         directory = root / f"r{number:05d}"
         manifests.append(
-            write_realization(stack, members, directory, crop_to_valid=crop_to_valid)
+            write_realization(
+                prepare_stack(stack.isel(time=members), norm=norm),
+                np.arange(len(members)), directory, crop_to_valid=crop_to_valid,
+            )
         )
 
     km_per_px = float(stack.attrs.get("km_per_px", np.nan))
@@ -242,7 +269,10 @@ def export_stack(
         "dt_tol": float(dt_tol),
         "min_frames": int(min_frames),
         "crop_to_valid": bool(crop_to_valid),
-        "units_image": UNITS_IMAGE,
+        "units_image": readiness["units"],
+        "instrument": str(stack.attrs.get("instrument", "JIRAM")),
+        "norm": readiness["norm"],
+        "provenance": readiness["provenance"],
         "units_velocity": UNITS_VELOCITY,
         "truth_velocities": False,
         "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

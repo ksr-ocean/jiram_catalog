@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import styles from './App.module.css';
 import { Modal } from './Modal';
 import { api } from '../api/client';
+import { humanRegion } from '../lib/labels';
 import { fmtOrbits, fmtRange } from '../lib/format';
 import { selectionStats, useStore } from '../store/store';
 import { LEVEL_LABELS } from '../lib/stackModes';
@@ -18,8 +19,6 @@ import {
   INSTRUMENTS,
   JIRAM_BANDS,
   JUNOCAM_BANDS,
-  QUALITY_LABELS,
-  QUALITY_TIERS,
   RGB_BANDS,
   type Instrument,
   type QualityTier,
@@ -93,7 +92,11 @@ export function SelectionTray() {
       </div>
 
       <div className={styles.row}>
-        <button data-testid="select-all-filtered" onClick={selectAllFiltered} disabled={filtered.length === 0}>
+        <button
+          data-testid="select-all-filtered"
+          onClick={selectAllFiltered}
+          disabled={filtered.length === 0}
+        >
           all {filtered.length.toLocaleString()} filtered
         </button>
         <button data-testid="clear-selection" onClick={clearSelection} disabled={stats.n === 0}>
@@ -109,12 +112,20 @@ export function SelectionTray() {
         placeholder="north polar, orbits 4-6"
         onChange={(event) => setSelectionName(event.target.value)}
       />
-      <button data-testid="save-selection" onClick={() => void saveSelection()} disabled={stats.n === 0}>
+      <button
+        data-testid="save-selection"
+        onClick={() => void saveSelection()}
+        disabled={stats.n === 0}
+      >
         Save selection
       </button>
 
       <h3>Actions</h3>
-      <button data-testid="open-build-stack" onClick={() => setBuildOpen(true)} disabled={stats.n === 0}>
+      <button
+        data-testid="open-build-stack"
+        onClick={() => setBuildOpen(true)}
+        disabled={stats.n === 0}
+      >
         Build stack...
       </button>
       <button
@@ -125,7 +136,7 @@ export function SelectionTray() {
           setTab('strips');
         }}
       >
-        Show in Strips
+        Browse images from these orbits
       </button>
 
       <h3>Saved selections</h3>
@@ -137,13 +148,22 @@ export function SelectionTray() {
         )}
         {savedSelections.map((record) => (
           <div className={styles.savedItem} key={record.id}>
-            <span className={styles.savedName} title={`${record.n_frames} frames, ${record.n_orbits} orbits`}>
+            <span
+              className={styles.savedName}
+              title={`${record.n_frames} frames, ${record.n_orbits} orbits`}
+            >
               {record.name}
             </span>
-            <button aria-label={`load ${record.name}`} onClick={() => void loadSelection(record.id)}>
+            <button
+              aria-label={`load ${record.name}`}
+              onClick={() => void loadSelection(record.id)}
+            >
               load
             </button>
-            <button aria-label={`delete ${record.name}`} onClick={() => void deleteSelection(record.id)}>
+            <button
+              aria-label={`delete ${record.name}`}
+              onClick={() => void deleteSelection(record.id)}
+            >
               del
             </button>
           </div>
@@ -170,7 +190,10 @@ export function SelectionTray() {
               });
               pushToast('info', `stack build started (job ${job_id})`);
               watchJob(job_id, (job) => {
-                pushToast(job.status === 'done' ? 'info' : 'error', `stack build ${job.status}: ${job.message ?? ''}`);
+                pushToast(
+                  job.status === 'done' ? 'info' : 'error',
+                  `stack build ${job.status}: ${job.message ?? ''}`,
+                );
                 void loadStacks();
               });
             } catch (error) {
@@ -217,7 +240,7 @@ function BuildStackDialog({
   const [maxEmission, setMaxEmission] = useState(80);
   const [instrument, setInstrument] = useState<Instrument>('JIRAM');
   const [bands, setBands] = useState<string[]>([...RGB_BANDS]);
-  const [qualityMin, setQualityMin] = useState<QualityTier>('A');
+  const qualityMin: QualityTier = 'B';
   const levels = availableLevels(instrument);
   const junocam = instrument === 'JunoCam';
 
@@ -228,10 +251,14 @@ function BuildStackDialog({
       </p>
       <div className={styles.row}>
         <label htmlFor="build-region">region</label>
-        <select id="build-region" value={region} onChange={(event) => setRegion(event.target.value)}>
+        <select
+          id="build-region"
+          value={region}
+          onChange={(event) => setRegion(event.target.value)}
+        >
           {regions.map((name) => (
             <option key={name} value={name}>
-              {name}
+              {humanRegion(name)}
             </option>
           ))}
         </select>
@@ -247,7 +274,8 @@ function BuildStackDialog({
             setInstrument(next);
             // JunoCam has only the one level, so a level it cannot build is
             // not left selected behind the scenes.
-            if (!availableLevels(next).includes(level as (typeof levels)[number])) setLevel('frame');
+            if (!availableLevels(next).includes(level as (typeof levels)[number]))
+              setLevel('frame');
           }}
         >
           {INSTRUMENTS.map((name) => (
@@ -257,7 +285,12 @@ function BuildStackDialog({
           ))}
         </select>
         <label htmlFor="build-level">level</label>
-        <select id="build-level" data-testid="build-level" value={level} onChange={(event) => setLevel(event.target.value)}>
+        <select
+          id="build-level"
+          data-testid="build-level"
+          value={level}
+          onChange={(event) => setLevel(event.target.value)}
+        >
           {levels.map((name) => (
             <option key={name} value={name}>
               {LEVEL_LABELS[name]}
@@ -298,21 +331,9 @@ function BuildStackDialog({
           </select>
         </div>
       )}
-      <div className={styles.row}>
-        <label htmlFor="build-quality">quality at least</label>
-        <select
-          id="build-quality"
-          data-testid="build-quality"
-          value={qualityMin}
-          onChange={(event) => setQualityMin(event.target.value as QualityTier)}
-        >
-          {QUALITY_TIERS.map((tier) => (
-            <option key={tier} value={tier}>
-              {QUALITY_LABELS[tier]}
-            </option>
-          ))}
-        </select>
-      </div>
+      <p className={styles.meta}>
+        Only observations that pass the instrument-failure exclusion policy can be built.
+      </p>
       <div className={styles.row}>
         <label htmlFor="build-emission">max emission (deg)</label>
         <input

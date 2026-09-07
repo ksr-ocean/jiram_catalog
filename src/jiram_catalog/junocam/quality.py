@@ -42,15 +42,16 @@ or dropped framelet should not move an image's score.
 
 The tier rule, in full:
 
-    A  the epoch is nominal or post_anneal, and streak_index < 0.3, and
+    A  the epoch is nominal, and streak_index < 0.3, and
        saturation_frac < 0.02
-    B  the epoch is nominal or post_anneal but one of those metrics fails or
+    B  the epoch is nominal but one of those metrics fails or
        could not be measured
     C  the epoch is a damage epoch (regulator_damage, ccd_damage), or is not
        covered by the epoch table at all
 
-so tier A is a claim about both the instrument's documented health and the
-image's own pixels, and C is a claim about the instrument alone.
+The legacy tier is descriptive only. Access is decided by policy.py, which
+requires complete signal evidence and excludes instrument/radiometric failures.
+In particular, a post-anneal epoch does not establish recovery for an image.
 """
 
 from __future__ import annotations
@@ -84,7 +85,7 @@ CONFIG_ENV = "JIRAM_JUNOCAM_QUALITY"
 STREAK_INDEX_MAX_A = 0.3
 SATURATION_FRAC_MAX_A = 0.02
 #: Epochs that are not themselves a disqualification.
-HEALTHY_EPOCHS = ("nominal", "post_anneal")
+HEALTHY_EPOCHS = ("nominal",)
 #: Epochs in which the ERRATA documents radiation damage to the camera.
 DAMAGE_EPOCHS = ("regulator_damage", "ccd_damage")
 #: Returned for an orbit no interval of the YAML covers.
@@ -177,7 +178,7 @@ def config_path(path: str | Path | None = None) -> Path:
 
 
 @lru_cache(maxsize=8)
-def _load_config_cached(location: str) -> dict[str, Any]:
+def _load_config_cached(location: str, mtime_ns: int = 0, size: int = 0) -> dict[str, Any]:
     path = Path(location)
     if not path.is_file():
         raise FileNotFoundError(f"JunoCam quality configuration not found: {path}")
@@ -189,7 +190,9 @@ def _load_config_cached(location: str) -> dict[str, Any]:
 
 def load_quality_config(path: str | Path | None = None) -> dict[str, Any]:
     """Read (and cache) the ERRATA transcription."""
-    return _load_config_cached(str(config_path(path).resolve()))
+    location = config_path(path).resolve()
+    stat = location.stat()
+    return _load_config_cached(str(location), stat.st_mtime_ns, stat.st_size)
 
 
 def epoch_for_orbit(orbit: int | None, path: str | Path | None = None) -> str:
@@ -211,14 +214,12 @@ def epoch_for_orbit(orbit: int | None, path: str | Path | None = None) -> str:
 def throughput_factors(
     orbit: int | None, path: str | Path | None = None
 ) -> dict[str, float]:
-    """Per-band response factor for an orbit; 1.0 outside documented ranges.
+    """Documented response fit only; unknown elsewhere (including post-anneal).
 
-    Inside a band's documented range the ERRATA's own linear fit is used,
-    ``intercept + slope * orbit``, clipped to ``(0, 1]``.  Outside it the
-    factor is exactly 1.0: the ERRATA quotes no loss there and its fit is not
-    extrapolated past the orbits it was measured on.
+    NaN is not a correction of 1.0. These factors are descriptive and are
+    never applied automatically to archive RDR data.
     """
-    factors = {band: 1.0 for band in ("red", "green", "blue")}
+    factors = {band: math.nan for band in ("red", "green", "blue")}
     if orbit is None or (isinstance(orbit, float) and math.isnan(orbit)):
         return factors
     value = int(orbit)

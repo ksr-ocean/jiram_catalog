@@ -129,35 +129,44 @@ stats2d.py` module docstring). The same docstring states plainly that
 "no scalar correction can repair" a speckle-like mask. **Not yet done**:
 no correction exists for masks that are not smooth and sparse (e.g. a
 strip whose invalid pixels are salt-and-pepper rather than a few large
-holes), and no diagnostic currently flags which strips have which kind
-of mask geometry before their spectra are trusted or pooled into a
-population statistic.
+holes). The new population panel reports connected components, boundary fraction
+and seam diagnostics so these limitations are visible before pooling; those
+diagnostics do not themselves correct spectral leakage.
 
-## GUI features not yet built
+## GUI and scientific follow-up after the 2026-09-07 implementation
 
-The Catalog tab is complete; Poles can both view existing stacks and
-build a new one from a Catalog selection (`POST /api/stacks/build`);
-Strips has the table, map, viewer and per-strip statistics view, but
-not the population-level view. Still deferred, tracked here since the
-original design note that first listed them (`docs/gui_v2_notes.md`,
-"Design intent") no longer exists as a separate document:
+The accepted D01–D12 review improvements are implemented; see
+[research_workflow.md](research_workflow.md) and the
+[build record](build_log_2026-09-07.md). Comparison, matched population
+statistics, mask diagnostics, selected fit ranges, figure/recipe export,
+coverage discovery, JunoCam failure exclusion and vector-overlay support
+are available. Remaining data/validation limits:
 
-- **In-app strip builds.** `strips` still has to be run from the
-  command line; the GUI can only open what already exists under
-  `<mirror>/strips/` (region stacks, by contrast, can now be built from
-  the Poles tab -- see above).
-- **Population statistics in the GUI.** `stats2d.population_statistics`
-  exists and is reachable from `strip-stats --population` on the
-  command line, but the Strips tab's population mean spectrum with
-  standard error, and a bicoherence map, computed on demand and cached,
-  were not built into this version.
-- **Tracking-vector overlay** on the Poles viewer (overlay tracking
-  vectors when a vector file exists, published or ours) was designed
-  but not implemented; `tracking.py`'s output is not currently wired
-  into any GUI view.
-- **Figure export as SVG.** Every plot has a CSV or JSON download
-  (filtered catalog rows, strip statistics), but no "save figure"
-  export of a redrawn vector graphic.
+- The historical JunoCam product gate still requires at least 100 catalog
+  entries. The accepted policy and version deduplication now yield 72 eligible
+  observations; its count assertion is obsolete and was preserved unchanged.
+  New identity and failure-exclusion gates validate the replacement semantics.
+- Full-resolution statistics on 6000-square JunoCam strips can take minutes.
+  They run only when requested. Native arrays and the numerical estimator are
+  preserved; persistent preview products or process-isolated analysis workers
+  would be separate performance work.
+
+- In-app strip construction remains a CLI workflow. Region builds are
+  available from a selection; strip builds were not part of D01–D12.
+- The vector overlay requires a product explicitly associated with the
+  displayed stack, time and map basis. This mirror has none. Published TP4
+  vectors have a dedicated validation reader; a reusable association/product
+  writer would enable those overlays without guessing.
+- JunoCam's three independent local polar observations have irregular gaps.
+  More verified unaffected native observations are required for a regular
+  three-frame motion sequence. No interface change can manufacture cadence.
+- The new analysis checks have synthetic validation, not archive-wide
+  navigation/radiometric or wind validation. Population bicoherence and
+  calibrated effective-resolution transfer functions remain future work.
+- The PDS ML-derived collection is linked as a reference. Its missing tile
+  times, generated channels, mask/scaling ambiguities and different grids
+  prevent automatic quantitative import; see the
+  [sample assessment](reports/junocam_calibrated_assessment_2026-09-07.md).
 
 ## Regions beyond the initial registry
 
@@ -195,3 +204,17 @@ residual. (2) Band registration across the strips prefers an
 inter-frame delta near 2 ms rather than the kernel's 1 ms; the kernel
 value is kept; a per-image rate term could be fitted alongside the
 offset. See `docs/reports/junocam_pj4_geometry.md`.
+
+## Accepted usability and JunoCam review
+
+The [review](reports/usability_scientific_review_2026-09-07.md) preserves the
+original JC-01–JC-07 findings and D01–D12 recommendations. The owner accepted
+implementation on 2026-09-07; these are no longer pending proposals.
+[Implementation spec](specs/2026-09-07_review_implementation.md),
+[current usage](research_workflow.md) and
+[verification record](build_log_2026-09-07.md) describe the resulting behavior.
+
+Judgment calls: kept the unresolved physical/data questions above distinct
+from implemented usability features. Export readiness is not wind validation;
+reference availability is not permission to treat generated reflectance as
+an original observation.

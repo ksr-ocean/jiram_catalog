@@ -10,7 +10,7 @@ import styles from './Views.module.css';
 import { CatalogFilters } from './CatalogFilters';
 import { CatalogMap } from './CatalogMap';
 import { Plot } from '../components/Plot';
-import { Modal } from '../components/Modal';
+import { humanProduct } from '../lib/labels';
 import { frameKey, useStore } from '../store/store';
 import { fmt, fmtTime } from '../lib/format';
 import { downloadText, toCsv } from '../lib/csv';
@@ -44,7 +44,6 @@ export function CatalogView({ active }: { active: boolean }) {
   const selectionKeys = useStore((s) => s.selectionKeys);
   const addToSelection = useStore((s) => s.addToSelection);
   const removeFromSelection = useStore((s) => s.removeFromSelection);
-  const detail = useStore((s) => s.detail);
   const openDetail = useStore((s) => s.openDetail);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -162,7 +161,7 @@ export function CatalogView({ active }: { active: boolean }) {
             <tr>
               <th />
               {TABLE_COLUMNS.map((name) => (
-                <th key={name}>{name}</th>
+                <th key={name}>{name.replace(/_/g, ' ')}</th>
               ))}
             </tr>
           </thead>
@@ -192,7 +191,7 @@ export function CatalogView({ active }: { active: boolean }) {
                         void openDetail(columns.productId[i]);
                       }}
                     >
-                      {columns.productId[i]}
+                      {humanProduct(columns.productId[i], columns.orbit[i], columns.startTimeMs[i])}
                     </a>
                   </td>
                   <td>{columns.instrument[i]}</td>
@@ -215,48 +214,7 @@ export function CatalogView({ active }: { active: boolean }) {
         </table>
       </div>
 
-      {detail && <DetailCard />}
-    </div>
-  );
-}
 
-function DetailCard() {
-  const detail = useStore((s) => s.detail);
-  const closeDetail = useStore((s) => s.closeDetail);
-  const columns = useStore((s) => s.columns);
-  const keyIndex = useStore((s) => s.keyIndex);
-  const addToSelection = useStore((s) => s.addToSelection);
-  if (!detail) return null;
-  const productId = String(detail.product_id);
-  const halves = detail.halves ?? ['L', 'M'];
-  return (
-    <Modal title={productId} onClose={closeDetail}>
-      <div className={styles.kv} data-testid="frame-detail">
-        {Object.entries(detail)
-          .filter(([, value]) => typeof value !== 'object' || value === null)
-          .map(([name, value]) => (
-            <div key={name} style={{ display: 'contents' }}>
-              <span>{name}</span>
-              <b>{value === null ? '--' : String(value)}</b>
-            </div>
-          ))}
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <button
-          data-testid="detail-add-to-selection"
-          onClick={() => {
-            const indices: number[] = [];
-            for (const half of halves) {
-              const i = keyIndex.get(`${productId}|${half}`);
-              if (i !== undefined) indices.push(i);
-            }
-            addToSelection(Uint32Array.from(indices));
-            closeDetail();
-          }}
-        >
-          add to selection ({columns.n > 0 ? halves.join(', ') : 'n/a'})
-        </button>
-      </div>
-    </Modal>
+    </div>
   );
 }

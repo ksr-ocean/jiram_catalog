@@ -146,8 +146,8 @@ export const api = {
     }),
   stackEmissionUrl: (id: string, t: number, maxPx = 1600) =>
     url(`/api/stacks/${id}/frame/${t}/emission.png`, { max_px: maxPx }),
-  movieUrl: (id: string) => url(`/api/stacks/${id}/movie`),
-  renderMovie: (id: string, body: { fps?: number; pct?: [number, number]; cmap?: string }) =>
+  movieUrl: (id: string, band?:string|null, norm?:string) => url(`/api/stacks/${id}/movie`,{band:band??undefined,norm}),
+  renderMovie: (id: string, body: { fps?: number; pct?: [number, number]; cmap?: string; band?:string|null; norm?:string }) =>
     postJson<{ job_id: string }>(`/api/stacks/${id}/movie`, body),
   buildStack: (body: {
     region: string;
@@ -160,7 +160,7 @@ export const api = {
     bands?: string[];
     quality_min?: string;
   }) => postJson<{ job_id: string }>('/api/stacks/build', body),
-  exportTriples: (id: string, body: { out_dir?: string; dt_tol?: number; min_frames?: number; crop_to_valid?: boolean }) =>
+  exportTriples: (id: string, body: { out_dir?: string; dt_tol?: number; min_frames?: number; crop_to_valid?: boolean; band?:string|null; norm?:string }) =>
     postJson<{ job_id: string }>(`/api/stacks/${id}/export`, body),
 
   async stripsArrow(): Promise<ArrayBuffer> {

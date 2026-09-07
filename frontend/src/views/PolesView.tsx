@@ -24,6 +24,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Views.module.css';
 import { ColorBar, ImageView } from '../components/ImageView';
+import { researchApi, type Readiness, type Vectors } from '../api/research';
+import { humanRegion } from '../lib/labels';
+import { downloadText } from '../lib/csv';
 import { api, fetchImage } from '../api/client';
 import { useStore } from '../store/store';
 import { fmt, fmtBytes } from '../lib/format';
@@ -104,8 +107,17 @@ export function PolesView({ active }: { active: boolean }) {
   // that puts a "Build this view" button on screen.
   const [missingMode, setMissingMode] = useState<StackLevel | null>(null);
   const [building, setBuilding] = useState(false);
+  const [analysisBand, setAnalysisBand] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [readinessError, setReadinessError] = useState('');
+  const [vectors, setVectors] = useState<Vectors | null>(null);
+  const [showVectors, setShowVectors] = useState(false);
+  const [movieReady, setMovieReady] = useState(false);
 
-  const listing = useMemo(() => stacks.find((stack) => stack.id === stackId) ?? null, [stacks, stackId]);
+  const listing = useMemo(
+    () => stacks.find((stack) => stack.id === stackId) ?? null,
+    [stacks, stackId],
+  );
   const nTimes = meta?.times.length ?? 0;
   const level = meta?.level ?? listing?.level ?? null;
   const siblings = useMemo(() => siblingsOf(listing, stacks), [listing, stacks]);
@@ -122,6 +134,54 @@ export function PolesView({ active }: { active: boolean }) {
     const known = NORM_NAMES.filter((name) => !offered || offered.includes(name));
     return known.length > 0 ? known : (['none'] as NormName[]);
   }, [meta]);
+
+  const physicalBand = composite ? analysisBand : band;
+  const needsBand = composite && !analysisBand;
+  useEffect(() => {
+    setAnalysisBand(null);
+    setMovieReady(false);
+  }, [stackId]);
+  useEffect(() => {
+    setReadiness(null);
+    setReadinessError('');
+    setMovieReady(false);
+    if (!stackId || !meta || needsBand) return;
+    let current = true;
+    researchApi
+      .readiness(stackId, physicalBand, normLabel)
+      .then((data) => {
+        if (current) setReadiness(data);
+      })
+      .catch((e) => {
+        if (current) setReadinessError(e.message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [stackId, meta, physicalBand, normLabel, needsBand]);
+  useEffect(() => {
+    if (!stackId || !showVectors) return;
+    let current = true;
+    setVectors(null);
+    researchApi
+      .vectors(stackId, t)
+      .then((data) => {
+        if (current) setVectors(data);
+      })
+      .catch((e) => {
+        if (current)
+          setVectors({
+            status: 'unassessed',
+            reason: e.message,
+            units: 'm s-1',
+            provenance: null,
+            features: [],
+          });
+      });
+    return () => {
+      current = false;
+    };
+  }, [stackId, t, showVectors]);
 
   // A new stack answers whatever mode question was open.
   useEffect(() => {
@@ -230,12 +290,13 @@ export function PolesView({ active }: { active: boolean }) {
   const renderMovie = useCallback(() => {
     if (!stackId) return;
     void api
-      .renderMovie(stackId, { fps, pct: [1, 99], cmap })
+      .renderMovie(stackId, { fps, pct: [1, 99], cmap, band: physicalBand, norm: normLabel })
       .then(({ job_id }) => {
         pushToast('info', `movie render started (job ${job_id})`);
         watchJob(job_id, (job) => {
           if (job.status === 'done') {
             pushToast('info', 'movie rendered');
+            setMovieReady(true);
             void useStore.getState().loadStacks();
             setMovieNonce((n) => n + 1);
             videoRef.current?.load();
@@ -245,12 +306,12 @@ export function PolesView({ active }: { active: boolean }) {
         });
       })
       .catch((error: Error) => pushToast('error', `movie: ${error.message}`));
-  }, [stackId, fps, cmap, pushToast, watchJob]);
+  }, [stackId, fps, cmap, physicalBand, normLabel, pushToast, watchJob]);
 
   const exportTriples = useCallback(() => {
-    if (!stackId) return;
+    if (!stackId || !readiness?.ready || needsBand) return;
     void api
-      .exportTriples(stackId, { crop_to_valid: true })
+      .exportTriples(stackId, { crop_to_valid: true, band: physicalBand, norm: normLabel })
       .then(({ job_id }) => {
         pushToast('info', `export started (job ${job_id})`);
         watchJob(job_id, (job) => {
@@ -264,7 +325,7 @@ export function PolesView({ active }: { active: boolean }) {
         });
       })
       .catch((error: Error) => pushToast('error', `export: ${error.message}`));
-  }, [stackId, pushToast, watchJob]);
+  }, [stackId, readiness, needsBand, physicalBand, normLabel, pushToast, watchJob]);
 
   const perTime = meta?.per_time?.[t];
 
@@ -284,7 +345,8 @@ export function PolesView({ active }: { active: boolean }) {
             </option>
             {stacks.map((stack) => (
               <option key={stack.id} value={stack.id}>
-                {stack.id} - {uniqueBands(stack.bands).join('/') || stack.band}{' '}
+                {humanRegion(stack.region)} · {stack.instrument ?? 'JIRAM'} ·{' '}
+                {uniqueBands(stack.bands).join('/') || stack.band}{' '}
                 {stack.label ?? levelLabel(stack.level)}, {stack.n_time} steps
                 {stack.has_movie ? ' [movie]' : ''}
               </option>
@@ -306,27 +368,33 @@ export function PolesView({ active }: { active: boolean }) {
         <span className={styles.muted}>
           {selectionKeys.size > 0
             ? `${selectionKeys.size} frames in the tray -- "Build stack..." makes one from them`
-            : 'select frames in the Catalog to build a new stack'}
+            : 'Select observations in Explore to build a time series'}
         </span>
       </div>
 
-      <div className={styles.modeHelp} data-testid="mode-help">
+      <details className={styles.modeHelp} data-testid="mode-help">
+        <summary>How time-series modes differ</summary>
         {levels.map((name) => (
           <div key={name}>{LEVEL_BLURBS[name]}</div>
         ))}
-      </div>
+      </details>
 
       {!stackId ? (
         <div className={styles.card}>
           <p className={styles.muted}>
-            No stack is open. Stacks are the NetCDF cubes under <code>&lt;mirror&gt;/regions/</code> that
-            <code> jiram-catalog region-stack</code> writes; choose one above, or build one from the selection tray.
+            Choose a time series above to inspect repeated views, or build one from observations in
+            your selection.
           </p>
         </div>
       ) : (
-        <div className={styles.split}>
+        <div className={styles.stack}>
           <div className={styles.stack}>
-            <div className={styles.toolbar} data-testid="mode-bar" role="group" aria-label="viewing mode">
+            <div
+              className={styles.toolbar}
+              data-testid="mode-bar"
+              role="group"
+              aria-label="viewing mode"
+            >
               {levels.map((name) => (
                 <button
                   key={name}
@@ -344,7 +412,11 @@ export function PolesView({ active }: { active: boolean }) {
                   <span className={styles.muted}>
                     this region has no "{LEVEL_LABELS[missingMode]}" stack yet
                   </span>
-                  <button data-testid="build-mode" disabled={building} onClick={() => buildMode(missingMode)}>
+                  <button
+                    data-testid="build-mode"
+                    disabled={building}
+                    onClick={() => buildMode(missingMode)}
+                  >
                     {building ? 'building...' : 'Build this view'}
                   </button>
                 </>
@@ -397,7 +469,7 @@ export function PolesView({ active }: { active: boolean }) {
                   <select
                     id="band-select"
                     data-testid="band-select"
-                    value={composite ? '__rgb' : band ?? ''}
+                    value={composite ? '__rgb' : (band ?? '')}
                     onChange={(event) => {
                       if (event.target.value === '__rgb') {
                         setComposite(true);
@@ -466,150 +538,158 @@ export function PolesView({ active }: { active: boolean }) {
               />
             </div>
 
-            <div className={styles.toolbar} data-testid="illumination-bar">
-              <label htmlFor="norm-select" title={NORM_BLURBS[norm]}>
-                illumination
-              </label>
-              <select
-                id="norm-select"
-                data-testid="norm-select"
-                value={norm}
-                title={NORM_BLURBS[norm]}
-                onChange={(event) => setNorm(event.target.value as NormName)}
-              >
-                {normChoices.map((name) => (
-                  <option key={name} value={name} title={NORM_BLURBS[name]}>
-                    {NORM_LABELS[name]}
-                  </option>
-                ))}
-              </select>
-              {norm === 'minnaert' && (
-                <>
-                  <label htmlFor="norm-k">k {normK.toFixed(2)}</label>
-                  <input
-                    id="norm-k"
-                    data-testid="norm-k"
-                    type="range"
-                    min={MINNAERT_K_RANGE[0]}
-                    max={MINNAERT_K_RANGE[1]}
-                    step={0.05}
-                    value={normK}
-                    style={{ width: 110 }}
-                    onChange={(event) => setNorm('minnaert', Number(event.target.value))}
-                  />
-                </>
-              )}
-              {norm === 'flat' && (
-                <>
-                  <label htmlFor="norm-sigma">sigma {normSigma} px</label>
-                  <input
-                    id="norm-sigma"
-                    data-testid="norm-sigma"
-                    type="range"
-                    min={FLAT_SIGMA_RANGE[0]}
-                    max={FLAT_SIGMA_RANGE[1]}
-                    step={8}
-                    value={normSigma}
-                    style={{ width: 110 }}
-                    onChange={(event) =>
-                      setNorm('flat', undefined, Number(event.target.value))
-                    }
-                  />
-                </>
-              )}
-              <div className={styles.sep} />
-              <label htmlFor="stretch-mode">stretch</label>
-              <select
-                id="stretch-mode"
-                data-testid="stretch-mode"
-                value={stretchMode}
-                title="how the display range is laid out over the eight bits"
-                onChange={(event) => setStretchMode(event.target.value as StretchMode)}
-              >
-                <option value="linear">Linear</option>
-                <option value="asinh">Asinh</option>
-              </select>
-              <span className={styles.muted} data-testid="norm-note">
-                {NORM_BLURBS[norm]}
-              </span>
-            </div>
-
-            <div className={styles.toolbar}>
-              <label htmlFor="vmin">vmin</label>
-              <input
-                id="vmin"
-                data-testid="vmin"
-                type="number"
-                step="any"
-                style={{ width: 110 }}
-                value={draftStretch[0]}
-                onChange={(event) => setDraftStretch([Number(event.target.value), draftStretch[1]])}
-              />
-              <label htmlFor="vmax">vmax</label>
-              <input
-                id="vmax"
-                data-testid="vmax"
-                type="number"
-                step="any"
-                style={{ width: 110 }}
-                value={draftStretch[1]}
-                onChange={(event) => setDraftStretch([draftStretch[0], Number(event.target.value)])}
-              />
-              <button
-                onClick={() => {
-                  if (!meta) return;
-                  const stretch = stretchFor(meta.stretch, normLabel, band);
-                  setStretch(stretch.p1, stretch.p99);
-                }}
-                disabled={!meta}
-              >
-                reset stretch
-              </button>
-              {composite && (
-                <label>
-                  <input
-                    type="checkbox"
-                    data-testid="link-bands"
-                    checked={linkBands}
-                    onChange={(event) => setLinkBands(event.target.checked)}
-                  />
-                  link bands
+            <details className={styles.card}>
+              <summary>Advanced illumination and display stretch</summary>
+              <div className={styles.toolbar} data-testid="illumination-bar">
+                <label htmlFor="norm-select" title={NORM_BLURBS[norm]}>
+                  illumination
                 </label>
-              )}
-            </div>
-
-            {composite && !linkBands && (
-              <div className={styles.toolbar} data-testid="band-stretch">
-                {(['r', 'g', 'b'] as const).map((channel) => {
-                  const name = bandForChannel(stackBands, channel);
-                  if (!name) return null;
-                  const pair = bandStretch[name] ?? [vmin, vmax];
-                  return (
-                    <div className={styles.group} key={channel}>
-                      <label htmlFor={`stretch-${channel}`}>{name}</label>
-                      <input
-                        id={`stretch-${channel}`}
-                        data-testid={`stretch-${channel}-min`}
-                        type="number"
-                        step="any"
-                        style={{ width: 96 }}
-                        value={pair[0]}
-                        onChange={(event) => setBandStretch(name, Number(event.target.value), pair[1])}
-                      />
-                      <input
-                        data-testid={`stretch-${channel}-max`}
-                        type="number"
-                        step="any"
-                        style={{ width: 96 }}
-                        value={pair[1]}
-                        onChange={(event) => setBandStretch(name, pair[0], Number(event.target.value))}
-                      />
-                    </div>
-                  );
-                })}
+                <select
+                  id="norm-select"
+                  data-testid="norm-select"
+                  value={norm}
+                  title={NORM_BLURBS[norm]}
+                  onChange={(event) => setNorm(event.target.value as NormName)}
+                >
+                  {normChoices.map((name) => (
+                    <option key={name} value={name} title={NORM_BLURBS[name]}>
+                      {NORM_LABELS[name]}
+                    </option>
+                  ))}
+                </select>
+                {norm === 'minnaert' && (
+                  <>
+                    <label htmlFor="norm-k">k {normK.toFixed(2)}</label>
+                    <input
+                      id="norm-k"
+                      data-testid="norm-k"
+                      type="range"
+                      min={MINNAERT_K_RANGE[0]}
+                      max={MINNAERT_K_RANGE[1]}
+                      step={0.05}
+                      value={normK}
+                      style={{ width: 110 }}
+                      onChange={(event) => setNorm('minnaert', Number(event.target.value))}
+                    />
+                  </>
+                )}
+                {norm === 'flat' && (
+                  <>
+                    <label htmlFor="norm-sigma">sigma {normSigma} px</label>
+                    <input
+                      id="norm-sigma"
+                      data-testid="norm-sigma"
+                      type="range"
+                      min={FLAT_SIGMA_RANGE[0]}
+                      max={FLAT_SIGMA_RANGE[1]}
+                      step={8}
+                      value={normSigma}
+                      style={{ width: 110 }}
+                      onChange={(event) => setNorm('flat', undefined, Number(event.target.value))}
+                    />
+                  </>
+                )}
+                <div className={styles.sep} />
+                <label htmlFor="stretch-mode">stretch</label>
+                <select
+                  id="stretch-mode"
+                  data-testid="stretch-mode"
+                  value={stretchMode}
+                  title="how the display range is laid out over the eight bits"
+                  onChange={(event) => setStretchMode(event.target.value as StretchMode)}
+                >
+                  <option value="linear">Linear</option>
+                  <option value="asinh">Asinh</option>
+                </select>
+                <span className={styles.muted} data-testid="norm-note">
+                  {NORM_BLURBS[norm]}
+                </span>
               </div>
-            )}
 
+              <div className={styles.toolbar}>
+                <label htmlFor="vmin">vmin</label>
+                <input
+                  id="vmin"
+                  data-testid="vmin"
+                  type="number"
+                  step="any"
+                  style={{ width: 110 }}
+                  value={draftStretch[0]}
+                  onChange={(event) =>
+                    setDraftStretch([Number(event.target.value), draftStretch[1]])
+                  }
+                />
+                <label htmlFor="vmax">vmax</label>
+                <input
+                  id="vmax"
+                  data-testid="vmax"
+                  type="number"
+                  step="any"
+                  style={{ width: 110 }}
+                  value={draftStretch[1]}
+                  onChange={(event) =>
+                    setDraftStretch([draftStretch[0], Number(event.target.value)])
+                  }
+                />
+                <button
+                  onClick={() => {
+                    if (!meta) return;
+                    const stretch = stretchFor(meta.stretch, normLabel, band);
+                    setStretch(stretch.p1, stretch.p99);
+                  }}
+                  disabled={!meta}
+                >
+                  reset stretch
+                </button>
+                {composite && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      data-testid="link-bands"
+                      checked={linkBands}
+                      onChange={(event) => setLinkBands(event.target.checked)}
+                    />
+                    link bands
+                  </label>
+                )}
+              </div>
+
+              {composite && !linkBands && (
+                <div className={styles.toolbar} data-testid="band-stretch">
+                  {(['r', 'g', 'b'] as const).map((channel) => {
+                    const name = bandForChannel(stackBands, channel);
+                    if (!name) return null;
+                    const pair = bandStretch[name] ?? [vmin, vmax];
+                    return (
+                      <div className={styles.group} key={channel}>
+                        <label htmlFor={`stretch-${channel}`}>{name}</label>
+                        <input
+                          id={`stretch-${channel}`}
+                          data-testid={`stretch-${channel}-min`}
+                          type="number"
+                          step="any"
+                          style={{ width: 96 }}
+                          value={pair[0]}
+                          onChange={(event) =>
+                            setBandStretch(name, Number(event.target.value), pair[1])
+                          }
+                        />
+                        <input
+                          data-testid={`stretch-${channel}-max`}
+                          type="number"
+                          step="any"
+                          style={{ width: 96 }}
+                          value={pair[1]}
+                          onChange={(event) =>
+                            setBandStretch(name, pair[0], Number(event.target.value))
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </details>
             <ImageView
               image={frameImage}
               overlay={emissionImage}
@@ -620,13 +700,14 @@ export function PolesView({ active }: { active: boolean }) {
               showGraticule={showGraticule}
               testId="poles-image"
               height={480}
+              vectors={showVectors ? vectors?.features : undefined}
               emptyMessage="loading the first frame..."
             />
           </div>
 
           <div className={styles.stack}>
-            <div className={styles.card}>
-              <h3>frame metadata</h3>
+            <details className={styles.card}>
+              <summary>Observation metadata and provenance</summary>
               <div className={styles.kv} data-testid="frame-meta">
                 <span>time</span>
                 <b>{meta?.times[t] ?? '--'}</b>
@@ -643,7 +724,7 @@ export function PolesView({ active }: { active: boolean }) {
                 <span>instrument</span>
                 <b data-testid="stack-instrument">{instrument}</b>
                 <span>band</span>
-                <b>{composite ? 'RGB composite' : band ?? meta?.band ?? '--'}</b>
+                <b>{composite ? 'RGB composite' : (band ?? meta?.band ?? '--')}</b>
                 <span>km/px</span>
                 <b>{fmt(meta?.km_per_px, 2)}</b>
                 <span>x range (km)</span>
@@ -651,27 +732,137 @@ export function PolesView({ active }: { active: boolean }) {
                 <span>y range (km)</span>
                 <b>{meta ? `${fmt(meta.y_km[0], 0)} .. ${fmt(meta.y_km[1], 0)}` : '--'}</b>
               </div>
-            </div>
-
+              <details>
+                <summary>Full processing attributes</summary>
+                <pre>{JSON.stringify(meta?.attrs, null, 2)}</pre>
+              </details>
+            </details>
             <div className={styles.card}>
-              <h3>movie</h3>
-              {listing?.has_movie ? (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showVectors}
+                  onChange={(e) => setShowVectors(e.target.checked)}
+                />
+                Tracking vector overlay
+              </label>
+              {showVectors && (
+                <>
+                  <p>
+                    {vectors
+                      ? `${vectors.status}: ${vectors.reason ?? `${vectors.features.length} vectors with matching grid and time`}`
+                      : 'Checking vector coverage…'}
+                  </p>
+                  {vectors && (
+                    <details>
+                      <summary>Vector provenance and basis</summary>
+                      <pre>{JSON.stringify(vectors.provenance, null, 2)}</pre>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+            <div className={styles.card} data-testid="stack-readiness">
+              <h3>Analysis readiness</h3>
+              {composite && (
+                <label>
+                  Physical band for analysis and movie{' '}
+                  <select
+                    data-testid="analysis-band"
+                    value={analysisBand ?? ''}
+                    onChange={(e) => setAnalysisBand(e.target.value || null)}
+                  >
+                    <option value="">Choose a physical band</option>
+                    {stackBands.map((name) => (
+                      <option key={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {needsBand ? (
+                <p>
+                  RGB is a display composite. Select a physical band to assess or export this time
+                  series.
+                </p>
+              ) : readinessError ? (
+                <p role="alert">{readinessError}</p>
+              ) : !readiness ? (
+                <p role="status">Checking independent observations, cadence and common coverage…</p>
+              ) : (
+                <>
+                  <p>
+                    <b>{readiness.ready ? 'Ready for triple export' : 'No valid triple export'}</b>{' '}
+                    · {readiness.n_observations} independent observations ·{' '}
+                    {readiness.n_versions_removed} duplicate versions removed ·{' '}
+                    {readiness.n_realizations} cadence runs
+                  </p>
+                  <p>{readiness.reasons.join(' ')}</p>
+                  <p>
+                    Band {readiness.band} · normalization {readiness.norm} · {readiness.units} ·{' '}
+                    {readiness.km_per_px} km/px
+                  </p>
+                  <p>
+                    Cadence gaps (s):{' '}
+                    {readiness.gaps_s.map((g) => fmt(g, 3)).join(', ') ||
+                      'No consecutive observations'}
+                  </p>
+                  {readiness.runs.map((run, i) => (
+                    <p key={i}>
+                      {run.n_frames} frames at {fmt(run.dt_s, 3)} s ·{' '}
+                      {(run.common_valid_frac * 100).toFixed(1)}% common valid coverage
+                    </p>
+                  ))}
+                  <p className={styles.muted}>
+                    Format and cadence readiness does not validate wind accuracy. Check navigation
+                    and registration in Compare.
+                  </p>
+                  <details>
+                    <summary>Readiness provenance</summary>
+                    <pre>{JSON.stringify(readiness.provenance, null, 2)}</pre>
+                  </details>
+                  <button
+                    onClick={() =>
+                      downloadText(
+                        'stack_readiness.json',
+                        JSON.stringify(readiness, null, 2),
+                        'application/json',
+                      )
+                    }
+                  >
+                    Download readiness and sources
+                  </button>
+                </>
+              )}
+            </div>
+            <div className={styles.card}>
+              <h3>Movie and export</h3>
+              {movieReady ||
+              (listing?.has_movie && instrument === 'JIRAM' && normLabel === 'none') ? (
                 <video
                   ref={videoRef}
                   data-testid="stack-movie"
                   controls
                   preload="metadata"
                   style={{ width: '100%', background: '#000' }}
-                  src={`${api.movieUrl(stackId)}${movieNonce ? `?v=${movieNonce}` : ''}`}
+                  src={`${api.movieUrl(stackId, physicalBand, normLabel)}${movieNonce ? `&v=${movieNonce}` : ''}`}
                 />
               ) : (
                 <p className={styles.muted}>No movie has been rendered for this stack yet.</p>
               )}
               <div className={styles.group} style={{ marginTop: 6 }}>
-                <button data-testid="render-movie" onClick={renderMovie}>
+                <button
+                  data-testid="render-movie"
+                  onClick={renderMovie}
+                  disabled={needsBand || nTimes === 0}
+                >
                   Render movie
                 </button>
-                <button data-testid="export-triples" onClick={exportTriples}>
+                <button
+                  data-testid="export-triples"
+                  onClick={exportTriples}
+                  disabled={needsBand || !readiness?.ready}
+                  title={readiness?.reasons.join(' ') || 'Readiness required'}
+                >
                   Export triples
                 </button>
               </div>

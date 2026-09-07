@@ -11,11 +11,11 @@ export function TopBar() {
 
   return (
     <header className={styles.topbar}>
-      <span className={styles.brand}>JIRAM catalog</span>
+      <span className={styles.brand}>Juno science workspace</span>
       <span className={styles.meta} data-testid="config-meta">
         {config ? (
           <>
-            <span title="archive mirror root">mirror: {config.mirror}</span>
+
             <span>{config.counts.frames_on_planet.toLocaleString()} frames on planet</span>
             {config.counts.junocam_images ? (
               <span data-testid="config-junocam">
@@ -24,7 +24,7 @@ export function TopBar() {
             ) : null}
             <span>{config.counts.stacks} stacks</span>
             <span>{config.counts.strips} strips</span>
-            <span>{config.counts.selections} selections</span>
+
             <span>v{config.version}</span>
           </>
         ) : (

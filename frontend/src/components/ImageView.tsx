@@ -58,6 +58,11 @@ export interface ImageViewProps {
   testId?: string;
   unit?: string;
   emptyMessage?: string;
+  camera?: OrthographicViewState | null;
+  onCameraChange?: (camera: OrthographicViewState) => void;
+  vectors?: { x_km: number; y_km: number; u: number; v: number }[];
+  vectorSeconds?: number;
+  maskOverlay?: boolean;
 }
 
 export function ImageView({
@@ -74,6 +79,11 @@ export function ImageView({
   testId = 'image-view',
   unit = 'km',
   emptyMessage = 'nothing loaded',
+  camera = null,
+  onCameraChange,
+  vectors = [],
+  vectorSeconds = 3600,
+  maskOverlay = false,
 }: ImageViewProps) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -83,11 +93,20 @@ export function ImageView({
   const [size, setSize] = useState<[number, number]>([800, height]);
   const [viewState, setViewState] = useState<OrthographicViewState>({ target: [0, 0, 0], zoom: 0 });
   const [readout, setReadout] = useState<string>('');
+  const [gridDensity, setGridDensity] = useState('sparse');
+  const cameraChange = useRef(onCameraChange);
+  cameraChange.current = onCameraChange;
+  const changeCamera = useCallback((next: OrthographicViewState) => {
+    setViewState(next);
+    cameraChange.current?.(next);
+  }, []);
 
   useLayoutEffect(() => {
     const node = wrapRef.current;
     if (!node) return;
-    const observer = new ResizeObserver(() => setSize([node.clientWidth || 800, node.clientHeight || height]));
+    const observer = new ResizeObserver(() =>
+      setSize([node.clientWidth || 800, node.clientHeight || height]),
+    );
     observer.observe(node);
     setSize([node.clientWidth || 800, node.clientHeight || height]);
     return () => observer.disconnect();
@@ -108,7 +127,11 @@ export function ImageView({
     if (!context) return;
     // A composite is already three bands of colour; a single band is one
     // number per pixel and the colour map is what makes it visible.
-    const mapped = flipRows(composite ? image.gray : applyLut(image.gray, cmap), image.width, image.height);
+    const mapped = flipRows(
+      composite ? image.gray : applyLut(image.gray, cmap),
+      image.width,
+      image.height,
+    );
     const frame = context.createImageData(image.width, image.height);
     frame.data.set(mapped);
     context.putImageData(frame, 0, 0);
@@ -142,7 +165,11 @@ export function ImageView({
     canvas.height = overlay.height;
     const context = canvas.getContext('2d');
     if (!context) return;
-    const mapped = flipRows(applyLut(overlay.gray, 'inferno'), overlay.width, overlay.height);
+    const mapped = flipRows(
+      maskOverlay ? overlay.gray : applyLut(overlay.gray, 'inferno'),
+      overlay.width,
+      overlay.height,
+    );
     const frame = context.createImageData(overlay.width, overlay.height);
     frame.data.set(mapped);
     context.putImageData(frame, 0, 0);
@@ -159,7 +186,7 @@ export function ImageView({
     return () => {
       cancelled = true;
     };
-  }, [overlay, overlayAlpha]);
+  }, [overlay, overlayAlpha, maskOverlay]);
 
   // Fit the image to the container whenever a different extent arrives.
   const boundsKey = image ? image.bounds.join(',') : '';
@@ -169,17 +196,20 @@ export function ImageView({
     const spanX = Math.abs(xMax - xMin) || 1;
     const spanY = Math.abs(yMax - yMin) || 1;
     const zoom = Math.log2(Math.min(size[0] / spanX, size[1] / spanY));
-    setViewState({ target: [(xMin + xMax) / 2, (yMin + yMax) / 2, 0], zoom });
-  }, [boundsKey, size, image]);
+    changeCamera({ target: [(xMin + xMax) / 2, (yMin + yMax) / 2, 0], zoom });
+  }, [boundsKey, size, changeCamera]);
 
-  const onHover = useCallback((info: PickingInfo) => {
-    if (!info.coordinate) {
-      setReadout('');
-      return;
-    }
-    const [x, y] = info.coordinate;
-    setReadout(`x ${x.toFixed(1)} ${unit}   y ${y.toFixed(1)} ${unit}`);
-  }, [unit]);
+  const onHover = useCallback(
+    (info: PickingInfo) => {
+      if (!info.coordinate) {
+        setReadout('');
+        return;
+      }
+      const [x, y] = info.coordinate;
+      setReadout(`x ${x.toFixed(1)} ${unit}   y ${y.toFixed(1)} ${unit}`);
+    },
+    [unit],
+  );
 
   const layers = useMemo(() => {
     if (!image) return [];
@@ -210,7 +240,9 @@ export function ImageView({
       );
     }
     if (showGraticule) {
-      const graticulePaths = paths(graticule);
+      const graticulePaths = paths(graticule).filter(
+        (_, i) => gridDensity === 'dense' || i % 3 === 0,
+      );
       if (graticulePaths.length > 0) {
         list.push(
           new PathLayer({
@@ -239,13 +271,52 @@ export function ImageView({
         );
       }
     }
+    if (vectors.length) {
+      const arrows = vectors.map((v) => {
+        const dx = (v.u * vectorSeconds) / 1000,
+          dy = (v.v * vectorSeconds) / 1000,
+          x = v.x_km + dx,
+          y = v.y_km + dy;
+        return {
+          path: [
+            [v.x_km, v.y_km],
+            [x, y],
+            [x - dx * 0.22 - dy * 0.12, y - dy * 0.22 + dx * 0.12],
+            [x, y],
+            [x - dx * 0.22 + dy * 0.12, y - dy * 0.22 - dx * 0.12],
+          ],
+        };
+      });
+      list.push(
+        new PathLayer({
+          id: `${testId}-vectors`,
+          data: arrows,
+          getPath: (d: { path: number[][] }) => d.path as [number, number][],
+          getColor: [255, 219, 120, 240],
+          getWidth: 1.5,
+          widthUnits: 'pixels',
+        }),
+      );
+    }
     return list;
-  }, [image, bitmap, overlayBitmap, overlayAlpha, showGraticule, graticule, contours, testId]);
+  }, [
+    image,
+    bitmap,
+    overlayBitmap,
+    overlayAlpha,
+    showGraticule,
+    graticule,
+    gridDensity,
+    contours,
+    testId,
+    vectors,
+    vectorSeconds,
+  ]);
 
   return (
     <div
       className={styles.wrap}
-      style={grow ? { height, minHeight: height, flex: '1 1 auto' } : { height }}
+      style={{ height, minHeight: Math.max(300, height), flex: grow ? '1 0 auto' : '0 0 auto' }}
       ref={wrapRef}
       data-testid={testId}
     >
@@ -253,8 +324,8 @@ export function ImageView({
         <DeckGL
           style={{ position: 'absolute', inset: '0' }}
           views={new OrthographicView({ id: `${testId}-ortho`, flipY: false })}
-          viewState={viewState}
-          onViewStateChange={({ viewState: next }) => setViewState(next as OrthographicViewState)}
+          viewState={camera ?? viewState}
+          onViewStateChange={({ viewState: next }) => changeCamera(next as OrthographicViewState)}
           controller={{ dragRotate: false }}
           layers={layers as never}
           onHover={onHover}
@@ -264,9 +335,81 @@ export function ImageView({
       ) : (
         <div style={{ padding: 12, color: 'var(--muted)' }}>{emptyMessage}</div>
       )}
+      {image && (
+        <div className={styles.tools}>
+          <button
+            onClick={() => {
+              const [a, b, c, d] = image.bounds;
+              changeCamera({
+                target: [(a + b) / 2, (c + d) / 2, 0],
+                zoom: Math.log2(Math.min(size[0] / (b - a), size[1] / (d - c))),
+              });
+            }}
+          >
+            Fit map
+          </button>
+          <button
+            onClick={() => {
+              let x0 = image.width,
+                y0 = image.height,
+                x1 = -1,
+                y1 = -1;
+              for (let y = 0; y < image.height; y++)
+                for (let x = 0; x < image.width; x++)
+                  if (image.gray[(y * image.width + x) * 4 + 3] > 0) {
+                    x0 = Math.min(x0, x);
+                    x1 = Math.max(x1, x);
+                    y0 = Math.min(y0, y);
+                    y1 = Math.max(y1, y);
+                  }
+              if (x1 < 0) return;
+              const [a, b, c, d] = image.bounds,
+                dx = (b - a) / image.width,
+                dy = (d - c) / image.height;
+              changeCamera({
+                target: [a + ((x0 + x1 + 1) / 2) * dx, c + ((y0 + y1 + 1) / 2) * dy, 0],
+                zoom:
+                  Math.log2(
+                    Math.min(size[0] / ((x1 - x0 + 1) * dx), size[1] / ((y1 - y0 + 1) * dy)),
+                  ) - 0.08,
+              });
+            }}
+          >
+            Fit valid data
+          </button>
+          {showGraticule && (
+            <label>
+              Grid{' '}
+              <select
+                aria-label="Graticule density"
+                value={gridDensity}
+                onChange={(e) => setGridDensity(e.target.value)}
+              >
+                <option value="sparse">Sparse</option>
+                <option value="dense">Dense</option>
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+      {showGraticule && image && (
+        <div className={styles.coordinates}>
+          Planetocentric latitude · east longitude · x/y in {unit}
+        </div>
+      )}
+      {vectors.length > 0 && (
+        <div className={styles.vectorLegend}>
+          Arrows: m s⁻¹ · 100 m s⁻¹ spans {vectorSeconds / 10} km
+        </div>
+      )}
       {readout && <div className={styles.readout}>{readout}</div>}
       {/* Kept in the DOM on purpose: this is the colour-mapped image itself. */}
-      <canvas ref={canvasRef} data-testid="frame-canvas" data-loaded="false" className={styles.hidden} />
+      <canvas
+        ref={canvasRef}
+        data-testid="frame-canvas"
+        data-loaded="false"
+        className={styles.hidden}
+      />
       <canvas ref={overlayCanvasRef} className={styles.hidden} />
     </div>
   );
@@ -282,7 +425,11 @@ export function ColorBar({ cmap, vmin, vmax }: { cmap: ColorMapName; vmin: numbe
   return (
     <span className={styles.colorbar}>
       <span>{vmin.toPrecision(3)}</span>
-      <span className={styles.bar} style={{ background: gradient }} aria-label={`${cmap} colour bar`} />
+      <span
+        className={styles.bar}
+        style={{ background: gradient }}
+        aria-label={`${cmap} colour bar`}
+      />
       <span>{vmax.toPrecision(3)}</span>
     </span>
   );

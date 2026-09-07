@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import matplotlib
 
@@ -44,7 +45,7 @@ STRETCH_SAMPLE = 40_000_000
 
 
 def stretch_limits(
-    stack: xr.Dataset, percentiles: tuple[float, float] = (1.0, 99.0)
+    stack: xr.Dataset, percentiles: tuple[float, float] = (1.0, 99.0), *, norm: str | None = None
 ) -> tuple[float, float]:
     """Robust display limits over every valid pixel of the whole stack.
 
@@ -56,7 +57,7 @@ def stretch_limits(
     budget = max(1, STRETCH_SAMPLE // max(steps, 1))
     samples: list[np.ndarray] = []
     for index in range(steps):
-        frame = np.asarray(stack["image"][index].values).ravel()
+        frame = _image_plane(stack, index, norm).ravel()
         stride = max(1, int(np.ceil(frame.size / budget)))
         frame = frame[::stride]
         samples.append(frame[np.isfinite(frame)])
@@ -67,6 +68,18 @@ def stretch_limits(
     if not high > low:
         high = low + 1.0
     return low, high
+
+
+def _image_plane(stack: xr.Dataset, index: int, norm: str | None) -> np.ndarray:
+    """Normalize only the current frame, keeping movie memory independent of cube size."""
+    if norm is not None:
+        from .science import normalise_frame
+        image, valid, _ = normalise_frame(stack.isel(time=index), norm)
+        return np.where(valid, image, np.nan).astype(np.float32)
+    image = np.asarray(stack["image"][index].values, dtype=np.float32)
+    if "valid" in stack:
+        image = np.where(np.asarray(stack.valid[index].values, dtype=bool), image, np.nan)
+    return image
 
 
 def _frame_size(rows: int, cols: int) -> tuple[int, int]:
@@ -115,16 +128,17 @@ def _scale_bar(axes, cols: int, rows: int, km_per_px: float) -> None:
     )
 
 
-def render_frames(
+def _iter_frames(
     stack: xr.Dataset,
     *,
     percentiles: tuple[float, float] = (1.0, 99.0),
     cmap: str = "gray",
-) -> list[np.ndarray]:
-    """One RGB array per time step of the stack."""
+    norm: str | None = None,
+):
+    """Yield one RGB frame at a time without retaining the full video."""
     rows, cols = int(stack.sizes["y"]), int(stack.sizes["x"])
     width, height = _frame_size(rows, cols)
-    low, high = stretch_limits(stack, percentiles)
+    low, high = stretch_limits(stack, percentiles, norm=norm)
     km_per_px = float(stack.attrs.get("km_per_px", 1.0))
     colours = plt.get_cmap(cmap).with_extremes(bad=(0.0, 0.0, 0.0, 0.0))
 
@@ -132,13 +146,12 @@ def render_frames(
     axes = figure.add_axes((0.0, 0.0, 1.0, 1.0))
     axes.set_facecolor(BACKGROUND)
     axes.set_axis_off()
-    frames: list[np.ndarray] = []
     try:
         for index in range(int(stack.sizes["time"])):
             axes.clear()
             axes.set_facecolor(BACKGROUND)
             axes.set_axis_off()
-            image = np.asarray(stack["image"][index].values, dtype=np.float32)
+            image = _image_plane(stack, index, norm)
             axes.imshow(
                 np.ma.masked_invalid(image),
                 origin="lower",
@@ -161,30 +174,39 @@ def render_frames(
             )
             _scale_bar(axes, cols, rows, km_per_px)
             figure.canvas.draw()
-            frames.append(np.asarray(figure.canvas.buffer_rgba())[..., :3].copy())
+            yield np.asarray(figure.canvas.buffer_rgba())[..., :3].copy()
     finally:
         plt.close(figure)
-    return frames
 
 
-def write_movie(
+def render_frames(stack: xr.Dataset, *, percentiles: tuple[float, float] = (1.0, 99.0),
+                  cmap: str = "gray", norm: str | None = None) -> list[np.ndarray]:
+    """One RGB array per time step; the writer uses the streaming iterator."""
+    return list(_iter_frames(stack, percentiles=percentiles, cmap=cmap, norm=norm))
+
+
+def _write_movie(
     stack: xr.Dataset,
     path: str | Path,
     *,
     fps: float = 4.0,
     percentiles: tuple[float, float] = (1.0, 99.0),
     cmap: str = "gray",
+    norm: str | None = None,
 ) -> dict[str, Any]:
     """Write ``stack`` as an ``.mp4`` (ffmpeg) or ``.gif``; returns a summary."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    frames = render_frames(stack, percentiles=percentiles, cmap=cmap)
-    if not frames:
+    count = int(stack.sizes.get("time", 0))
+    if not count:
         raise ValueError("the stack has no time steps to render")
-    height, width = frames[0].shape[:2]
+    if not np.isfinite(fps) or fps <= 0:
+        raise ValueError("fps must be positive and finite")
+    width, height = _frame_size(int(stack.sizes["y"]), int(stack.sizes["x"]))
+    frames = _iter_frames(stack, percentiles=percentiles, cmap=cmap, norm=norm)
     suffix = target.suffix.lower()
     if suffix == ".gif":
-        imageio.mimwrite(target, frames, format="GIF", duration=1000.0 / fps, loop=0)
+        imageio.mimwrite(target, list(frames), format="GIF", duration=1000.0 / fps, loop=0)
     elif suffix in (".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm"):
         # imageio-ffmpeg ships its own ffmpeg; no system binary is needed.
         with imageio.get_writer(
@@ -201,13 +223,28 @@ def write_movie(
                 writer.append_data(frame)
     else:
         raise ValueError(f"unsupported movie suffix: {target.suffix!r}")
-    LOGGER.info("wrote %d frame(s) to %s", len(frames), target)
+    LOGGER.info("wrote %d frame(s) to %s", count, target)
     return {
         "path": target,
-        "frames": len(frames),
+        "frames": count,
         "width": int(width),
         "height": int(height),
         "fps": float(fps),
-        "duration_s": len(frames) / float(fps),
+        "duration_s": count / float(fps),
         "bytes": target.stat().st_size,
     }
+
+
+def write_movie(stack: xr.Dataset, path: str | Path, *, fps: float = 4.0,
+                percentiles: tuple[float, float] = (1.0, 99.0), cmap: str = "gray",
+                norm: str | None = None) -> dict[str, Any]:
+    """Publish a complete movie atomically, preserving a previous file on failure."""
+    target = Path(path)
+    temporary = target.with_name(f".{target.stem}.{uuid4().hex}{target.suffix}")
+    try:
+        result = _write_movie(stack, temporary, fps=fps, percentiles=percentiles, cmap=cmap, norm=norm)
+        temporary.replace(target)
+        result["path"] = target
+        return result
+    finally:
+        temporary.unlink(missing_ok=True)

@@ -146,16 +146,24 @@ a time stack (`--level frame`) or one-per-sequence composite
 
 ```
 usage: jiram-catalog movie [-h] --out OUT [--fps FPS] [--pct LOW HIGH]
-                           [--cmap CMAP] [-v]
+                           [--cmap CMAP] [--band BAND] [--norm NORM] [-v]
                            stack
 ```
 
 ```
 usage: jiram-catalog export-goflow [-h] --out OUT [--dt-tol DT_TOL]
                                    [--min-frames MIN_FRAMES] [--crop-to-valid]
-                                   [-v]
+                                   [--band BAND] [--norm NORM] [-v]
                                    stack
 ```
+
+Multiband products require an explicit physical channel, for example
+`--band RED --norm none`. Both commands apply the JunoCam eligibility policy;
+processing versions do not count as independent exposures. Export validates
+cadence and shared valid pixels before creating the destination and records
+the selected channel, normalization and native units. Thermal JIRAM products
+reject solar illumination corrections. See the
+[research workflow](research_workflow.md) for readiness and scientific limits.
 
 ### Worked example: build a polar stack and a movie
 

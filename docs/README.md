@@ -6,6 +6,8 @@ one line each; follow the links for the rest.
 
 ## Read first
 
+- [`research_workflow.md`](research_workflow.md) -- current five-view workspace,
+  JunoCam exclusion policy, capability matrix and scientific interpretation.
 - [`../README.md`](../README.md) -- what the tool is, quickstart,
   where to read next.
 - [`architecture.md`](architecture.md) -- the layers as built, the
@@ -21,6 +23,11 @@ one line each; follow the links for the rest.
 
 ## Decisions and gaps
 
+- [`reports/junocam_calibrated_assessment_2026-09-07.md`](reports/junocam_calibrated_assessment_2026-09-07.md)
+  -- bounded PDS sample inspection, generated-channel provenance and suitability.
+- [`reports/usability_scientific_review_2026-09-07.md`](reports/usability_scientific_review_2026-09-07.md)
+  -- usability and aesthetics assessment, live JunoCam readiness findings,
+  archive comparison, screenshots, and prioritized design backlog D01–D12.
 - [`decisions.md`](decisions.md) -- one entry per settled choice, with
   evidence and where it is enforced; do not reopen without new evidence.
 - [`open_items.md`](open_items.md) -- known gaps: kernel coverage,
@@ -39,6 +46,8 @@ one line each; follow the links for the rest.
 
 ## Process
 
+- [`build_log_2026-09-07.md`](build_log_2026-09-07.md) -- accepted D01–D12
+  implementation, validation and remaining data limitations.
 - [`agent_harness.md`](agent_harness.md) -- the spec -> gate -> execute
   -> verify loop this repository is built with.
 - [`../AGENTS.md`](../AGENTS.md) -- entry point for any agent working in

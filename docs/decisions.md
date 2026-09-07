@@ -1,5 +1,47 @@
 # Decisions
 
+## Scientific workspace and JunoCam failure exclusion (2026-09-07)
+
+The owner accepted D01–D12 in the usability review and requested their
+implementation. `failure-exclusion-v1` uses documented image/interval failures
+and conservative pixel checks; unassessed instrument states remain
+metadata-only. Annealing and legacy A/B/C grades do not establish per-image
+recovery. Latest archive-known RDR versions are the default observation
+identity; duplicate versions and corrected millisecond timestamps do not add
+independent exposures. Old derived products are filtered at access without
+rewriting archived files. Enforced by `junocam/policy.py`, `api/data.py`,
+builders, and movie/export integration.
+
+Native-band analysis/export requires explicit channel selection, valid
+common support and regular positive cadence. Population comparisons separate
+instrument, band, units, normalization and resolution class; uncertainty is
+across independent pass means. Image registration is not wind truth. Unknown
+navigation uncertainty, vector association and grid equivalence remain
+explicitly unknown. Enforced by `science.py`, `api/science.py` and the
+[current scientific workspace](research_workflow.md).
+
+The PDS `junocam_atm-ml-calib` bundle is a derived reference, not an automatic
+replacement for native radiance or motion observations. Actual sample labels
+have no tile times; GeoTIFFs have 62.5 km pixels and generated HST-equivalent
+channels. Scaling/mask examples need reconciliation before quantitative
+import. Evidence: [bounded collection audit](reports/junocam_calibrated_assessment_2026-09-07.md).
+
+Arrow's service pool is bounded independently of BLAS/OpenMP (default four,
+overridable with `JIRAM_ARROW_THREADS`). On this node, inheriting
+`OMP_NUM_THREADS=1` made cold catalog construction take about 29 seconds;
+explicit Arrow four restored about 0.8 seconds with identical rows. The
+existing physical models and geometry conventions are unchanged.
+
+NetCDF-backed API routes and background jobs share a process-local lock.
+Concurrent first-open requests caused a reproducible native-library crash;
+serializing these operations follows the
+[netCDF C thread-safety restriction](https://docs.unidata.ucar.edu/netcdf-c/current/faq.html).
+Config, health, jobs, selections and catalog requests stay outside that lock.
+Bounded stretch and display-contour sampling slices lazy arrays before loading
+them; full-resolution science runs only on explicit request. This trades
+parallel image processing for reliability; process-isolated workers are a
+future scaling option, not a prerequisite for the present local workspace.
+
 One entry per settled choice: what was decided, the evidence, and where
 it is enforced. Do not reopen these without new evidence -- see
 `AGENTS.md`. Sources are named per entry; the general process that

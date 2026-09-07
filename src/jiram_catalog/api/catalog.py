@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +81,12 @@ CATALOG_SCHEMA = pa.schema(
         pa.field("quality_tier", pa.string()),
         pa.field("fp_lon", pa.list_(pa.float32())),
         pa.field("fp_lat", pa.list_(pa.float32())),
+        pa.field("observation_id", pa.string()),
+        pa.field("trackability_status", pa.string()),
+        pa.field("quality_status", pa.string()),
+        pa.field("quality_reason", pa.string()),
+        pa.field("native_version", pa.int16()),
+        pa.field("is_preferred", pa.bool_()),
     ]
 )
 
@@ -95,14 +102,24 @@ INDEX_FILES: tuple[str, ...] = (
     "index/frames.parquet",
     "index/frames_geo.parquet",
     "index/trackability_frames.parquet",
+    "junocam/index/junocam_images.parquet",
     "junocam/index/junocam_geo.parquet",
     "junocam/index/junocam_quality.parquet",
 )
 
-_TABLE_LOCK = threading.Lock()
+_TABLE_LOCK = threading.RLock()
 _TABLE_CACHE: dict[str, pd.DataFrame] = {}
 _IPC_CACHE: dict[str, tuple[str, bytes]] = {}
 _FULL_CACHE: dict[str, pd.DataFrame] = {}
+
+
+def _single_flight(function):
+    """Concurrent cold requests share one table/IPC build instead of stampeding."""
+    @wraps(function)
+    def locked(*args, **kwargs):
+        with _TABLE_LOCK:
+            return function(*args, **kwargs)
+    return locked
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +142,8 @@ def index_etag(mirror: str | Path | None = None) -> str:
             digest.update(f"{relative}:absent".encode())
         else:
             digest.update(f"{relative}:{stat.st_mtime_ns}:{stat.st_size}".encode())
+    from ..junocam.policy import policy_signature, POLICY_VERSION
+    digest.update(repr((POLICY_VERSION, policy_signature(root))).encode())
     return f'"{digest.hexdigest()[:24]}"'
 
 
@@ -136,6 +155,7 @@ def _first_present(frame: pd.DataFrame, *names: str) -> pd.Series:
     return pd.Series([np.nan] * len(frame), index=frame.index)
 
 
+@_single_flight
 def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     """The contract's rows and columns, built once per mirror and kept.
 
@@ -146,13 +166,16 @@ def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     complete.
     """
     root = mirror_root(mirror)
-    key = str(root)
+    key = str(root) + index_etag(root)
     with _TABLE_LOCK:
         cached = _TABLE_CACHE.get(key)
     if cached is not None:
         return cached
 
-    frames = frames_with_geo(root)
+    try:
+        frames = frames_with_geo(root)
+    except FileNotFoundError:
+        frames = pd.DataFrame(columns=["product_id", "half", "band", "seq_id", "orbit_dir", "start_time", "geo_ok", "on_planet_frac"])
     mask = (
         frames["geo_ok"].fillna(False).to_numpy(dtype=bool)
         & (frames["on_planet_frac"].to_numpy(dtype=np.float64, na_value=np.nan) > 0.0)
@@ -196,11 +219,21 @@ def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     table["fp_lon"] = [empty] * len(table)
     table["fp_lat"] = [empty] * len(table)
 
+    from ..junocam.policy import observation_id, native_version
+    table["observation_id"] = table.product_id.map(observation_id)
+    table["native_version"] = table.product_id.map(native_version)
+    table["is_preferred"] = True
+    table["quality_status"] = "unassessed"
+    table["quality_reason"] = "JunoCam instrument-failure policy does not assess JIRAM"
+    table["trackability_status"] = "unassessed"
     table["has_partner"] = False
     table["best_dt_s"] = np.nan
     table["trackable_30"] = False
     revisits = data.trackability_table(root)
     if revisits is not None:
+        known_pairs = pd.MultiIndex.from_frame(revisits[["product_id", "half"]].astype(str))
+        pairs = pd.MultiIndex.from_frame(table[["product_id", "half"]].astype(str))
+        table["trackability_status"] = np.where(pairs.isin(known_pairs), "assessed", "unassessed")
         columns = ["product_id", "half"] + [
             name for name in ("has_partner", "best_dt_s", "trackable_30") if name in revisits.columns
         ]
@@ -229,6 +262,7 @@ def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     return table
 
 
+@_single_flight
 def catalog_ipc(mirror: str | Path | None = None) -> tuple[str, bytes]:
     """The Arrow IPC stream and its ``ETag``, built once and kept."""
     root = mirror_root(mirror)
@@ -245,6 +279,7 @@ def catalog_ipc(mirror: str | Path | None = None) -> tuple[str, bytes]:
     return etag, payload
 
 
+@_single_flight
 def full_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     """``frames_with_geo`` itself, cached for the per-frame detail view.
 
@@ -253,7 +288,7 @@ def full_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     never pays for the wide table.
     """
     root = mirror_root(mirror)
-    key = str(root)
+    key = str(root) + index_etag(root)
     with _TABLE_LOCK:
         cached = _FULL_CACHE.get(key)
     if cached is not None:
@@ -271,6 +306,8 @@ def clear_caches() -> None:
         _IPC_CACHE.clear()
         _FULL_CACHE.clear()
     data._JUNOCAM_CACHE.clear()
+    with data._STRIPS_TABLE_LOCK:
+        data._STRIPS_CACHE.clear()
 
 
 def _band_list(values: Any) -> list[str]:
@@ -319,10 +356,9 @@ def apply_filters(table: pd.DataFrame, **filters: Any) -> pd.DataFrame:
     fails on about a quarter of the frames' emission angles, and dropping
     those the moment a slider moves would silently shrink the map.  Two
     exceptions the contract names: ``on_planet_min``, where a missing
-    fraction excludes the row, and the latitude window, where a frame
-    whose boresight misses the planet has no latitude at all and so
-    cannot be inside a latitude band -- a quarter of the archive would
-    otherwise answer every latitude query.
+    fraction excludes the row, and the latitude window, where the known
+    footprint range intersects the requested interval. Boresight mode is
+    explicit; missing footprint bounds fall back to the boresight.
     """
     if table.empty:
         return table
@@ -360,10 +396,8 @@ def apply_filters(table: pd.DataFrame, **filters: Any) -> pd.DataFrame:
         )
 
     if "quality_tier" in table.columns:
-        # Unlike every other threshold this one has a default, because tier C
-        # means "taken while the detector was known to be damaged" and showing
-        # those beside good frames without being asked would misrepresent the
-        # archive.  ``quality_min=C`` is how a user asks to see them.
+        # Legacy grade is descriptive; eligibility was already enforced at
+        # loading and cannot be overridden by a quality filter.
         limit = tier_rank(filters.get("quality_min") or DEFAULT_TIER)
         keep &= table["quality_tier"].map(tier_rank).to_numpy() <= limit
 
@@ -384,11 +418,19 @@ def apply_filters(table: pd.DataFrame, **filters: Any) -> pd.DataFrame:
         latitudes = pd.to_numeric(table["bore_lat"], errors="coerce").to_numpy(
             dtype=np.float64, na_value=np.nan
         )
+        minimum = maximum = latitudes
+        if filters.get("latitude_mode", "coverage") == "coverage":
+            minimum = pd.to_numeric(_first_present(table, "min_lat"), errors="coerce").to_numpy(dtype=float)
+            maximum = pd.to_numeric(_first_present(table, "max_lat"), errors="coerce").to_numpy(dtype=float)
+            minimum = np.where(np.isfinite(minimum), minimum, latitudes)
+            maximum = np.where(np.isfinite(maximum), maximum, latitudes)
+        elif filters.get("latitude_mode") != "boresight":
+            raise ValueError("latitude_mode must be coverage or boresight")
         with np.errstate(invalid="ignore"):
             if filters.get("lat_min") is not None:
-                keep &= latitudes >= float(filters["lat_min"])
+                keep &= maximum >= float(filters["lat_min"])
             if filters.get("lat_max") is not None:
-                keep &= latitudes <= float(filters["lat_max"])
+                keep &= minimum <= float(filters["lat_max"])
 
     if filters.get("revisit_only"):
         column = "trackable_30" if "trackable_30" in table.columns else "has_partner"
@@ -431,6 +473,10 @@ def json_safe(value: Any) -> Any:
     if isinstance(value, (pd.Timestamp, np.datetime64)):
         stamp = pd.Timestamp(value)
         return None if pd.isna(stamp) else stamp.isoformat()
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v) for v in value]
     if isinstance(value, np.ndarray):
         return [json_safe(item) for item in value.tolist()]
     try:
@@ -476,6 +522,7 @@ def summary(
     lat_min: float | None = None,
     lat_max: float | None = None,
     revisit_only: bool = False,
+    latitude_mode: str = Query(default="coverage", pattern="^(coverage|boresight)$"),
 ) -> dict[str, Any]:
     """Counts of the filtered catalog, binned three ways."""
     table = catalog_frame(request.app.state.mirror)
@@ -497,20 +544,117 @@ def summary(
             lat_min=lat_min,
             lat_max=lat_max,
             revisit_only=revisit_only,
+            latitude_mode=latitude_mode,
         )
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=f"bad filter: {exc}") from exc
     return summarise(selected)
 
 
+def product_record(mirror: str | Path | None, product_id: str) -> dict[str, Any]:
+    """Safe provenance for any known version, including blocked metadata."""
+    from ..junocam.policy import observation_table, observation_id, native_version, assess_observation
+    from ..junocam.pds import load_manifest_files, BASE_URL
+    root = mirror_root(mirror)
+    if str(product_id).startswith("JNC"):
+        table = observation_table(root)
+        rows = table.loc[table.product_id.astype(str) == product_id]
+        try:
+            manifest = load_manifest_files(root)
+        except FileNotFoundError:
+            manifest = pd.DataFrame(columns=["product_id"])
+        archived = manifest.loc[manifest.product_id.astype(str) == product_id]
+        if rows.empty and archived.empty:
+            raise HTTPException(404, f"unknown product_id: {product_id}")
+        record = {} if archived.empty else archived.iloc[0].to_dict()
+        if not rows.empty:
+            record.update(rows.iloc[0].to_dict())
+        assessment = assess_observation(record)
+        all_ids = set(table.product_id.astype(str)) | set(manifest.product_id.astype(str))
+        versions = sorted((v for v in all_ids if observation_id(v) == observation_id(product_id)), key=native_version, reverse=True)
+        source_url = record.get("url_img")
+        label_url = record.get("url_lbl")
+        if not source_url and record.get("volume") and record.get("file_spec"):
+            label_url = BASE_URL + str(record["volume"]) + "/" + str(record["file_spec"])
+            source_url = str(label_url).rsplit(".", 1)[0] + ".IMG"
+        record.update(instrument="JunoCam", halves=[""], bands=_band_list(record.get("bands")) or _band_list(record.get("filters")),
+                      quality_assessment=assessment, source_url=source_url, label_url=label_url,
+                      preview_allowed=assessment["status"] == "eligible", thumbnail_kind="instrument framelets")
+    else:
+        frame = full_frame(root)
+        rows = frame.loc[frame["product_id"].astype(str) == product_id]
+        if rows.empty:
+            raise HTTPException(404, f"unknown product_id: {product_id}")
+        record = rows.iloc[0].to_dict()
+        halves = sorted(set(rows["half"].dropna().astype(str)))
+        versions = sorted({v for v in frame.product_id.astype(str) if observation_id(v) == observation_id(product_id)}, key=native_version, reverse=True)
+        from ..pds import BASE_URL as JIRAM_URL
+        orbit = int(record.get("orbit_dir", record.get("orbit", 0)))
+        record["url_img"] = JIRAM_URL + f"orbit{orbit:02d}/{product_id}.IMG"
+        record["url_lbl"] = JIRAM_URL + f"orbit{orbit:02d}/{product_id}.LBL"
+        record.update(instrument="JIRAM", halves=halves, bands=halves,
+                      quality_assessment={"status": "unassessed", "reasons": ["JunoCam failure policy does not assess JIRAM"]},
+                      source_url=record.get("url_img"), label_url=record.get("url_lbl"),
+                      preview_allowed=True, thumbnail_kind="instrument detector half")
+    record.update(observation_id=observation_id(product_id), version=record.get("version", native_version(product_id)),
+                  native_version=native_version(product_id), versions=versions,
+                  is_preferred=bool(versions and versions[0] == product_id),
+                  rationale=record.get("rationale_desc", ""),
+                  provenance={"source_product_id": record.get("source_product_id"),
+                              "software": record.get("software_name"),
+                              "processing_level": record.get("level", record.get("processing_level_id")),
+                              "product_creation_time": record.get("product_creation_time"),
+                              "coordinate_convention": "planetocentric latitude; east-positive longitude [0,360)",
+                              "version_note": "Processing versions represent one observation"})
+    return json_safe(record)
+
+
 @router.get("/frame/{product_id}")
 def frame_detail(request: Request, product_id: str) -> dict[str, Any]:
-    """Every column the index and the geometry table carry for one product."""
-    frame = full_frame(request.app.state.mirror)
-    rows = frame.loc[frame["product_id"].astype(str) == str(product_id)]
-    if rows.empty:
-        raise HTTPException(status_code=404, detail=f"unknown product_id: {product_id}")
-    halves = sorted({str(value) for value in rows["half"].dropna().tolist()})
-    record = {name: json_safe(rows.iloc[0][name]) for name in rows.columns}
-    record["halves"] = halves
-    return record
+    return product_record(request.app.state.mirror, product_id)
+
+
+@router.get("/frame/{product_id}/thumbnail.png")
+def frame_thumbnail(request: Request, product_id: str, band: str | None = None) -> Response:
+    """Bounded raw detector sampling, with eligibility enforced before opening."""
+    from . import images
+    from ..junocam.quality import image_dtype
+    root = mirror_root(request.app.state.mirror)
+    record = product_record(root, product_id)
+    if not record["preview_allowed"]:
+        raise HTTPException(403, {"message": "Observation withheld by JunoCam failure policy", "quality_assessment": record["quality_assessment"]})
+    path_value = record.get("path") or record.get("img_path")
+    if not path_value and record["instrument"] == "JIRAM" and record.get("label_path"):
+        path_value = str(Path(record["label_path"]).with_suffix(".IMG"))
+    if not path_value:
+        raise HTTPException(404, "No local image path is indexed")
+    base = root / "junocam" if record["instrument"] == "JunoCam" else root
+    path = Path(path_value)
+    path = (path if path.is_absolute() else base / path).resolve()
+    if not path.is_relative_to(root.resolve()) or not path.is_file():
+        raise HTTPException(404, "Indexed image is not present within the mirror")
+    wanted = str(band or record["bands"][0]).upper() if record["bands"] else ""
+    if wanted not in record["bands"]:
+        raise HTTPException(400, "Band is not present in this product")
+    if record["instrument"] == "JunoCam":
+        lines, samples = int(record["lines"]), int(record["samples"])
+        dtype = image_dtype(int(record["sample_bits"]), str(record.get("sample_type", "UNSIGNED_INTEGER")))
+        if path.stat().st_size < lines * samples * dtype.itemsize:
+            raise HTTPException(409, "Indexed image is truncated")
+        raw = np.memmap(path, dtype=dtype, mode="r", shape=(lines, samples))
+        filters = _band_list(record.get("filters", record["bands"]))
+        band_index = filters.index(wanted)
+        # Up to eight separated framelets: clear scene evidence, bounded I/O.
+        count = lines // (128 * len(filters))
+        indices = np.unique(np.linspace(0, max(0, count - 1), min(8, count)).astype(int))
+        planes = [np.array(raw[(i * len(filters) + band_index) * 128:(i * len(filters) + band_index + 1) * 128:2, ::max(1, samples // 512)]) for i in indices]
+        if not planes:
+            raise HTTPException(409, "No complete framelets")
+        values = np.concatenate(planes)
+        del raw
+    else:
+        from ..stacks import read_frame_image
+        values = read_frame_image(path, wanted)
+    low, high = images.percentiles_of(values, np.isfinite(values), 1, 99)
+    payload, _, _ = images.plane_png(values, None, vmin=low, vmax=high, max_px=512)
+    return Response(payload, media_type="image/png", headers={"Cache-Control": "no-store", "X-Preview-Kind": record["thumbnail_kind"]})

@@ -23,7 +23,12 @@ import type {
   StripMeta,
   StripStats,
 } from '../api/types';
-import { bandsByInstrument, columnsFromIPC, EMPTY_COLUMNS, type CatalogColumns } from '../lib/catalogTable';
+import {
+  bandsByInstrument,
+  columnsFromIPC,
+  EMPTY_COLUMNS,
+  type CatalogColumns,
+} from '../lib/catalogTable';
 import {
   bandForChannel,
   DEFAULT_FLAT_SIGMA,
@@ -39,14 +44,19 @@ import {
 } from '../lib/bands';
 import { computeFootprints, EMPTY_FOOTPRINTS, type FootprintSet } from '../lib/footprints';
 import { composePayloads } from '../lib/rgb';
-import { DEFAULT_FILTERS, filterIndices, filtersToParams, type CatalogFilters } from '../lib/filters';
+import {
+  DEFAULT_FILTERS,
+  filterIndices,
+  filtersToParams,
+  type CatalogFilters,
+} from '../lib/filters';
 import { Lru } from '../lib/lru';
 import type { ColorMapName } from '../lib/lut';
 import { projectColumns, type ViewMode } from '../lib/projection';
 import { loadPersisted, savePersisted } from './persist';
 import { parseStrips, type StripRow } from '../lib/stripsTable';
 
-export type TabName = 'catalog' | 'poles' | 'strips';
+export type TabName = 'catalog' | 'poles' | 'strips' | 'coverage' | 'compare';
 export type ColorBy = 'orbit' | 'year' | 'pixel' | 'emission' | 'instrument';
 
 export interface Toast {
@@ -222,17 +232,29 @@ interface Actions {
 export type Store = State & Actions;
 
 const persistedFilters = loadPersisted<CatalogFilters>('filters', DEFAULT_FILTERS);
-const persistedSelection = loadPersisted<{ keys: string[]; name: string }>('selection', { keys: [], name: '' });
+if (persistedFilters.instrument === 'JunoCam') {
+  persistedFilters.half = 'all';
+  persistedFilters.revisitOnly = false;
+}
+const persistedSelection = loadPersisted<{ keys: string[]; name: string }>('selection', {
+  keys: [],
+  name: '',
+});
 // The statistics panel costs three Plotly figures and a server round trip, so
 // it starts hidden and the choice is remembered per browser.
 const persistedUi = loadPersisted<{ statsVisible: boolean }>('ui', { statsVisible: false });
 
 let toastId = 0;
+let initialization: Promise<void> | null = null;
 
 /** Frame PNGs are heavy; twenty is enough for a play loop plus a prefetch. */
 const frameCache = new Lru<string, ImagePayload>(20, (value) => value.bitmap.close());
 
-export function selectionStats(columns: CatalogColumns, keyIndex: Map<string, number>, keys: Set<string>): SelectionStats {
+export function selectionStats(
+  columns: CatalogColumns,
+  keyIndex: Map<string, number>,
+  keys: Set<string>,
+): SelectionStats {
   const orbits = new Set<number>();
   const bands = new Set<string>();
   const byInstrument: Record<string, number> = {};
@@ -298,6 +320,45 @@ export function currentStripNorm(state: {
   stripNormSigma: number;
 }): string {
   return normLabel(state.stripNorm, state.stripNormK, state.stripNormSigma);
+}
+
+/** Exact wire identities keep late responses from replacing newer display choices. */
+function frameImageUrl(state: State, t = state.t): string | null {
+  if (!state.stackId || !state.stackMeta) return null;
+  const norm = currentNorm(state);
+  return state.composite
+    ? api.stackRgbUrl(state.stackId, t, compositeStretch(state), 1600, norm, state.stretchMode)
+    : api.stackFrameUrl(
+        state.stackId,
+        t,
+        state.vmin,
+        state.vmax,
+        1600,
+        state.band,
+        norm,
+        state.stretchMode,
+      );
+}
+
+function stripImageUrls(state: State): string[] {
+  if (!state.stripId || !state.stripMeta) return [];
+  const norm = currentStripNorm(state);
+  const bands =
+    state.stripComposite && hasRgb(state.stripBands)
+      ? (['r', 'g', 'b'] as const).map((channel) => bandForChannel(state.stripBands, channel))
+      : [state.stripBand];
+  return bands.map((band) => {
+    const stretch = stretchFor(state.stripMeta!.stretch, norm, band);
+    return api.stripImageUrl(
+      state.stripId!,
+      stretch.p1,
+      stretch.p99,
+      1600,
+      band,
+      norm,
+      state.stripStretchMode,
+    );
+  });
 }
 
 /**
@@ -401,7 +462,8 @@ export const useStore = create<Store>((set, get) => ({
     try {
       return await work();
     } catch (error) {
-      const message = error instanceof ApiError ? `${key}: ${error.message}` : `${key}: ${String(error)}`;
+      const message =
+        error instanceof ApiError ? `${key}: ${error.message}` : `${key}: ${String(error)}`;
       get().pushToast('error', message);
       return undefined;
     } finally {
@@ -410,13 +472,19 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async init() {
-    await get().run('config', async () => {
-      const config = await api.config();
-      set({ config });
-    });
-    await get().loadCatalog();
-    await Promise.all([get().loadSavedSelections(), get().loadStacks(), get().loadStrips()]);
-    await get().refreshSummary();
+    if (initialization) return initialization;
+    initialization = (async () => {
+      const configRequest = get().run('config', async () => {
+        const config = await api.config();
+        set({ config });
+      });
+      // Map and configuration can load independently. Cataloging the same
+      // NetCDF products again is unnecessary until configuration has finished.
+      await Promise.all([configRequest, get().loadCatalog(), get().loadSavedSelections()]);
+      await Promise.all([get().loadStacks(), get().loadStrips()]);
+      await get().refreshSummary();
+    })();
+    return initialization;
   },
 
   async loadCatalog() {
@@ -424,7 +492,8 @@ export const useStore = create<Store>((set, get) => ({
       const bytes = await api.framesArrow();
       const columns = columnsFromIPC(bytes);
       const keyIndex = new Map<string, number>();
-      for (let i = 0; i < columns.n; i++) keyIndex.set(frameKey(columns.productId[i], columns.half[i]), i);
+      for (let i = 0; i < columns.n; i++)
+        keyIndex.set(frameKey(columns.productId[i], columns.half[i]), i);
       const { filters, viewMode } = get();
       const filtered = filterIndices(columns, filters);
       set({
@@ -440,6 +509,10 @@ export const useStore = create<Store>((set, get) => ({
 
   setFilters(patch) {
     const filters = { ...get().filters, ...patch };
+    if (filters.instrument === 'JunoCam') {
+      filters.half = 'all';
+      filters.revisitOnly = false;
+    }
     savePersisted('filters', filters);
     const { columns, viewMode } = get();
     const filtered = filterIndices(columns, filters);
@@ -608,8 +681,20 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async openStack(id) {
+    set({
+      stackId: id,
+      stackMeta: null,
+      frameImage: null,
+      emissionImage: null,
+      stackBands: [],
+      band: null,
+      t: 0,
+      playing: false,
+      composite: false,
+    });
     await get().run('stack', async () => {
       const meta = await api.stackMeta(id);
+      if (get().stackId !== id) return;
       // A stack with a `band` dimension opens on its first band and in single
       // band mode: a composite is a choice, not a default, because it needs
       // three requests and hides the colour maps.
@@ -654,7 +739,7 @@ export const useStore = create<Store>((set, get) => ({
     const meta = get().stackMeta;
     const last = meta ? meta.times.length - 1 : 0;
     const clamped = Math.max(0, Math.min(last, t));
-    set({ t: clamped });
+    set({ t: clamped, ...(clamped !== get().t ? { emissionImage: null } : {}) });
     void get().loadFrame(clamped);
   },
 
@@ -671,7 +756,9 @@ export const useStore = create<Store>((set, get) => ({
 
   setStretch(vmin, vmax) {
     const { band } = get();
-    const bandStretch = band ? { ...get().bandStretch, [band]: [vmin, vmax] as [number, number] } : get().bandStretch;
+    const bandStretch = band
+      ? { ...get().bandStretch, [band]: [vmin, vmax] as [number, number] }
+      : get().bandStretch;
     set({ vmin, vmax, bandStretch });
     frameCache.clear();
     void get().loadFrame(get().t);
@@ -679,10 +766,12 @@ export const useStore = create<Store>((set, get) => ({
 
   setBand(band) {
     const state = get();
-    const pair = state.bandStretch[band] ?? (() => {
-      const stretch = stretchFor(state.stackMeta?.stretch, currentNorm(state), band);
-      return [stretch.p1, stretch.p99] as [number, number];
-    })();
+    const pair =
+      state.bandStretch[band] ??
+      (() => {
+        const stretch = stretchFor(state.stackMeta?.stretch, currentNorm(state), band);
+        return [stretch.p1, stretch.p99] as [number, number];
+      })();
     set({ band, vmin: pair[0], vmax: pair[1] });
     frameCache.clear();
     void get().loadFrame(get().t);
@@ -746,41 +835,46 @@ export const useStore = create<Store>((set, get) => ({
 
   async loadFrame(t) {
     const state = get();
-    const { stackId, vmin, vmax, band, composite, stretchMode } = state;
+    const { stackId, composite } = state;
     if (!stackId) return;
-    const norm = currentNorm(state);
     // The composite is one request per time step, not three: the contract's
     // `rgb.png` reads the three bands out of the same file server-side.
-    const frameUrl = (step: number): string =>
-      composite
-        ? api.stackRgbUrl(stackId, step, compositeStretch(state), 1600, norm, stretchMode)
-        : api.stackFrameUrl(stackId, step, vmin, vmax, 1600, band, norm, stretchMode);
-    const target = frameUrl(t);
+    const target = frameImageUrl(state, t);
+    if (!target) return;
+    const isCurrent = () => frameImageUrl(get()) === target;
     const cached = frameCache.get(target);
     if (cached) {
-      if (get().t === t) set({ frameImage: cached, frameLoaded: true, frameComposite: composite });
+      if (isCurrent()) set({ frameImage: cached, frameLoaded: true, frameComposite: composite });
       return;
     }
+    if (isCurrent()) set({ frameImage: null, frameLoaded: false });
     await get().run('frame', async () => {
       const payload = await fetchImage(target);
       frameCache.set(target, payload);
-      if (get().t === t && get().stackId === stackId) {
+      if (isCurrent()) {
         set({ frameImage: payload, frameLoaded: true, frameComposite: composite });
       }
+      if (!isCurrent()) return;
       // Prefetch the next two frames so playback does not stutter.
       const meta = get().stackMeta;
       if (meta) {
         for (const ahead of [1, 2]) {
           const next = (t + ahead) % meta.times.length;
-          const nextUrl = frameUrl(next);
-          if (!frameCache.has(nextUrl)) {
-            void fetchImage(nextUrl).then((image) => frameCache.set(nextUrl, image)).catch(() => undefined);
+          const nextUrl = frameImageUrl(state, next);
+          if (nextUrl && !frameCache.has(nextUrl)) {
+            void fetchImage(nextUrl)
+              .then((image) => frameCache.set(nextUrl, image))
+              .catch(() => undefined);
           }
         }
       }
     });
     if (get().emissionAlpha > 0 && !get().emissionImage) {
-      void fetchImage(api.stackEmissionUrl(stackId, t)).then((image) => set({ emissionImage: image })).catch(() => undefined);
+      void fetchImage(api.stackEmissionUrl(stackId, t))
+        .then((image) => {
+          if (get().stackId === stackId && get().t === t) set({ emissionImage: image });
+        })
+        .catch(() => undefined);
     }
   },
 
@@ -792,8 +886,18 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async openStrip(id) {
+    set({
+      stripId: id,
+      stripMeta: null,
+      stripImage: null,
+      stripStats: null,
+      stripBands: [],
+      stripBand: null,
+      stripComposite: false,
+    });
     await get().run('strip', async () => {
       const meta = await api.stripMeta(id);
+      if (get().stripId !== id) return;
       const bands = uniqueBands(meta.bands);
       set({
         stripId: id,
@@ -810,10 +914,8 @@ export const useStore = create<Store>((set, get) => ({
       });
       await get().loadStripImage();
     });
-    void get().run('strip stats', async () => {
-      const stats = await api.stripStats(id, get().stripBand, currentStripNorm(get()));
-      if (get().stripId === id) set({ stripStats: stats });
-    });
+    if (get().stripId !== id || !get().stripMeta) return;
+    void get().refreshStripStats();
   },
 
   /**
@@ -826,22 +928,16 @@ export const useStore = create<Store>((set, get) => ({
    */
   async loadStripImage() {
     const state = get();
-    const { stripId, stripMeta, stripBand, stripComposite, stripBands, stripStretchMode } = state;
-    if (!stripId || !stripMeta) return;
-    const norm = currentStripNorm(state);
+    const urls = stripImageUrls(state);
+    if (urls.length === 0) return;
+    const identity = JSON.stringify(urls);
+    const isCurrent = () => JSON.stringify(stripImageUrls(get())) === identity;
+    set({ stripImage: null });
     await get().run('strip image', async () => {
-      if (stripComposite && hasRgb(stripBands)) {
-        const channels = await Promise.all(
-          (['r', 'g', 'b'] as const).map((channel) => {
-            const name = bandForChannel(stripBands, channel);
-            const stretch = stretchFor(stripMeta.stretch, norm, name);
-            return fetchImage(
-              api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, name, norm, stripStretchMode),
-            );
-          }),
-        );
+      if (urls.length === 3) {
+        const channels = await Promise.all(urls.map(fetchImage));
         const composed = composePayloads(channels[0], channels[1], channels[2]);
-        if (get().stripId !== stripId) return;
+        if (!isCurrent()) return;
         if (composed) {
           set({ stripImage: composed, stripImageComposite: true });
           return;
@@ -850,16 +946,13 @@ export const useStore = create<Store>((set, get) => ({
         set({ stripComposite: false, stripImage: channels[0], stripImageComposite: false });
         return;
       }
-      const stretch = stretchFor(stripMeta.stretch, norm, stripBand);
-      const image = await fetchImage(
-        api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, stripBand, norm, stripStretchMode),
-      );
-      if (get().stripId === stripId) set({ stripImage: image, stripImageComposite: false });
+      const image = await fetchImage(urls[0]);
+      if (isCurrent()) set({ stripImage: image, stripImageComposite: false });
     });
   },
 
   setStripBand(band) {
-    set({ stripBand: band });
+    set({ stripBand: band, stripStats: null });
     void get().loadStripImage();
     void get().refreshStripStats();
   },
@@ -880,6 +973,7 @@ export const useStore = create<Store>((set, get) => ({
   setStripNorm(stripNorm, k, sigma) {
     set({
       stripNorm,
+      stripStats: null,
       stripNormK: k ?? get().stripNormK,
       stripNormSigma: sigma ?? get().stripNormSigma,
     });
@@ -893,13 +987,17 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   async refreshStripStats() {
-    const { stripId, stripBand } = get();
-    if (!stripId) return;
+    const { stripId, stripBand, stripMeta, statsVisible } = get();
+    if (!stripId || !stripMeta || !statsVisible) return;
     const norm = currentStripNorm(get());
     await get().run('strip stats', async () => {
       const stats = await api.stripStats(stripId, stripBand, norm);
       const now = get();
-      if (now.stripId === stripId && now.stripBand === stripBand && currentStripNorm(now) === norm) {
+      if (
+        now.stripId === stripId &&
+        now.stripBand === stripBand &&
+        currentStripNorm(now) === norm
+      ) {
         set({ stripStats: stats });
       }
     });
@@ -910,6 +1008,7 @@ export const useStore = create<Store>((set, get) => ({
   setStatsVisible(statsVisible) {
     savePersisted('ui', { statsVisible });
     set({ statsVisible });
+    if (statsVisible && !get().stripStats) void get().refreshStripStats();
   },
 
   async pollJobs() {

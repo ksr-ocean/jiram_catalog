@@ -1,8 +1,7 @@
 """The strip library: the index as Arrow, one strip's metadata, image, stats.
 
-A strip is a few megabytes rather than a few gigabytes, so the shortcuts
-the stack endpoints need are not needed here -- but the code is the same
-code, because a strip and a stack time step are the same thing to the
+A JunoCam strip can span thousands of pixels per axis, so metadata uses
+the same bounded sampling as stacks. A strip and a stack time step are the same thing to the
 viewer: a plane on a kilometre grid with a validity mask.  What a strip
 adds is the local-time clock, contoured every two hours, which is what
 turns "where did the spacecraft look" into "at what hour of the Jovian
@@ -13,6 +12,7 @@ day", and the turbulence statistics, which are cached under the mirror by
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -20,6 +20,7 @@ import xarray as xr
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from . import data, images
+from .io_guard import NetCDFRoute
 from .arrow import ARROW_MEDIA_TYPE, generic_ipc
 from .stacks import (
     DLAT,
@@ -36,10 +37,11 @@ from .stacks import (
 
 LOGGER = logging.getLogger(__name__)
 
-router = APIRouter(tags=["strips"])
+router = APIRouter(tags=["strips"], route_class=NetCDFRoute)
 
 #: Local-time contours, hours.
 LOCAL_TIME_STEP_H = 2.0
+_LOCAL_TIME_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 
 #: Names the contract gives the statistics Dataset's axes.
 STATS_NAMES: dict[str, str] = {"k": "k", "kx": "k_x", "ky": "k_y", "r": "r_m"}
@@ -62,20 +64,39 @@ def local_time_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
     """
     if "local_time_h" not in dataset.coords and "local_time_h" not in dataset.variables:
         return linestrings([])
+    source = dataset.encoding.get("source")
+    signature: Any = id(dataset)
+    if source:
+        try:
+            stat = Path(source).stat()
+            signature = (str(source), stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            pass
+    identity = (key, signature, LOCAL_TIME_STEP_H)
+    if identity in _LOCAL_TIME_CACHE:
+        return _LOCAL_TIME_CACHE[identity]
     levels = np.arange(0.0, 24.0, LOCAL_TIME_STEP_H)
     try:
-        field = np.asarray(dataset["local_time_h"].values, dtype=np.float64)
+        # A display contour needs the same bounded grid as the graticule.
+        # Twelve periodic contours on a native 6000-square field previously
+        # repeated hundreds of millions of operations on every metadata read.
+        clock = dataset["local_time_h"]
+        step_y = max(1, int(np.ceil(clock.shape[0] / 400)))
+        step_x = max(1, int(np.ceil(clock.shape[1] / 400)))
+        field = np.asarray(clock[::step_y, ::step_x].values, dtype=np.float64)
         paths = data.contour_paths(
             field,
-            np.asarray(dataset["x_km"].values, dtype=np.float64),
-            np.asarray(dataset["y_km"].values, dtype=np.float64),
+            np.asarray(dataset["x_km"][::step_x].values, dtype=np.float64),
+            np.asarray(dataset["y_km"][::step_y].values, dtype=np.float64),
             levels,
             period=24.0,
         )
     except (ValueError, KeyError) as exc:
         LOGGER.warning("no local-time contours for %s: %s", key, exc)
         return linestrings([])
-    return linestrings(paths)
+    result = linestrings(paths)
+    _LOCAL_TIME_CACHE[identity] = result
+    return result
 
 
 def band_plane(dataset: xr.Dataset, band: str | None) -> tuple[xr.Dataset, str | None]:
@@ -108,10 +129,14 @@ def stretch_of(dataset: xr.Dataset, key: str, norm: str = "none") -> dict[str, f
     """
     name, parameter = images.parse_norm(norm)
     label = images.norm_label(name, parameter)
-    if name == "none" and "band" not in dataset.dims:
+    if name == "none" and str(dataset.attrs.get("instrument", "JIRAM")).lower() != "junocam":
         low, high = data.stack_stretch(dataset, key=key)
     else:
-        low, high = data.normalised_stretch(dataset, key=key, norms=(label,))[label]
+        # Metadata asks for every normalization. Share one read per band,
+        # including the validity mask even after selecting a scalar band.
+        low, high = data.normalised_stretch(
+            dataset, key=key, norms=tuple({label, *meta_norms(dataset)})
+        )[label]
     return {"p1": float(low), "p99": float(high)}
 
 
@@ -234,9 +259,10 @@ def strip_image(
         parameter=parameter,
     )
     bounds = images.bounds_header(dataset["x_km"].values, dataset["y_km"].values, stride, shape)
-    return Response(
-        content=payload, media_type="image/png", headers=images.image_headers(shape, stride, bounds)
-    )
+    headers = images.image_headers(shape, stride, bounds)
+    if str(whole.attrs.get("instrument", "JIRAM")).lower() == "junocam":
+        headers["Cache-Control"] = "no-store"
+    return Response(content=payload, media_type="image/png", headers=headers)
 
 
 @router.get("/api/strips/{strip_id}/stats")

@@ -22,6 +22,8 @@ import { OrthographicView, type OrthographicViewState, type PickingInfo } from '
 import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import styles from './Views.module.css';
 import { ColorBar, ImageView } from '../components/ImageView';
+import { PopulationPanel } from './PopulationPanel';
+import { humanProduct } from '../lib/labels';
 import { Plot } from '../components/Plot';
 import { useStore } from '../store/store';
 import { api } from '../api/client';
@@ -116,7 +118,10 @@ export function StripsView({ active }: { active: boolean }) {
   );
   const [resolutionClass, setResolutionClass] = useState('all');
   const shown = useMemo(
-    () => (resolutionClass === 'all' ? rows : rows.filter((row) => row.resolution_class === resolutionClass)),
+    () =>
+      resolutionClass === 'all'
+        ? rows
+        : rows.filter((row) => row.resolution_class === resolutionClass),
     [rows, resolutionClass],
   );
 
@@ -133,8 +138,22 @@ export function StripsView({ active }: { active: boolean }) {
     () =>
       stats
         ? [
-            { type: 'scatter', mode: 'lines', name: 'along x', x: stats.k_x, y: stats.P_x, line: { color: '#7fd1a6' } },
-            { type: 'scatter', mode: 'lines', name: 'along y', x: stats.k_y, y: stats.P_y, line: { color: '#f0a35e' } },
+            {
+              type: 'scatter',
+              mode: 'lines',
+              name: 'along x',
+              x: stats.k_x,
+              y: stats.P_x,
+              line: { color: '#7fd1a6' },
+            },
+            {
+              type: 'scatter',
+              mode: 'lines',
+              name: 'along y',
+              x: stats.k_y,
+              y: stats.P_y,
+              line: { color: '#f0a35e' },
+            },
           ]
         : [],
     [stats],
@@ -143,7 +162,14 @@ export function StripsView({ active }: { active: boolean }) {
     () =>
       stats
         ? [
-            { type: 'scatter', mode: 'lines', name: 'S2', x: stats.r_m, y: stats.S2, line: { color: '#6ab0f3' } },
+            {
+              type: 'scatter',
+              mode: 'lines',
+              name: 'S2',
+              x: stats.r_m,
+              y: stats.S2,
+              line: { color: '#6ab0f3' },
+            },
             {
               type: 'scatter',
               mode: 'lines',
@@ -217,7 +243,11 @@ export function StripsView({ active }: { active: boolean }) {
         </div>
         <div className={styles.group}>
           <label htmlFor="s-res">resolution class</label>
-          <select id="s-res" value={resolutionClass} onChange={(event) => setResolutionClass(event.target.value)}>
+          <select
+            id="s-res"
+            value={resolutionClass}
+            onChange={(event) => setResolutionClass(event.target.value)}
+          >
             <option value="all">all</option>
             {resolutionClasses.map((name) => (
               <option key={name} value={name}>
@@ -261,6 +291,12 @@ export function StripsView({ active }: { active: boolean }) {
         )}
       </div>
 
+      <PopulationPanel
+        rows={shown}
+        band={stripComposite ? null : stripBand}
+        norm={normLabel}
+        active={active}
+      />
       <div className={styles.split}>
         <div className={styles.listWrap}>
           <table data-testid="strips-table">
@@ -283,9 +319,18 @@ export function StripsView({ active }: { active: boolean }) {
                   key={row.strip_id}
                   aria-selected={row.strip_id === stripId}
                   onClick={() => void openStrip(row.strip_id)}
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void openStrip(row.strip_id);
+                    }
+                  }}
                   style={{ cursor: 'pointer' }}
                 >
-                  <td>{row.strip_id}</td>
+                  <td title={row.strip_id}>
+                    {humanProduct(row.strip_id, row.orbit, row.time_start_ms)}
+                  </td>
                   <td>{row.orbit}</td>
                   <td>{row.instrument}</td>
                   <td>{row.bands.length > 1 ? row.bands.join(';') : row.band}</td>
@@ -299,7 +344,11 @@ export function StripsView({ active }: { active: boolean }) {
             </tbody>
           </table>
         </div>
-        <StripCentresMap rows={shown} onPick={(row) => void openStrip(row.strip_id)} selected={stripId} />
+        <StripCentresMap
+          rows={shown}
+          onPick={(row) => void openStrip(row.strip_id)}
+          selected={stripId}
+        />
       </div>
 
       {stripId && (
@@ -313,7 +362,7 @@ export function StripsView({ active }: { active: boolean }) {
                 <select
                   id="strip-band"
                   data-testid="strip-band-select"
-                  value={stripComposite ? '__rgb' : stripBand ?? ''}
+                  value={stripComposite ? '__rgb' : (stripBand ?? '')}
                   onChange={(event) => {
                     if (event.target.value === '__rgb') {
                       setStripComposite(true);
@@ -439,7 +488,14 @@ export function StripsView({ active }: { active: boolean }) {
             <button
               data-testid="download-stats"
               disabled={!stats}
-              onClick={() => stats && downloadText(`${stripId}_stats.json`, JSON.stringify(stats, null, 1), 'application/json')}
+              onClick={() =>
+                stats &&
+                downloadText(
+                  `${stripId}_stats.json`,
+                  JSON.stringify(stats, null, 1),
+                  'application/json',
+                )
+              }
             >
               Download stats (JSON)
             </button>
@@ -450,7 +506,7 @@ export function StripsView({ active }: { active: boolean }) {
             cmap={cmap}
             composite={stripImageComposite}
             graticule={stripMeta?.graticule ?? null}
-            contours={showContours ? stripMeta?.local_time_contours ?? null : null}
+            contours={showContours ? (stripMeta?.local_time_contours ?? null) : null}
             showGraticule={showGraticule}
             testId="strip-image"
             height={statsVisible ? VIEWER_HEIGHT : VIEWER_HEIGHT_ALONE}
@@ -458,11 +514,23 @@ export function StripsView({ active }: { active: boolean }) {
             emptyMessage="loading the strip..."
           />
 
+          {statsVisible && stripComposite && (
+            <p className={styles.notice}>
+              The displayed RGB composite is not a physical analysis band. Statistics below refer to{' '}
+              {stripBand}; choose a physical band before quantitative export.
+            </p>
+          )}
+          {statsVisible && !stats && (
+            <p role="status">
+              Computing full-resolution texture statistics for {stripBand ?? 'the selected band'}.
+              Large images can take several minutes.
+            </p>
+          )}
           {statsVisible && (
             <div className={styles.charts} data-testid="strip-stats">
               <div className={styles.card}>
                 <h3>
-                  isotropic spectrum{stripBand ? ` (${stripBand})` : ''}
+                  Texture variance spectrum{stripBand ? ` (${stripBand})` : ''}
                   {stripNorm === 'none' ? '' : `, ${NORM_LABELS[stripNorm]}`}
                 </h3>
                 {active && stats && (
@@ -506,7 +574,8 @@ export function StripsView({ active }: { active: boolean }) {
                       legend: { x: 0.05, y: 1 },
                       xaxis: { type: 'log', title: { text: 'r (m)' } },
                       yaxis: { type: 'log', title: { text: 'S2' } },
-                      yaxis2: { overlaying: 'y', side: 'right', title: { text: 'S3 (signed)' } },
+                      yaxis2: { overlaying: 'y', side: 'right', automargin: true, title: { text: 'S3 (signed)' } },
+                      margin: { l: 48, r: 68, t: 26, b: 44 },
                     }}
                   />
                 )}
@@ -532,8 +601,10 @@ function annotateWavelengths(k: number[]): Record<string, unknown>[] {
       y: 1.08,
       showarrow: false,
       font: { size: 9 },
-      text: `wavelength ${(((2 * Math.PI) / Math.max(...finite)) / 1000).toFixed(1)} to ${(
-        ((2 * Math.PI) / Math.min(...finite)) / 1000
+      text: `wavelength ${((2 * Math.PI) / Math.max(...finite) / 1000).toFixed(1)} to ${(
+        (2 * Math.PI) /
+        Math.min(...finite) /
+        1000
       ).toFixed(0)} km`,
     },
   ];
@@ -560,7 +631,9 @@ function StripCentresMap({
   useEffect(() => {
     const node = wrapRef.current;
     if (!node) return;
-    const observer = new ResizeObserver(() => setSize([node.clientWidth || 320, node.clientHeight || 300]));
+    const observer = new ResizeObserver(() =>
+      setSize([node.clientWidth || 320, node.clientHeight || 300]),
+    );
     observer.observe(node);
     setSize([node.clientWidth || 320, node.clientHeight || 300]);
     return () => observer.disconnect();
@@ -583,7 +656,9 @@ function StripCentresMap({
         pickable: true,
         getPosition: (row) => [((row.center_lon_east % 360) + 360) % 360, row.center_lat],
         getFillColor: (row) =>
-          categoricalColor(Number.isFinite(row.time_mid_ms) ? new Date(row.time_mid_ms).getUTCFullYear() : 0),
+          categoricalColor(
+            Number.isFinite(row.time_mid_ms) ? new Date(row.time_mid_ms).getUTCFullYear() : 0,
+          ),
         getLineColor: [255, 255, 255, 220],
         stroked: true,
         lineWidthUnits: 'pixels',
@@ -614,7 +689,10 @@ function StripCentresMap({
         <div
           className={`${styles.tooltip} tooltip`}
           data-testid="strip-tooltip"
-          style={{ left: Math.min(hover.x + 10, size[0] - 200), top: Math.min(hover.y + 10, size[1] - 60) }}
+          style={{
+            left: Math.min(hover.x + 10, size[0] - 200),
+            top: Math.min(hover.y + 10, size[1] - 60),
+          }}
         >
           <div>
             <b>{hover.row.strip_id}</b>
@@ -627,13 +705,22 @@ function StripCentresMap({
       )}
       <div className={styles.legend}>
         <div>year</div>
-        {[...new Set(rows.map((row) => (Number.isFinite(row.time_mid_ms) ? new Date(row.time_mid_ms).getUTCFullYear() : 0)))]
+        {[
+          ...new Set(
+            rows.map((row) =>
+              Number.isFinite(row.time_mid_ms) ? new Date(row.time_mid_ms).getUTCFullYear() : 0,
+            ),
+          ),
+        ]
           .filter((year) => year > 0)
           .sort()
           .slice(0, 8)
           .map((year) => (
             <div className={styles.swatchRow} key={year}>
-              <span className={styles.swatch} style={{ background: rgbCss(categoricalColor(year)) }} />
+              <span
+                className={styles.swatch}
+                style={{ background: rgbCss(categoricalColor(year)) }}
+              />
               <span>{year}</span>
             </div>
           ))}

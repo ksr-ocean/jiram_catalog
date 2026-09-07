@@ -1,17 +1,20 @@
 # jiram_catalog
 
-A browser-based catalog and toolkit for the full Juno JIRAM infrared
-imager archive (PDS4 bundle `juno_jiram_bundle`, Atmospheres node),
-built to feed cloud-tracking and optical-flow style velocity retrieval
-at Jupiter. The primary way to use it is the catalog browser below:
-every camera frame that sees the planet on one filterable map, a viewer
-for the polar time stacks, and a library of per-pass strips with their
-statistics -- all served from a cluster node and opened in an ordinary
-browser over an SSH tunnel. Everything the GUI shows is a product the
-command line underneath it already wrote to disk; nothing is computed
-just for the browser.
+A browser catalog and scientific toolkit for Juno JIRAM infrared imagery
+and selected JunoCam observations. Explore mapped observations, inspect time
+series, compare images, and measure intensity statistics in a browser served
+from a cluster node over an SSH tunnel. The Coverage view distinguishes
+archive records from locally available, assessed images. JunoCam access
+requires evidence of unaffected instrument behavior; failed and unassessed
+images remain metadata-only.
 
-![The Catalog tab: every frame that sees the planet, filterable and selectable](docs/gui_guide/01_catalog_overview.png)
+Start with the [current workflow and capability matrix](docs/research_workflow.md).
+The [design review](docs/reports/usability_scientific_review_2026-09-07.md)
+records the accepted improvements. The
+[calibrated JunoCam assessment](docs/reports/junocam_calibrated_assessment_2026-09-07.md)
+explains why the PDS machine-learning collection is a supplemental reference.
+
+![Explore: eligible JunoCam observations, footprint coverage, task controls and a collapsible working selection](docs/reports/figures/implementation_2026-09-07/explore_1440x900.png)
 
 ## Start in five minutes
 
@@ -57,8 +60,9 @@ ssh -N -L 5006:<compute-node>:5006 <user>@login.expanse.sdsc.edu
 where `<compute-node>` is what `hostname` prints on the allocation.
 Open `http://localhost:5006` in your browser. The server has no
 authentication, so stop it (Ctrl-C on the node) when you are done. Full
-walkthrough of every tab, every control, and what each export writes:
-**`docs/gui_guide.md`**.
+workflow, scientific limits and export behavior:
+[research_workflow.md](docs/research_workflow.md). The
+[older illustrated guide](docs/gui_guide.md) preserves historical layouts.
 
 ## Working with an agent
 
@@ -94,18 +98,18 @@ at any date -- see `docs/decisions.md`). This tool:
    triples in the layout a downstream optical-flow velocity model reads,
    and computes masked spectra, structure functions, and bicoherence for
    the strip library.
-5. **Serves the browser-based catalog** above (a React + deck.gl front
-   end over a FastAPI backend, `docs/gui_v2_notes.md`): Catalog (every
-   frame, filterable and selectable), Poles (a stack viewer with three
-   switchable modes -- region snapshots, the accumulating sweep, and
-   raw instrument frames -- plus movies and exports), Strips (the strip
-   library, its statistics), with a selection tray that carries a
-   selection between them.
+5. **Serves the browser workspace** (React + deck.gl over FastAPI):
+   Explore, Time series, Image library, Compare and Coverage. Physical-band
+   exports require independent observations, regular cadence and common
+   valid coverage. Comparisons report registration and explicit uncertainty
+   assumptions; population statistics group compatible images and weight
+   passes equally. Figures, numeric data and analysis recipes are exportable.
 
-Every claim above is checked against a published result: the geometry
-engine, the reprojection, and the map grid it uses were all validated
-against the 48 perijove-4 north-polar maps and TRACKER4 wind vectors of
-Ingersoll et al. (2022) before anything downstream was built. See
+JIRAM geometry and reprojection were checked against the 48 perijove-4
+north-polar maps; classical tracking was compared with published TRACKER4
+vectors. Those checks do not validate every mission pass, JunoCam radiometry,
+learned calibration, or new velocity retrievals. Export readiness checks
+format, cadence and masks; it does not certify wind accuracy. See
 `docs/architecture.md` for how the pieces fit together and
 `docs/decisions.md` for what was found and settled along the way
 (byte order, band ordering, the map projection, and more).
@@ -121,15 +125,15 @@ Ingersoll et al. (2022) before anything downstream was built. See
   dropped.
 - The region registry (`north_pole_paper`, `north_pole`, `south_pole`,
   `neb_15n`), region time stacks, movies, and velocity-model export.
-- The strip library (289 strips across orbits 4 and 24 as of this
-  writing) and its statistics.
+- The strip library (289 JIRAM strips across orbits 4 and 24 plus eight
+  eligible JunoCam products in the current view) and its statistics.
 - The trackability report: which orbits and latitude bands have
   repeat-view geometry that supports velocity retrieval at all, and at
   what wind speed.
-- The GUI (Catalog complete; Poles views existing stacks and can build
-  a new one from a Catalog selection; Strips has the table, map,
-  viewer, and per-strip statistics) -- population statistics across a
-  filtered set of strips are deferred, see `docs/open_items.md`.
+- The five-view workspace, including matched population statistics,
+  comparison, failure exclusion and coverage inventory. JunoCam's local
+  image sample remains PJ4; the initial six-version polar stack represents
+  three independent observations and has no regular-cadence triple.
 
 ## Building a mirror from scratch, from the command line
 

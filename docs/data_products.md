@@ -12,7 +12,8 @@ Conventions used throughout (from `AGENTS.md` and the source): planeto­
 centric latitude, east-positive longitude in `[0, 360)`; SI units unless
 a column name says otherwise (`_km`, `_deg`, `_s`); arrays are
 `(..., y, x)` with row index increasing with +y, plotted with
-`origin="lower"`; image radiance is `W m-2 sr-1 um-1`; NaN marks "not
+`origin="lower"`; native JIRAM image radiance is `W m-2 sr-1 um-1`
+and the mirrored native JunoCam RDR samples are `DN`; NaN marks "not
 computed" or "off-planet", never zero.
 
 ## `manifest/manifest.parquet`
@@ -309,15 +310,35 @@ attrs and a standard error alongside each mean.
 
 ## GUI cache (`<mirror>/gui_cache/`)
 
-Written only by the GUI (`jiram-catalog gui`), never read by any other
-command: `stats_<strip_id>.nc` (the file described just above, one per
-strip the Strips tab has computed statistics for), `meta_<key>.json`
+The 2026-09-07 research extension uses `research/population_<hash>.json`
+for matched groups, per-pass uncertainty, fit ranges, mask diagnostics and
+recipes. Hashes include sources, modification times, settings, policy and
+software revision. `research/movie_<hash>.mp4` holds atomically written,
+physical-band movies of the eligible stack view. New export directories
+under `exports/` include filtered source/settings identity; their `spec.json`
+and realization manifests retain native image units, physical band,
+normalization and provenance. Readiness reports independent observations,
+gaps and usable cadence runs before writing. A realization is a cadence run
+containing at least three frames; it can supply more than one sliding triple.
+
+JunoCam Arrow/detail rows additionally carry observation identity, numeric
+version, preferred status, quality status/reasons and trackability status.
+Missing trackability is unassessed. The underlying source index is preserved;
+the ordinary mapped catalog includes only eligible preferred observations.
+Coverage/archive endpoints expose metadata and staged processing counts even
+when images cannot be served. Units `DN`, measured radiance and generated
+HST-equivalent `I/F` are distinct products. The ML sample audit stays under
+`junocam/calibration_review/` and is not added to native observation tables.
+
+Other GUI-managed files are `stats_<strip_id>.nc` (the legacy file described
+just above, one per strip with computed statistics), `meta_<key>.json`
 (a stack's display stretch and graticule, cached on first open),
 `selections/<id>.json` (named frame selections saved from the
 selection tray, `POST /api/selections`), `jobs/` (a JSON record per
 background job, mirrored so a restarted server can still report what
-the last run produced), and, by default, `exports/` holding movies,
-PNGs and goflow datasets the app renders on request. See
+the last run produced), and `exports/` for requested goflow datasets.
+Current movies and population results use the `research/` paths above;
+figure downloads are produced in the browser. See
 `docs/gui_usage.md`.
 
 ## SPICE kernel mirror (`<mirror>/spice/{lsk,pck,fk,ik,sclk,spk,ck}/`)

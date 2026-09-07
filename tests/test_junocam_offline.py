@@ -384,9 +384,11 @@ def test_epoch_intervals_are_contiguous_and_disjoint() -> None:
         assert entry["note"].strip() and entry["source"].strip()
 
 
-def test_throughput_factors_are_one_outside_the_documented_range() -> None:
-    assert quality.throughput_factors(4) == {"red": 1.0, "green": 1.0, "blue": 1.0}
-    assert quality.throughput_factors(61) == {"red": 1.0, "green": 1.0, "blue": 1.0}
+def test_throughput_is_unknown_outside_the_documented_fit() -> None:
+    # The accepted quality policy must not turn absent calibration evidence
+    # into a measured unity response.
+    assert all(np.isnan(v) for v in quality.throughput_factors(4).values())
+    assert all(np.isnan(v) for v in quality.throughput_factors(61).values())
     at_60 = quality.throughput_factors(60)
     # The ERRATA's own linear fits: Red -0.00391/1.01, Green -0.00787/1.05,
     # Blue -0.0108/1.07, i.e. roughly the quoted 23/47/64 per cent loss.
@@ -521,10 +523,10 @@ def test_read_image_rejects_a_short_file(tmp_path: Path) -> None:
     ("epoch", "streak", "saturation", "expected"),
     [
         ("nominal", 0.01, 0.0, "A"),
-        ("post_anneal", 0.299, 0.019, "A"),
+        ("post_anneal", 0.299, 0.019, "C"),
         ("nominal", 0.31, 0.0, "B"),
         ("nominal", 0.01, 0.05, "B"),
-        ("post_anneal", float("nan"), 0.0, "B"),
+        ("post_anneal", float("nan"), 0.0, "C"),
         ("nominal", None, None, "B"),
         ("regulator_damage", 0.01, 0.0, "C"),
         ("ccd_damage", 0.01, 0.0, "C"),
@@ -565,7 +567,7 @@ def test_quality_row_flags_a_missing_image(tmp_path: Path) -> None:
     }
     record = quality.quality_row(row, tmp_path)
     assert record["quality_epoch"] == "nominal"
-    assert record["throughput_factor_red"] == 1.0
+    assert np.isnan(record["throughput_factor_red"])
     assert record["metrics_ok"] is False and record["metrics_error"]
     assert record["quality_tier"] == "B"  # healthy epoch, unmeasurable metrics
 

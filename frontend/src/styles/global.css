@@ -49,3 +49,21 @@ h3 { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spa
 a { color: var(--accent); }
 
 .js-plotly-plot .plotly .modebar { display: none; }
+
+/* Scientific workspace: readable controls and restrained visual hierarchy. */
+:root { font-size:14px; --bg:#10151d; --panel:#18212b; --panel-2:#222e3b; --line:#2b3a48; --text:#e1e9f2; --muted:#a2b2c3; }
+body {line-height:1.45;overflow:hidden;}
+button,select,input,textarea {padding:6px 9px;border-radius:6px;max-width:100%;}
+button,select {min-height:32px;}
+input[type="checkbox"],input[type="range"] {min-height:0;}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,[tabindex]:focus-visible {outline:2px solid #8cccff;outline-offset:3px;}
+th,td {padding:7px 9px;border-bottom:1px solid #2b3a4866;font-size:13px;}
+h2 {font-size:21px;font-weight:650;letter-spacing:-.015em;}
+h3 {font-size:14px;text-transform:none;letter-spacing:0;color:var(--text);}
+h4 {font-size:15px;margin:16px 0 5px;}
+p {margin:9px 0 13px;}
+summary {cursor:pointer;color:var(--text);padding:7px 0;font-weight:600;}
+details[open]>summary {margin-bottom:8px;}
+pre {white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;font-size:12px;background:#101822;padding:12px;border-radius:6px;}
+code {overflow-wrap:anywhere;}
+figure {margin:14px 0;}

@@ -1,5 +1,11 @@
 # The catalog browser: a guide
 
+**Historical screenshots, captured before the 2026-09-07 redesign.** Use the
+[current workflow and capability matrix](research_workflow.md) for Explore,
+Time series, Image library, Compare, Coverage, exclusion rules and analysis
+exports. The screenshots below document the preceding three-tab interface;
+its labels, panel sizes and capability statements are superseded.
+
 This is a walkthrough of `jiram-catalog gui`, the browser-based catalog
 of this repository's products. The server started by this command is
 now GUI v2: a small FastAPI backend that answers Arrow, JSON and PNG
@@ -12,8 +18,9 @@ running and a browser pointed at it, skip to
 ["Serving and tunnelling"](#serving-and-tunnelling) -- the rest of this
 page assumes it is already open in front of you.
 
-The GUI does not compute anything new: it is a view and a selector over
-files the command line already wrote (`docs/usage.md`). Nothing you do
+The original GUI was primarily a view and selector over files the command
+line wrote (`docs/usage.md`); the current workspace also computes comparison
+and population results on demand. Nothing you do
 in the browser touches the published archive mirror except the app's
 own cache, `<mirror>/gui_cache/`, and the region stacks you explicitly
 ask it to build under `<mirror>/regions/`.

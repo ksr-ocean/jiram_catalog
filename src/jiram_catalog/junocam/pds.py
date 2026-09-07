@@ -3,7 +3,7 @@
 The JunoCam PDS3 volumes carry a per-volume ``INDEX/INDEX.TAB`` with one row
 per archived product (label + image), described by ``INDEX/INDEX.LBL``.  The
 manifest is built from those tables rather than by crawling the ``DATA/``
-trees: 35 index files replace tens of thousands of directory listings.
+trees: volume index files replace tens of thousands of directory listings.
 
 Three archive irregularities are handled here, all measured rather than
 assumed (see ``docs/reports/junocam_archive_recon.md``):
@@ -559,6 +559,34 @@ def load_manifest_files(mirror: str | Path | None = None) -> pd.DataFrame:
     return coerce_manifest(pd.read_parquet(path))
 
 
+def discover_volumes(mirror: str | Path | None = None) -> list[int]:
+    """Discover current volume directories; log the source of offline fallback."""
+    root = mirror_root(mirror)
+    cache = root / "junocam/manifest/volume_directories.json"
+    try:
+        parser = _HrefParser()
+        parser.feed(fetch_bytes(BASE_URL, attempts=1, timeout=20).decode("utf-8", errors="replace"))
+        numbers = sorted({int(match.group(1)) for href in parser.hrefs
+                          if (match := re.search(r"(?:^|/)JNOJNC_(\d{4})/$", href))})
+        if not numbers:
+            raise ValueError("No JunoCam volume directories in root listing")
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(numbers), encoding="utf-8")
+        LOGGER.info("Discovered %d JunoCam volume directories from %s", len(numbers), BASE_URL)
+        return numbers
+    except (OSError, RuntimeError, ValueError) as exc:
+        if cache.exists():
+            try:
+                numbers = sorted({int(v) for v in json.loads(cache.read_text()) if int(v) > 0})
+                if numbers:
+                    LOGGER.warning("Volume discovery unavailable (%s); using cached directory snapshot %s", exc, cache)
+                    return numbers
+            except (OSError, ValueError, TypeError):
+                pass
+        LOGGER.warning("Volume discovery unavailable (%s); using historical offline fallback 1-%d, completeness unverified", exc, LAST_VOLUME)
+        return list(range(FIRST_VOLUME, LAST_VOLUME + 1))
+
+
 def build_manifest(
     mirror: str | Path | None = None,
     volumes: Iterable[int] | None = None,
@@ -567,13 +595,13 @@ def build_manifest(
     """Fetch/cache the selected volumes' index files and write the manifest."""
     root = mirror_root(mirror)
     selected = (
-        list(range(FIRST_VOLUME, LAST_VOLUME + 1))
+        discover_volumes(root)
         if volumes is None
         else sorted(set(int(value) for value in volumes))
     )
-    bad = [value for value in selected if not FIRST_VOLUME <= value <= LAST_VOLUME]
+    bad = [value for value in selected if value < FIRST_VOLUME]
     if bad:
-        raise ValueError(f"volume numbers outside 1-{LAST_VOLUME}: {bad}")
+        raise ValueError(f"volume numbers must be positive: {bad}")
 
     records: list[dict[str, object]] = []
     tallies: dict[str, dict[str, int]] = {}

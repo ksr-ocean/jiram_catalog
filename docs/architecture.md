@@ -1,5 +1,14 @@
 # Architecture
 
+The 2026-09-07 workspace extension adds `junocam/policy.py` for observation
+identity and instrument-failure exclusion, `science.py` for physical-band
+preparation/readiness/diagnostics, and `api/coverage.py` and `api/science.py`
+for coverage, comparison and population workflows. Policy-aware loaders
+filter persisted JunoCam products without rewriting them. Frontend task views
+are Explore, Time series, Image library, Compare and Coverage; see the
+[current capability matrix](research_workflow.md). Existing geometry and map
+conventions remain unchanged.
+
 This describes the system as built, not as planned; where the plan
 changed (e.g. the paper's map turning out to be orthographic rather
 than stereographic), the built version is what is documented, with a

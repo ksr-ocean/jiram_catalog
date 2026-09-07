@@ -143,6 +143,8 @@ def make_parser() -> argparse.ArgumentParser:
         "--pct", type=float, nargs=2, default=[1.0, 99.0], metavar=("LOW", "HIGH")
     )
     movie.add_argument("--cmap", default="gray")
+    movie.add_argument("--band", help="physical channel; required for multiband stacks")
+    movie.add_argument("--norm", default="none", help="none, lambert, minnaert:k, or flat:sigma")
     movie.add_argument("-v", action="store_true", help="enable debug logging")
 
     export = subparsers.add_parser(
@@ -153,6 +155,8 @@ def make_parser() -> argparse.ArgumentParser:
     export.add_argument("--dt-tol", type=float, default=0.05)
     export.add_argument("--min-frames", type=int, default=3)
     export.add_argument("--crop-to-valid", action="store_true")
+    export.add_argument("--band", help="physical channel; required for multiband stacks")
+    export.add_argument("--norm", default="none", help="none, lambert, minnaert:k, or flat:sigma")
     export.add_argument("-v", action="store_true", help="enable debug logging")
     # Modules that own their own subcommand (see docs/agent_harness.md).
     from jiram_catalog import config_cmd, gui_cmd, stats2d, strips
@@ -212,6 +216,15 @@ def _region_stack(args: argparse.Namespace, root: Path, orbits: list[int] | None
     write_stack(dataset, output)
     print(f"wrote: {output}")
     return 0
+
+
+def _policy_stack(dataset, root):
+    from fastapi import HTTPException
+    from .api.data import filter_stack_policy
+    try:
+        return filter_stack_policy(dataset, root)
+    except HTTPException as exc:
+        raise ValueError(str(exc.detail)) from exc
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -284,14 +297,17 @@ def _run(args: argparse.Namespace) -> int:
         return _region_stack(args, root, orbits)
     if args.command == "movie":
         from .movie import write_movie
+        from .science import select_physical_band
 
         with read_stack(args.stack) as dataset:
+            dataset = select_physical_band(_policy_stack(dataset, root), args.band)
             summary = write_movie(
                 dataset,
                 args.out,
                 fps=args.fps,
                 percentiles=(args.pct[0], args.pct[1]),
                 cmap=args.cmap,
+                norm=args.norm,
             )
         print(
             f"wrote {summary['frames']} frame(s) at "
@@ -304,6 +320,7 @@ def _run(args: argparse.Namespace) -> int:
         from .export_goflow import export_stack
 
         with read_stack(args.stack) as dataset:
+            dataset = _policy_stack(dataset, root)
             manifest = export_stack(
                 dataset,
                 args.out,
@@ -311,6 +328,8 @@ def _run(args: argparse.Namespace) -> int:
                 min_frames=args.min_frames,
                 crop_to_valid=args.crop_to_valid,
                 source=args.stack,
+                band=args.band,
+                norm=args.norm,
             )
         print(f"realizations: {manifest['n_realizations']}")
         for entry in manifest["realizations"]:

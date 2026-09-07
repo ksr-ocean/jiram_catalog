@@ -14,6 +14,7 @@ pool unchanged.  The server adds no numerics of its own.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -28,10 +29,11 @@ from pydantic import BaseModel, field_validator, model_validator
 
 from ..config import mirror_root
 from . import data, images
+from .io_guard import NetCDFRoute
 
 LOGGER = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/stacks", tags=["stacks"])
+router = APIRouter(prefix="/api/stacks", tags=["stacks"], route_class=NetCDFRoute)
 
 #: Graticule spacing, degrees; the Poles view draws the same one.
 DLAT = 2.0
@@ -302,6 +304,10 @@ def stretch_of(
         signature = f"{stat.st_mtime_ns}:{stat.st_size}"
     except OSError:
         signature = ""
+    if instrument_of(dataset).lower() == "junocam":
+        from ..junocam.policy import policy_signature
+        signature += ":" + str(policy_signature(mirror_root(mirror)))
+        signature += ":" + str(dataset.attrs.get("withheld_or_superseded_steps", 0))
     name, parameter = images.parse_norm(norm)
     label = images.norm_label(name, parameter)
     band_key = "" if band is None else str(band).strip().upper()
@@ -328,14 +334,14 @@ def stretch_of(
     if not band_key and name == "none":
         # The JIRAM path, untouched: every finite pixel of a few strided time
         # steps, no mask and no model.
-        low, high = data.stack_stretch(plane, key=f"{identifier}::{key}")
+        low, high = data.stack_stretch(plane, key=f"{identifier}::{key}::{signature}")
         found = {label: (low, high)}
     else:
         # One read of the band answers for every norm the metadata offers, so
         # a miss on one of them fills the rest of the cache file too.
         found = data.normalised_stretch(
             plane,
-            key=f"{identifier}::{band_key}",
+            key=f"{identifier}::{band_key}::{signature}",
             norms=tuple({label, *meta_norms(dataset)}),
         )
     stretch = {"p1": float(found[label][0]), "p99": float(found[label][1])}
@@ -466,10 +472,12 @@ def listing(mirror: str | Path | None = None) -> list[dict[str, Any]]:
     for identifier, path in sorted(stack_index(mirror).items()):
         try:
             dataset = data.open_stack(path)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, HTTPException) as exc:
             LOGGER.warning("cannot open %s: %s", path, exc)
             continue
-        movie = movie_path(path)
+        if not dataset.sizes.get("time", 0):
+            continue
+        movie = movie_path(path) if instrument_of(dataset).lower() != "junocam" else None
         level = _scalar(dataset.attrs.get("level"))
         entries.append(
             {
@@ -555,6 +563,8 @@ class MovieRequest(BaseModel):
     fps: float | None = None
     pct: list[float] | None = None
     cmap: str | None = None
+    band: str | None = None
+    norm: str = "none"
 
 
 class BuildRequest(BaseModel):
@@ -600,21 +610,40 @@ class ExportRequest(BaseModel):
     dt_tol: float | None = None
     min_frames: int | None = None
     crop_to_valid: bool | None = None
+    band: str | None = None
+    norm: str = "none"
+
+
+def research_movie_path(root: Path, path: Path, dataset: xr.Dataset,
+                        band: str | None, norm: str) -> Path:
+    """Policy/settings-specific movies cannot reveal an older unfiltered cube."""
+    from ..science import source_ids
+    signature = json.dumps({
+        "source": str(path), "mtime_ns": path.stat().st_mtime_ns,
+        "size": path.stat().st_size, "sources": source_ids(dataset),
+        "band": band, "norm": norm, "policy": "failure-exclusion-v1",
+    }, sort_keys=True)
+    key = hashlib.sha256(signature.encode()).hexdigest()[:24]
+    return data.gui_cache_dir(root) / "research" / f"movie_{key}.mp4"
 
 
 def register_jobs(manager: Any, mirror: str | Path | None) -> None:
     """Bind the three slow operations to job kinds on ``manager``."""
     root = mirror_root(mirror)
 
-    def movie(progress: Callable[..., None], *, stack: str, fps: float, pct: list[float], cmap: str) -> dict[str, Any]:
+    def movie(progress: Callable[..., None], *, stack: str, fps: float, pct: list[float], cmap: str,
+              band: str | None = None, norm: str = "none") -> dict[str, Any]:
         from ..movie import write_movie
+        from ..science import select_physical_band
 
         path = resolve(root, stack)
         progress(0.05, f"rendering {stack}")
         dataset = data.open_stack(path)
-        target = Path(path).with_suffix(".mp4")
+        target = research_movie_path(root, path, dataset, band, norm)
+        dataset = select_physical_band(dataset, band)
         summary = write_movie(
-            dataset, target, fps=float(fps), percentiles=(float(pct[0]), float(pct[1])), cmap=str(cmap)
+            dataset, target, fps=float(fps), percentiles=(float(pct[0]), float(pct[1])), cmap=str(cmap),
+            norm=norm,
         )
         progress(1.0, f"wrote {target.name}")
         return {"path": str(summary["path"]), "frames": int(summary["frames"])}
@@ -686,14 +715,21 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
         dt_tol: float | None,
         min_frames: int | None,
         crop_to_valid: bool | None,
+        band: str | None = None,
+        norm: str = "none",
     ) -> dict[str, Any]:
         from ..export_goflow import export_stack
 
         path = resolve(root, stack)
         dataset = data.open_stack(path)
-        destination = Path(out_dir) if out_dir else data.export_dir(root) / f"goflow_{cache_key(stack)}"
+        setting = f"_{cache_key(band or '')}_{cache_key(norm)}" if band or norm != "none" else ""
+        identity = research_movie_path(root, path, dataset, band, norm).stem
+        settings = hashlib.sha256(json.dumps([identity, dt_tol, min_frames, crop_to_valid]).encode()).hexdigest()[:16]
+        destination = Path(out_dir) if out_dir else data.export_dir(root) / f"goflow_{cache_key(stack)}{setting}_{settings}"
+        if out_dir and destination.exists() and any(destination.iterdir()):
+            raise ValueError("choose an empty export directory; existing exports are preserved")
         progress(0.1, f"exporting to {destination}")
-        options: dict[str, Any] = {}
+        options: dict[str, Any] = {"band": band, "norm": norm}
         if dt_tol is not None:
             options["dt_tol"] = float(dt_tol)
         if min_frames is not None:
@@ -704,9 +740,10 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
         progress(1.0, "done")
         return {"out_dir": str(destination), "n_realizations": int(manifest.get("n_realizations", 0))}
 
-    manager.register("movie", movie)
-    manager.register("stack_build", build)
-    manager.register("goflow_export", export)
+    from .io_guard import serialized_io
+    manager.register("movie", serialized_io(movie))
+    manager.register("stack_build", serialized_io(build))
+    manager.register("goflow_export", serialized_io(export))
 
 
 def _build_junocam(
@@ -947,18 +984,46 @@ def get_frame_png(
 
 
 @router.get("/{identifier:path}/movie")
-def get_movie(request: Request, identifier: str) -> Response:
-    path = resolve(request.app.state.mirror, identifier)
-    movie = movie_path(path)
+def get_movie(request: Request, identifier: str, band: str | None = None, norm: str = "none") -> Response:
+    from ..science import normalise_frame, select_physical_band
+    root = request.app.state.mirror
+    path = resolve(root, identifier)
+    dataset = data.open_stack(path)
+    try:
+        # An absent physical band on a multiband cube has no video meaning.
+        selected = select_physical_band(dataset, band)
+        if not selected.sizes.get("time", 0):
+            raise ValueError("no eligible observations to render")
+        normalise_frame(selected.isel(time=0, y=slice(0, 2), x=slice(0, 2)), norm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    movie = research_movie_path(root, path, dataset, band, norm)
+    if not movie.exists():
+        # Historical JIRAM movies have no failed JunoCam images to bypass.
+        movie = movie_path(path) if instrument_of(dataset).lower() != "junocam" and norm == "none" else None
     if movie is None:
         raise HTTPException(status_code=404, detail=f"no movie beside {identifier}")
     media = "video/mp4" if movie.suffix.lower() == ".mp4" else "image/gif"
-    return range_response(movie, request.headers.get("range"), media)
+    response = range_response(movie, request.headers.get("range"), media)
+    if instrument_of(dataset).lower() == "junocam":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/{identifier:path}/movie")
 def post_movie(request: Request, identifier: str, body: MovieRequest) -> dict[str, str]:
-    resolve(request.app.state.mirror, identifier)
+    from ..science import normalise_frame, select_physical_band
+    path = resolve(request.app.state.mirror, identifier)
+    dataset = data.open_stack(path)
+    try:
+        selected = select_physical_band(dataset, body.band)
+        if not selected.sizes.get("time", 0):
+            raise ValueError("no eligible observations to render")
+        normalise_frame(selected.isel(time=0, y=slice(0, 2), x=slice(0, 2)), body.norm)
+        if body.fps is not None and (not np.isfinite(body.fps) or body.fps <= 0):
+            raise ValueError("fps must be positive and finite")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     percentiles = body.pct if body.pct and len(body.pct) == 2 else [1.0, 99.0]
     record = request.app.state.jobs.submit(
         "movie",
@@ -967,6 +1032,8 @@ def post_movie(request: Request, identifier: str, body: MovieRequest) -> dict[st
             "fps": 4.0 if body.fps is None else float(body.fps),
             "pct": [float(percentiles[0]), float(percentiles[1])],
             "cmap": body.cmap or "gray",
+            "band": body.band,
+            "norm": body.norm,
         },
     )
     return {"job_id": record["id"]}
@@ -974,7 +1041,18 @@ def post_movie(request: Request, identifier: str, body: MovieRequest) -> dict[st
 
 @router.post("/{identifier:path}/export")
 def post_export(request: Request, identifier: str, body: ExportRequest) -> dict[str, str]:
-    resolve(request.app.state.mirror, identifier)
+    from ..science import stack_readiness
+    root = request.app.state.mirror
+    path = resolve(root, identifier)
+    ready = stack_readiness(data.open_stack(path), band=body.band, norm=body.norm,
+                            dt_tol=0.05 if body.dt_tol is None else body.dt_tol,
+                            min_frames=3 if body.min_frames is None else body.min_frames)
+    if not ready["ready"]:
+        raise HTTPException(status_code=400, detail={"message": "stack is not ready for export", "readiness": ready})
+    if body.out_dir and not Path(body.out_dir).resolve().is_relative_to(data.export_dir(root).resolve()):
+        raise HTTPException(status_code=400, detail="GUI exports must stay under the mirror exports directory")
+    if body.out_dir and Path(body.out_dir).exists() and (not Path(body.out_dir).is_dir() or any(Path(body.out_dir).iterdir())):
+        raise HTTPException(status_code=400, detail="choose an empty export directory; existing exports are preserved")
     record = request.app.state.jobs.submit(
         "goflow_export",
         {
@@ -983,6 +1061,8 @@ def post_export(request: Request, identifier: str, body: ExportRequest) -> dict[
             "dt_tol": body.dt_tol,
             "min_frames": body.min_frames,
             "crop_to_valid": body.crop_to_valid,
+            "band": body.band,
+            "norm": body.norm,
         },
     )
     return {"job_id": record["id"]}
@@ -1069,4 +1149,7 @@ def _rgba_png(channels: list[np.ndarray], mask: np.ndarray | None) -> bytes:
 
 def _png_response(dataset: xr.Dataset, payload: bytes, stride: int, shape: tuple[int, int]) -> Response:
     bounds = images.bounds_header(dataset["x_km"].values, dataset["y_km"].values, stride, shape)
-    return Response(content=payload, media_type="image/png", headers=images.image_headers(shape, stride, bounds))
+    headers = images.image_headers(shape, stride, bounds)
+    if instrument_of(dataset).lower() == "junocam":
+        headers["Cache-Control"] = "no-store"
+    return Response(content=payload, media_type="image/png", headers=headers)

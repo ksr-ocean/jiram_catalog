@@ -161,19 +161,13 @@ def image_table(
     the strip builder select from.
     """
     root = mirror_root(mirror)
-    images = load_images(root, orbits)
-    images = images.loc[
-        (images["level"].astype(str) == "RDR")
-        & images["img_present"].fillna(False).astype(bool)
-    ]
-    quality = load_quality(root, orbits)[["product_id", "quality_tier", "quality_epoch"]]
-    geo = load_geo(root, orbits).drop(
-        columns=["orbit", "level", "start_time", "bands", "n_bands", "n_framelets"]
-    )
-    table = images.merge(quality, on="product_id", how="inner").merge(
-        geo, on="product_id", how="inner"
-    )
-    table = table.loc[table["geo_ok"].fillna(False).astype(bool)]
+    from .policy import eligible_images
+    table = eligible_images(root)
+    if orbits is not None:
+        table = table.loc[table["orbit"].isin(list(orbits))]
+    table = table.loc[table["img_present"].fillna(False).astype(bool)
+                      & table["geo_ok"].fillna(False).astype(bool)]
+    # quality_min is a descriptive legacy cut, never an exclusion override.
     table = table.loc[
         table["quality_tier"].map(tier_rank) <= QUALITY_TIERS.index(str(quality_min).upper())
     ]
@@ -452,7 +446,9 @@ def build_stack(
     root = mirror_root(mirror)
     grid = _resolve_region(region, config)
     names = tuple(str(name).upper() for name in bands)
-    selection = images.reset_index(drop=True)
+    from .policy import eligible_images, preferred_rows
+    allowed = set(eligible_images(root, preferred=False)["product_id"].astype(str))
+    selection = preferred_rows(images.loc[images["product_id"].astype(str).isin(allowed)])
     if selection.empty:
         raise ValueError(f"no image selected for region {grid.name}")
 

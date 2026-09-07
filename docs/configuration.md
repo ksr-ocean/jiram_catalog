@@ -67,3 +67,12 @@ precedence chain supplied it (`env`, `file`, or `default`). The same
 (`src/jiram_catalog/config_cmd.py`, `add_subparser`/`run`); once the CLI
 coordinator wires it into `cli.py`, `uv run jiram-catalog config` will do
 the same thing.
+
+## GUI execution
+
+`JIRAM_ARROW_THREADS` controls the GUI's Arrow CPU and I/O pools. The default
+is four threads, capped by CPU affinity; it is independent of BLAS/OpenMP
+settings. NetCDF-backed GUI routes and background jobs share a process-local
+lock because the installed netCDF C library does not support concurrent
+access safely. Long image operations can queue other image requests; config,
+health, job status, selections and catalog access remain responsive.

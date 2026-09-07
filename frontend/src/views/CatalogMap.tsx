@@ -28,7 +28,9 @@ import styles from './Views.module.css';
 import { useStore, type ColorBy } from '../store/store';
 import { categoricalColor, rampColor, rgbCss, type RGB } from '../lib/colorScale';
 import { graticule, viewLimits } from '../lib/projection';
-import { boxPolygon, indicesInPolygon, pointInPolygon } from '../lib/filters';
+import { coverageDensity } from '../lib/density';
+import { loadPersisted, savePersisted } from '../store/persist';
+import { boxPolygon, indicesInPolygon, pointInPolygon, polygonsIntersect } from '../lib/filters';
 import { fmt, fmtTime } from '../lib/format';
 import { INSTRUMENTS } from '../lib/bands';
 import type { FootprintItem } from '../lib/footprints';
@@ -90,16 +92,29 @@ export function CatalogMap() {
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<[number, number]>([900, 420]);
-  const [viewState, setViewState] = useState<OrthographicViewState>({ target: [180, 0, 0], zoom: 1 });
+  const [viewState, setViewState] = useState<OrthographicViewState>({
+    target: [180, 0, 0],
+    zoom: 1,
+  });
   const [tool, setTool] = useState<Tool>('box');
+  const [representation, setRepresentation] = useState(
+    () => loadPersisted('map', { representation: 'density' }).representation,
+  );
   const [replaceMode, setReplaceMode] = useState(false);
   const [drag, setDrag] = useState<[number, number][] | null>(null);
-  const [hover, setHover] = useState<{ index: number; x: number; y: number; source: 'gpu' | 'cpu' } | null>(null);
+  const [hover, setHover] = useState<{
+    index: number;
+    x: number;
+    y: number;
+    source: 'gpu' | 'cpu';
+  } | null>(null);
 
   useEffect(() => {
     const node = wrapRef.current;
     if (!node) return;
-    const observer = new ResizeObserver(() => setSize([node.clientWidth || 900, node.clientHeight || 420]));
+    const observer = new ResizeObserver(() =>
+      setSize([node.clientWidth || 900, node.clientHeight || 420]),
+    );
     observer.observe(node);
     setSize([node.clientWidth || 900, node.clientHeight || 420]);
     return () => observer.disconnect();
@@ -169,7 +184,9 @@ export function CatalogMap() {
   const range = useMemo(() => colorRange(colorValues, filtered), [colorValues, filtered]);
   const colorOf = useCallback(
     (row: number): RGB =>
-      categorical ? categoricalColor(colorValues[row]) : rampColor(colorValues[row], range[0], range[1]),
+      categorical
+        ? categoricalColor(colorValues[row])
+        : rampColor(colorValues[row], range[0], range[1]),
     [categorical, colorValues, range],
   );
 
@@ -183,12 +200,17 @@ export function CatalogMap() {
       xy[2 * k] = positions[2 * i];
       xy[2 * k + 1] = positions[2 * i + 1];
       const value = colorValues[i];
-      const color: RGB = categorical ? categoricalColor(value) : rampColor(value, range[0], range[1]);
+      const color: RGB = categorical
+        ? categoricalColor(value)
+        : rampColor(value, range[0], range[1]);
       rgb[3 * k] = color[0];
       rgb[3 * k + 1] = color[1];
       rgb[3 * k + 2] = color[2];
     }
-    return { length: n, attributes: { getPosition: { value: xy, size: 2 }, getFillColor: { value: rgb, size: 3 } } };
+    return {
+      length: n,
+      attributes: { getPosition: { value: xy, size: 2 }, getFillColor: { value: rgb, size: 3 } },
+    };
   }, [filtered, positions, colorValues, categorical, range]);
 
   /** The selected subset drawn on top, so the tray's contents are visible. */
@@ -278,15 +300,52 @@ export function CatalogMap() {
 
   const commitPolygon = useCallback(
     (screenPolygon: [number, number][]) => {
-      const polygon = screenPolygon.map(([sx, sy]) => unproject(sx, sy, viewState, size[0], size[1]));
-      const hits = indicesInPolygon(positions, filtered, polygon as [number, number][]);
+      const polygon = screenPolygon.map(([sx, sy]) =>
+        unproject(sx, sy, viewState, size[0], size[1]),
+      );
+      const hits = [
+        ...new Set([
+          ...indicesInPolygon(positions, filtered, polygon as [number, number][]),
+          ...footprints.items
+            .filter((item) => polygonsIntersect(item.polygon, polygon as [number, number][]))
+            .map((item) => item.row),
+        ]),
+      ];
       if (hits.length === 0) return;
       if (replaceMode) replaceSelection(Uint32Array.from(hits));
       else addToSelection(Uint32Array.from(hits));
     },
-    [viewState, size, positions, filtered, replaceMode, addToSelection, replaceSelection],
+    [
+      viewState,
+      size,
+      positions,
+      footprints,
+      filtered,
+      replaceMode,
+      addToSelection,
+      replaceSelection,
+    ],
   );
 
+  const density = useMemo(
+    () => coverageDensity(columns, filtered, positions, footprints, viewLimits(viewMode)),
+    [columns, filtered, positions, footprints, viewMode],
+  );
+  const densityMax = Math.max(1, ...density.map((cell) => cell.count));
+  const overview =
+    representation === 'density' &&
+    (viewState.zoom as number) <
+      Math.log2(size[0] / (viewLimits(viewMode)[1] - viewLimits(viewMode)[0])) + 1.3;
+  const selectedFootprints = useMemo(
+    () =>
+      footprints.items.filter((item) =>
+        selectionKeys.has(`${columns.productId[item.row]}|${columns.half[item.row]}`),
+      ),
+    [footprints, selectionKeys, columns],
+  );
+  const visibleFootprints = overview
+    ? footprints.items.filter((item) => item.row === hover?.index)
+    : footprints.items;
   const layers = useMemo(() => {
     const list: unknown[] = [
       new PathLayer({
@@ -299,13 +358,29 @@ export function CatalogMap() {
         widthMinPixels: 1,
       }),
     ];
-    if (footprints.items.length > 0) {
+    if (overview)
+      list.push(
+        new PolygonLayer({
+          id: 'catalog-density',
+          data: density,
+          getPolygon: (d: { polygon: number[][] }) => d.polygon,
+          getFillColor: (d: { count: number }) => [
+            69,
+            154,
+            216,
+            Math.round(35 + (180 * Math.log1p(d.count)) / Math.log1p(densityMax)),
+          ],
+          stroked: false,
+          pickable: false,
+        }),
+      );
+    if (visibleFootprints.length > 0) {
       // Below the points on purpose: a swath is large enough to swallow every
       // JIRAM boresight inside it, and the point is the more precise target.
       list.push(
         new PolygonLayer<FootprintItem>({
           id: 'catalog-footprints',
-          data: footprints.items,
+          data: visibleFootprints,
           getPolygon: (d) => d.polygon,
           pickable: true,
           filled: true,
@@ -332,7 +407,7 @@ export function CatalogMap() {
         getRadius: 2.2,
         radiusMinPixels: 1.5,
         radiusMaxPixels: 6,
-        opacity: 0.85,
+        opacity: overview ? 0.04 : 0.85,
         onHover: onDeckHover,
         onClick: (info: PickingInfo) => {
           if (info.index >= 0) void openDetail(columns.productId[filtered[info.index]]);
@@ -340,6 +415,19 @@ export function CatalogMap() {
         updateTriggers: { getPosition: binary, getFillColor: binary },
       }),
     );
+    if (selectedFootprints.length)
+      list.push(
+        new PolygonLayer<FootprintItem>({
+          id: 'catalog-selected-swaths',
+          data: selectedFootprints,
+          getPolygon: (d) => d.polygon,
+          filled: false,
+          stroked: true,
+          getLineColor: [255, 236, 164, 240],
+          getLineWidth: 2,
+          lineWidthUnits: 'pixels',
+        }),
+      );
     if (selectedXy.length > 0) {
       list.push(
         new ScatterplotLayer({
@@ -379,6 +467,11 @@ export function CatalogMap() {
     return list;
   }, [
     viewMode,
+    overview,
+    density,
+    densityMax,
+    visibleFootprints,
+    selectedFootprints,
     binary,
     footprints,
     colorOf,
@@ -431,10 +524,24 @@ export function CatalogMap() {
               aria-pressed={viewMode === mode}
               onClick={() => useStore.getState().setViewMode(mode)}
             >
-              {mode}
+              {{ cyl: 'Global', N: 'North pole', S: 'South pole' }[mode]}
             </button>
           ))}
         </div>
+        <label>
+          Map detail{' '}
+          <select
+            aria-label="Coverage representation"
+            value={representation}
+            onChange={(e) => {
+              setRepresentation(e.target.value);
+              savePersisted('map', { representation: e.target.value });
+            }}
+          >
+            <option value="density">Coverage density</option>
+            <option value="outlines">All outlines</option>
+          </select>
+        </label>
         <div className={styles.group}>
           <label htmlFor="color-by">colour by</label>
           <select
@@ -500,7 +607,11 @@ export function CatalogMap() {
                 // are tested here too -- otherwise hovering a JunoCam swath
                 // would do nothing unless the pan tool was chosen first.
                 const item = footprintAt(point[0], point[1]);
-                setHover(item === null ? null : { index: item.row, x: point[0], y: point[1], source: 'cpu' });
+                setHover(
+                  item === null
+                    ? null
+                    : { index: item.row, x: point[0], y: point[1], source: 'cpu' },
+                );
                 return;
               }
               setDrag((previous) => {
@@ -544,11 +655,14 @@ export function CatalogMap() {
             className={`${styles.tooltip} tooltip`}
             data-testid="catalog-tooltip"
             data-source={hover.source}
-            style={{ left: Math.min(hover.x + 12, size[0] - 260), top: Math.min(hover.y + 12, size[1] - 96) }}
+            style={{
+              left: Math.min(hover.x + 12, size[0] - 260),
+              top: Math.min(hover.y + 12, size[1] - 96),
+            }}
           >
             <div>
-              <b data-testid="tooltip-product-id">{columns.productId[hoverIndex]}</b>{' '}
-              ({columns.half[hoverIndex] || columns.bands[hoverIndex] || '--'})
+              <b data-testid="tooltip-product-id">{columns.productId[hoverIndex]}</b> (
+              {columns.half[hoverIndex] || columns.bands[hoverIndex] || '--'})
             </div>
             <div data-testid="tooltip-instrument">
               {columns.instrument[hoverIndex] || 'JIRAM'}
@@ -564,13 +678,28 @@ export function CatalogMap() {
             </div>
           </div>
         )}
+        <div className={styles.geoCaption}>
+          Planetocentric latitude · east longitude · box / lasso selects intersecting footprints
+        </div>
         <div className={styles.legend} data-testid="catalog-legend">
-          <div style={{ marginBottom: 3 }}>{colorBy}</div>
+          {overview && (
+            <div data-testid="density-legend">
+              Coverage per cell: 1–{densityMax} observations
+              <br />
+              Brighter = more coverage; JIRAM uses centres
+              <br />
+              Zoom in for outlines · gold = selected swaths
+            </div>
+          )}
+          <div style={{ marginBottom: 3 }}>Outline / point colour: {colorBy}</div>
           {colorBy === 'instrument' ? (
             <>
               {INSTRUMENTS.map((name, index) => (
                 <div className={styles.swatchRow} key={name}>
-                  <span className={styles.swatch} style={{ background: rgbCss(categoricalColor(index)) }} />
+                  <span
+                    className={styles.swatch}
+                    style={{ background: rgbCss(categoricalColor(index)) }}
+                  />
                   <span>{name}</span>
                 </div>
               ))}
@@ -578,7 +707,11 @@ export function CatalogMap() {
           ) : colorBy === 'orbit' || colorBy === 'year' ? (
             <div className={styles.swatchRow}>
               {[0, 1, 2, 3, 4, 5].map((k) => (
-                <span key={k} className={styles.swatch} style={{ background: rgbCss(categoricalColor(k)) }} />
+                <span
+                  key={k}
+                  className={styles.swatch}
+                  style={{ background: rgbCss(categoricalColor(k)) }}
+                />
               ))}
               <span>categorical</span>
             </div>
@@ -589,7 +722,11 @@ export function CatalogMap() {
                 <span
                   key={f}
                   className={styles.swatch}
-                  style={{ background: rgbCss(rampColor(range[0] + f * (range[1] - range[0]), range[0], range[1])) }}
+                  style={{
+                    background: rgbCss(
+                      rampColor(range[0] + f * (range[1] - range[0]), range[0], range[1]),
+                    ),
+                  }}
                 />
               ))}
               <span>{fmt(range[1], 1)}</span>

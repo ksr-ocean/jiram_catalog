@@ -32,6 +32,10 @@ export interface CatalogColumns {
   /** The row's bands: the half for JIRAM, `;`-joined filters for JunoCam. */
   readonly bands: string[];
   readonly qualityTier: string[];
+  readonly observationId?: string[];
+  readonly trackabilityStatus?: string[];
+  readonly qualityStatus?: string[];
+  readonly qualityReason?: string[];
   readonly fpLon: ListColumn;
   readonly fpLat: ListColumn;
   readonly orbit: Float32Array;
@@ -176,6 +180,10 @@ export function columnsFromTable(table: Table): CatalogColumns {
     instrument: stringColumn(table, 'instrument', 'JIRAM'),
     bands: bandsColumn(table),
     qualityTier: stringColumn(table, 'quality_tier', 'A'),
+    observationId: stringColumn(table, 'observation_id'),
+    trackabilityStatus: stringColumn(table, 'trackability_status', 'unassessed'),
+    qualityStatus: stringColumn(table, 'quality_status', 'unassessed'),
+    qualityReason: stringColumn(table, 'quality_reason'),
     fpLon: listColumn(table, 'fp_lon'),
     fpLat: listColumn(table, 'fp_lat'),
     orbit: intColumn(table, 'orbit'),

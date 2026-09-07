@@ -2,7 +2,7 @@
 
 The GUI is two halves of one process: a small FastAPI backend
 (`src/jiram_catalog/api/`) that answers Arrow, JSON and PNG under `/api`
-and reads nothing the command line has not already written, and a React
+and reads mirrored observations and derived products, and a React
 + deck.gl single-page front end (`frontend/`, built to
 `src/jiram_catalog/webapp/dist/`) that holds all of the state and does
 all of the drawing in the browser; the backend serves the built front
@@ -42,66 +42,43 @@ your browser. The server has no authentication, so while it runs any
 process on the cluster network can open it; stop it when you are done
 (Ctrl-C on the node).
 
-## The three tabs
+## The five views
 
-**Catalog** is every frame that sees the planet -- about 47,600 of the
-113,000 (frame, band half) rows -- as boresight points, loaded once as
-an Arrow table and held as typed arrays in the browser so that every
-filter is a client-side pass over those arrays and hovering is real GPU
-point picking rather than a query against a raster. The filter toolbar
-is orbit range, band half, pixel size, emission angle, on-planet
-fraction, dayside, latitude band, and, when
-`index/trackability_frames.parquet` exists, same-pass revisit; three
-coverage charts (frames per latitude band, per orbit, per month) are
-computed server-side from `/api/catalog/summary` with the same
-parameters, so the map's count and the charts' count cannot disagree. A
-box or lasso drag on the map, or a checked row in the table, adds to the
-**selection tray**; the tray's contents export as CSV or drive "Build
-stack..." (regime 1) and "Show in Strips" (regime 2). **Thresholds
-exclude rather than require**: a frame whose emission angle the
-geometry engine could not fix stays on the map instead of vanishing the
-moment a slider moves.
+**Explore** finds mapped observations with task presets, density/footprint
+maps, coverage-based latitude filters and a provenance inspector.
+**Time series** displays region frames, snapshots and accumulating sweeps,
+with physical-band movies and readiness-checked exports. **Image library**
+shows per-pass strips and individual/population intensity statistics.
+**Compare** provides linked split/blink viewing, shared masks and measured
+registration with explicit uncertainty assumptions. **Coverage** searches
+archive metadata and shows processing stages, source age, exclusion reasons
+and reference links.
 
-**Poles** views the region stacks under `<mirror>/regions/`, and can
-also build a new one from a tray selection (`POST /api/stacks/build`).
-Choose a stack from the list; the player steps through time, the
-stretch sliders set vmin/vmax, and the graticule (parallels every 2 deg,
-meridians every 30 deg) and the emission overlay come from the stack's
-own coordinate arrays, served as a GeoJSON the browser draws with a
-locked-aspect `OrthographicView`. The colour map is applied in the
-browser through a 256-entry lookup table, so changing it is an instant
-redraw of pixels already downloaded, not a new request. Actions --
-render a movie (played back with a native `<video>` element once done),
-export a goflow triple dataset -- run as background jobs polled from
-`/api/jobs` and report where they wrote.
+Use the [current workflow and capability matrix](research_workflow.md) for
+scientific interpretation and a description of every new analysis control.
+The earlier [illustrated guide](gui_guide.md) retains historical screenshots.
 
-**Strips** is the strip library: a filtered table, a map of the strip
-centres coloured by year, the strip itself with its graticule and
-local-time contours drawn through the same colour-map viewer as Poles,
-and the statistics of the current strip -- isotropic spectrum, the
-one-dimensional spectra along x and along y, and the second- and
-third-order structure functions, plotted with Plotly.
+## Products and caches
 
-## What it writes, and what it does not
+Selections, display caches and job records stay under `<mirror>/gui_cache/`.
+New research caches and rendered movies use `gui_cache/research/`;
+velocity-model exports use `gui_cache/exports/`. GUI export destinations must
+stay inside that exports directory, and an explicitly named destination must
+be empty. Default export identities include source/policy/settings so old
+realization files cannot mix with a new filtered dataset. Region builds write
+under `<mirror>/regions/`. Published ground truth is read-only.
 
-Everything the GUI writes lands under `<mirror>/gui_cache/`: saved
-selections as `selections/<id>.json` (`POST /api/selections`), per-strip
-statistics as `stats_<strip_id>.nc` (the Dataset
-`stats2d.strip_statistics` returns, so a later population run can read
-them), per-stack display-stretch and graticule caches as
-`meta_<key>.json`, job records mirrored under `jobs/` so a restarted
-server can still report what the last run produced, and, by default,
-the movies, PNGs and goflow datasets under `gui_cache/exports/`. Those
-export destinations are text inputs and can be pointed anywhere the
-user can write. Nothing else under the mirror is touched, and no
-request leaves the node.
+Stacks are opened lazily; image display and movie normalization read one
+physical frame at a time. Population analysis is bounded to 100 requested
+strips and records independent-pass weighting. Figures and recipes download
+through the browser. Reference links open external sites; ordinary image
+viewing uses the local mirror.
 
-A frame stack is 2 GB and is never loaded whole: the dataset is opened
-lazily, one time step is read when the player moves, and the display
-stretch is a strided subsample of a few steps computed once and cached.
-Opening the 294-step, 2.25 GB `M_orbits4_frame.nc` costs about 280 MB of
-resident memory and under a second, and each step after that reads in
-about 0.2 s.
+JunoCam failure exclusion is enforced before pixel access, statistics and
+jobs. The default catalog requires an eligible preferred observation version.
+Excluded and unassessed data can be inspected as metadata only. Existing
+JunoCam movies from before this policy are not served; new movies carry the
+filtered source identity and chosen band/normalization in their cache key.
 
 ## The selection tray
 

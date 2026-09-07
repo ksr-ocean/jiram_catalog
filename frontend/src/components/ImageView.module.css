@@ -8,3 +8,8 @@
 .colorbar { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .bar { width: 140px; height: 10px; border: 1px solid var(--line); border-radius: 2px; }
 .hidden { display: none; }
+
+.tools { position:absolute;right:10px;top:10px;z-index:5;display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#111923cc;padding:5px;border-radius:6px;max-width:calc(100% - 20px); }
+.tools button,.tools select {font-size:12px;}
+.coordinates {position:absolute;bottom:8px;left:10px;pointer-events:none;color:#a1b2c7;background:#0b111bba;padding:3px 6px;font-size:11px;}
+.vectorLegend {position:absolute;bottom:30px;left:10px;color:#ffdb78;background:#0b111bba;padding:3px 6px;font-size:12px;}

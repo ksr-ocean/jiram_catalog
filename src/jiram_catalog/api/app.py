@@ -12,6 +12,7 @@ environment at import time.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from ..config import mirror_root, paper_data_root
 from ..webapp import dist_dir
-from . import catalog, data, selections, stacks, strips
+from . import catalog, coverage, data, science, selections, stacks, strips
 from .jobs import JobManager
 
 LOGGER = logging.getLogger(__name__)
@@ -124,6 +125,16 @@ def _count(call: Any) -> int:
 # ---------------------------------------------------------------------------
 def create_app(mirror: str | Path | None = None) -> FastAPI:
     """The application, bound to one mirror root for its lifetime."""
+    import pyarrow as pa
+
+    # Arrow inherits OMP_NUM_THREADS=1 from scientific worker environments.
+    # With pandas 3's Arrow string indexes this made a cold catalog take
+    # tens of seconds here; a separate bounded pool restored subsecond table
+    # construction. Keep BLAS/OpenMP settings untouched.
+    available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+    arrow_threads = min(available, max(1, int(os.environ.get("JIRAM_ARROW_THREADS", "4"))))
+    pa.set_cpu_count(arrow_threads)
+    pa.set_io_thread_count(arrow_threads)
     root = mirror_root(mirror)
 
     @asynccontextmanager
@@ -142,6 +153,8 @@ def create_app(mirror: str | Path | None = None) -> FastAPI:
     app.include_router(selections.router)
     app.include_router(stacks.router)
     app.include_router(strips.router)
+    app.include_router(coverage.router)
+    app.include_router(science.router)
 
     _add_static(app)
     return app

@@ -382,8 +382,9 @@ def test_latitude_filter_excludes_a_missing_boresight(client, mirror):
     """A frame whose boresight misses the planet has no latitude to test."""
     table = api_catalog.catalog_frame(mirror).copy()
     table.loc[0, "bore_lat"] = np.nan
-    assert len(api_catalog.apply_filters(table, lat_min=-90.0)) == 19
-    assert len(api_catalog.apply_filters(table, lat_max=90.0)) == 19
+    assert len(api_catalog.apply_filters(table, lat_min=-90.0, latitude_mode="boresight")) == 19
+    assert len(api_catalog.apply_filters(table, lat_max=90.0, latitude_mode="boresight")) == 19
+    assert len(api_catalog.apply_filters(table, lat_min=-90.0, latitude_mode="coverage")) == 20
     # The other thresholds still keep it: only the latitude window excludes.
     assert len(api_catalog.apply_filters(table, emission_max=90.0)) == 20
 
@@ -758,7 +759,7 @@ def synthetic_band_strip(size: int = 32) -> xr.Dataset:
             **{name: base[name] for name in ("x_km", "y_km", "lat", "lon_east", "local_time_h")},
         },
         attrs={**base.attrs, "strip_id": BANDED_STRIP_ID, "instrument": "JunoCam",
-               "band": ";".join(BANDS), "bands": ";".join(BANDS)},
+               "band": ";".join(BANDS), "bands": ";".join(BANDS), "seq_id": BANDED_STRIP_ID},
     )
     return dataset
 
@@ -771,6 +772,17 @@ def banded_mirror(tmp_path_factory) -> Path:
     _frames_table().to_parquet(root / "index" / "frames.parquet")
     _geo_table().to_parquet(root / "index" / "frames_geo.parquet")
 
+    # Synthetic clean evidence exercises ordinary multiband viewing under
+    # the same policy as the real mirror; no policy bypass for these tests.
+    jc_index = root / "junocam" / "index"
+    jc_index.mkdir(parents=True)
+    pd.DataFrame([
+        dict(product_id=identifier, orbit=4, level="RDR", metrics_ok=True,
+             geo_ok=True, streak_index=.01, saturation_frac=0., zero_frac=.1,
+             max_dn=1000., bloom_flag=False)
+        for identifier in ["JNCR_TEST_0", "JNCR_TEST_1", BANDED_STRIP_ID]
+    ]).to_parquet(jc_index / "junocam_quality.parquet")
+
     write_stack(synthetic_band_stack(), root / "regions" / "banded" / f"{Path(BANDED_STACK_ID).name}.nc")
 
     strip = synthetic_band_strip()
@@ -778,6 +790,7 @@ def banded_mirror(tmp_path_factory) -> Path:
     write_strip(strip, root / relative)
     index = _strips_index(root, strip, str(relative))
     index["strip_id"] = BANDED_STRIP_ID
+    index["seq_id"] = BANDED_STRIP_ID
     index["instrument"] = "JunoCam"
     index["band"] = ";".join(BANDS)
     index["bands"] = ";".join(BANDS)

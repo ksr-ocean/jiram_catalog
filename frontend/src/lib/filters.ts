@@ -35,6 +35,7 @@ export interface CatalogFilters {
   emissionMax: number | null;
   onPlanetMin: number | null;
   daysideOnly: boolean;
+  latitudeMode: 'coverage' | 'boresight';
   latMin: number;
   latMax: number;
   revisitOnly: boolean;
@@ -55,6 +56,7 @@ export const DEFAULT_FILTERS: CatalogFilters = {
   emissionMax: null,
   onPlanetMin: null,
   daysideOnly: false,
+  latitudeMode: 'coverage',
   latMin: -90,
   latMax: 90,
   revisitOnly: false,
@@ -88,15 +90,25 @@ export function filterIndices(columns: CatalogColumns, filters: CatalogFilters):
     if (wantBand !== null && !bandsInclude(columns.bands[i], wantBand)) continue;
     if (!qualityPasses(columns.qualityTier[i], filters.qualityMin)) continue;
     const pixel = columns.medianPixelKm[i];
-    if (filters.pixelMaxKm !== null && Number.isFinite(pixel) && pixel > filters.pixelMaxKm) continue;
+    if (filters.pixelMaxKm !== null && Number.isFinite(pixel) && pixel > filters.pixelMaxKm)
+      continue;
     const emission = columns.boreEmission[i];
-    if (filters.emissionMax !== null && Number.isFinite(emission) && emission > filters.emissionMax) continue;
+    if (filters.emissionMax !== null && Number.isFinite(emission) && emission > filters.emissionMax)
+      continue;
     const onPlanet = columns.onPlanetFrac[i];
     if (filters.onPlanetMin !== null && !(onPlanet >= filters.onPlanetMin)) continue;
     if (filters.daysideOnly && !(columns.daysideFrac[i] > 0)) continue;
     const lat = columns.boreLat[i];
-    if (filters.latMin !== DEFAULT_FILTERS.latMin && !(lat >= filters.latMin)) continue;
-    if (filters.latMax !== DEFAULT_FILTERS.latMax && !(lat <= filters.latMax)) continue;
+    const low =
+      filters.latitudeMode !== 'boresight' && Number.isFinite(columns.minLat[i])
+        ? columns.minLat[i]
+        : lat;
+    const high =
+      filters.latitudeMode !== 'boresight' && Number.isFinite(columns.maxLat[i])
+        ? columns.maxLat[i]
+        : lat;
+    if (filters.latMin !== DEFAULT_FILTERS.latMin && !(high >= filters.latMin)) continue;
+    if (filters.latMax !== DEFAULT_FILTERS.latMax && !(low <= filters.latMax)) continue;
     if (filters.revisitOnly && !columns.hasPartner[i]) continue;
     keep[count++] = i;
   }
@@ -121,6 +133,7 @@ export function filtersToParams(filters: CatalogFilters): Record<string, string>
   if (filters.latMin !== DEFAULT_FILTERS.latMin) params.lat_min = String(filters.latMin);
   if (filters.latMax !== DEFAULT_FILTERS.latMax) params.lat_max = String(filters.latMax);
   if (filters.revisitOnly) params.revisit_only = 'true';
+  if (filters.latitudeMode === 'boresight') params.latitude_mode = 'boresight';
   return params;
 }
 
@@ -173,4 +186,45 @@ export function boxPolygon(x0: number, y0: number, x1: number, y1: number): [num
     [Math.max(x0, x1), Math.max(y0, y1)],
     [Math.min(x0, x1), Math.max(y0, y1)],
   ];
+}
+
+/** Reproducible starting points; only JIRAM currently has assessed revisits. */
+export const CATALOG_PRESETS: { id: string; label: string; filters: Partial<CatalogFilters> }[] = [
+  {
+    id: 'repeat',
+    label: 'Repeat cloud views',
+    filters: { instrument: 'JIRAM', half: 'M', revisitOnly: true },
+  },
+  { id: 'polar', label: 'Polar morphology', filters: { latMin: 60, latitudeMode: 'coverage' } },
+  { id: 'texture', label: 'Single-pass texture', filters: { emissionMax: 70, onPlanetMin: 0.5 } },
+  {
+    id: 'context',
+    label: 'Cross-instrument context',
+    filters: { instrument: 'all', latitudeMode: 'coverage' },
+  },
+];
+
+/** Polygon intersection including crossed edges and containment, for region selection. */
+export function polygonsIntersect(a: [number, number][], b: [number, number][]): boolean {
+  if (a.length < 3 || b.length < 3) return false;
+  if (a.some(([x, y]) => pointInPolygon(x, y, b)) || b.some(([x, y]) => pointInPolygon(x, y, a)))
+    return true;
+  const cross = (p: number[], q: number[], r: number[]) =>
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  for (let i = 0; i < a.length; i++)
+    for (let j = 0; j < b.length; j++) {
+      const p = a[i],
+        q = a[(i + 1) % a.length],
+        r = b[j],
+        s = b[(j + 1) % b.length];
+      if (
+        Math.max(p[0], q[0]) < Math.min(r[0], s[0]) ||
+        Math.max(r[0], s[0]) < Math.min(p[0], q[0]) ||
+        Math.max(p[1], q[1]) < Math.min(r[1], s[1]) ||
+        Math.max(r[1], s[1]) < Math.min(p[1], q[1])
+      )
+        continue;
+      if (cross(p, q, r) * cross(p, q, s) <= 0 && cross(r, s, p) * cross(r, s, q) <= 0) return true;
+    }
+  return false;
 }

@@ -1,9 +1,10 @@
 # JunoCam instrument-health epochs and documented throughput loss.
 #
-# Everything in this file is transcribed from the JunoCam volumes' own
-# ERRATA.TXT (cumulative free text, newest release first); nothing is
-# inferred, fitted, or averaged here.  Each entry names the volume whose
-# ERRATA it was read from so a later release can be diffed against it.
+# Descriptive epochs and response fits below summarize the JunoCam volumes'
+# cumulative ERRATA.TXT. Each entry names its source. The separate access
+# policy records the owner's conservative scientific selection, including
+# measured PJ4 legacy eligibility and explicit per-product failure intervals;
+# a descriptive health epoch is never itself a clearance.
 #
 # Epochs are closed integer orbit (= perijove) intervals covering 0..99 with
 # no gap and no overlap; jiram_catalog.junocam.quality.epoch_for_orbit reads
@@ -14,7 +15,7 @@
 # documents a response loss, the loss it quotes at the end of that range, and
 # the linear fit coefficients it publishes for correcting it.  The factor
 # applied to an image is intercept + slope * orbit, clipped to (0, 1]; an
-# orbit outside every band's range gets 1.0, i.e. no documented loss.  None
+# orbit outside every band's range gets NaN (unknown response).  None
 # of this is applied to the archived RDR products -- the ERRATA says so
 # explicitly -- so these factors describe the data, they do not correct it.
 
@@ -127,3 +128,59 @@ notes:
       Orbits 73-80 carry release notes about oversaturated or all-black
       images and global map products that could not be produced (orbits 74,
       75, 76, 77, 78, 79, 80 named explicitly).
+
+# Access rules are deliberately separate from descriptive health epochs.
+# An annealing label is not a per-image clearance. Existing source products
+# remain intact; excluded/unassessed products have metadata-only access.
+access_policy:
+  version: failure-exclusion-v1
+  summary: >-
+    Only observations with clean measured signal and documented unaffected
+    instrument behavior are viewable. Instrument/radiometric failures and
+    unassessed observations are withheld; processing versions count once.
+  legacy_measured_orbits: [4]
+  legacy_evidence: docs/reports/junocam_pj4_geometry.md
+  # Future unaffected clearances must name individual product_ids or
+  # observation_ids plus reason and source; no broad recovery epoch.
+  clearances: []
+  exclusions:
+    - orbit_min: 47
+      orbit_max: 47
+      product_pattern: '_47(?:C00001|M00002)_V[0-9]+$'
+      reason: PJ47 turn-on failure affected the first RGB and methane products
+      source: https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0035/ERRATA.TXT#A24
+    - orbit_min: 48
+      orbit_max: 48
+      sequence_max: 214
+      reason: PJ48 failed turn-on interval through sequence 214
+      source: https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0035/ERRATA.TXT#A25
+    - orbit_min: 49
+      orbit_max: 49
+      product_pattern: '_49C00116_V[0-9]+$'
+      reason: Documented ECC block corruption
+      source: https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0035/ERRATA.TXT
+    - orbit_min: 73
+      orbit_max: 73
+      sequence_min: 13
+      reason: Radiation noise documented from PJ73 sequence 13
+      source: https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0035/ERRATA.TXT
+    - orbit_min: 74
+      orbit_max: 74
+      sequence_min: 8
+      reason: Content-free image interval starts at PJ74 sequence 8
+      radiometry_invalid: true
+      source: https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0035/ERRATA.TXT
+    - orbit_min: 75
+      orbit_max: 80
+      reason: Content-free images and invalid RDR radiometry
+      radiometry_invalid: true
+      source: https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0035/ERRATA.TXT
+  rationale_patterns:
+    - 'content[- ]free'
+    - 'all[- ]black'
+    - 'over[- ]?saturat'
+    - '\bsaturat(?:ed|ion)\b'
+    - 'radiometr(?:y|ic).*invalid|invalid.*radiometr'
+    - 'corrupt(?:ed|ion)?'
+    - 'instrument.*fail|regulator.*damage|ccd.*damage'
+    - 'no (?:useful |valid )?(?:image |radiometric )?signal'

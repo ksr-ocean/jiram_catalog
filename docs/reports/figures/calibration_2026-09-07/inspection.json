@@ -1,0 +1,341 @@
+{
+  "reviewed_utc": "2026-09-07T22:17:37.524835+00:00",
+  "base": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/",
+  "inventory_rows": 37386,
+  "perijove_counts": {
+    "13": 1334,
+    "14": 1139,
+    "15": 1693,
+    "16": 809,
+    "17": 1326,
+    "18": 1574,
+    "19": 991,
+    "20": 1855,
+    "21": 2306,
+    "22": 2134,
+    "23": 1573,
+    "24": 1913,
+    "25": 1869,
+    "26": 1212,
+    "27": 1528,
+    "28": 1935,
+    "29": 1346,
+    "30": 1045,
+    "31": 924,
+    "32": 2085,
+    "33": 1734,
+    "34": 1691,
+    "35": 1670,
+    "36": 1700
+  },
+  "sources": [
+    {
+      "url": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/bundle_junocam_atm-ml-calib.xml",
+      "file": "bundle_junocam_atm-ml-calib.xml",
+      "bytes": 11344,
+      "sha256": "45d11956f05fd825e4acf2188e43722d722faab8f81142c81fe5cb5b80063d62"
+    },
+    {
+      "url": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/document/user_guide.pdf",
+      "file": "document_user_guide.pdf",
+      "bytes": 868665,
+      "sha256": "dcce6e2284b9a43d6482f9f5290c70242b6a552c8635542faeb9692f372b3a66"
+    },
+    {
+      "url": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/data_calibrated/collection_junocam_atm-ml-calib_data_calibrated.xml",
+      "file": "data_calibrated_collection_junocam_atm-ml-calib_data_calibrated.xml",
+      "bytes": 11784,
+      "sha256": "17a57ff971cb36d409f1751f74f11945c16a8567260c27b206fa335a406df38f"
+    },
+    {
+      "url": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/data_calibrated/collection_junocam_atm-ml-calib_data_calibrated_inventory.csv",
+      "file": "data_calibrated_collection_junocam_atm-ml-calib_data_calibrated_inventory.csv",
+      "bytes": 2916309,
+      "sha256": "c17ed79750593952990bec56dfbb84034b1bcbe1968a590bcc9883529f1b4a6e"
+    },
+    {
+      "url": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/data_mosaics/PJ13/junocam_calibration_PJ13.xml",
+      "file": "data_mosaics_PJ13_junocam_calibration_PJ13.xml",
+      "bytes": 16461,
+      "sha256": "2370b200eedbb7781551c55a49951122b1576d437da72c984f9ef6c91f024adc"
+    }
+  ],
+  "tiles": [
+    {
+      "name": "data_calibrated_PJ13_NPR_PJ_13_jc_000000.tif",
+      "source": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/data_calibrated/PJ13/NPR_PJ_13_jc_000000.tif",
+      "shape": [
+        256,
+        256,
+        5
+      ],
+      "sha256": "91207f0759b0bd0909f97e0dd3b9a6eaa329264be19ca6fc441f6319da6412b2",
+      "start_time": "",
+      "stop_time": "",
+      "units": "I/F",
+      "finite_fraction": 1.0,
+      "range": [
+        0.18621069192886353,
+        0.8290160298347473
+      ],
+      "geotiff": {
+        "KeyDirectoryVersion": 1,
+        "KeyRevision": 1,
+        "KeyRevisionMinor": 0,
+        "GTModelTypeGeoKey": 1,
+        "GTRasterTypeGeoKey": 1,
+        "GTCitationGeoKey": "Jupiter LAEA",
+        "GeographicTypeGeoKey": 32767,
+        "GeogCitationGeoKey": "GCS Name = Jupiter|Datum = Jupiter|Ellipsoid = Jupiter|Primem = Jupiter Prime Meridian|",
+        "GeogGeodeticDatumGeoKey": 32767,
+        "GeogAngularUnitsGeoKey": 9102,
+        "GeogEllipsoidGeoKey": 32767,
+        "GeogSemiMajorAxisGeoKey": 71492000.0,
+        "GeogInvFlatteningGeoKey": 15.4144027598103,
+        "GeogPrimeMeridianLongGeoKey": 0.0,
+        "ProjectedCSTypeGeoKey": 32767,
+        "ProjectionGeoKey": 32767,
+        "ProjCoordTransGeoKey": 10,
+        "ProjLinearUnitsGeoKey": 9001,
+        "ProjFalseEastingGeoKey": 0.0,
+        "ProjFalseNorthingGeoKey": 0.0,
+        "ProjCenterLongGeoKey": -67.5,
+        "ProjCenterLatGeoKey": 66.8499984741211,
+        "ModelPixelScale": [
+          62500.0,
+          62500.0,
+          0.0
+        ],
+        "ModelTiepoint": [
+          0.0,
+          0.0,
+          0.0,
+          -8000000.0,
+          8000000.0,
+          0.0
+        ]
+      },
+      "nodata_tag": "None"
+    },
+    {
+      "name": "data_calibrated_PJ13_EZ_PJ_13_jc_000000.tif",
+      "source": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/data_calibrated/PJ13/EZ_PJ_13_jc_000000.tif",
+      "shape": [
+        256,
+        256,
+        5
+      ],
+      "sha256": "2657fe18043ae5dafbff734799badf42b4c02a30d7e772cc5bd377e7929208cc",
+      "start_time": "",
+      "stop_time": "",
+      "units": "I/F",
+      "finite_fraction": 1.0,
+      "range": [
+        0.1964120864868164,
+        0.8765959739685059
+      ],
+      "geotiff": {
+        "KeyDirectoryVersion": 1,
+        "KeyRevision": 1,
+        "KeyRevisionMinor": 0,
+        "GTModelTypeGeoKey": 1,
+        "GTRasterTypeGeoKey": 1,
+        "GTCitationGeoKey": "Jupiter LAEA",
+        "GeographicTypeGeoKey": 32767,
+        "GeogCitationGeoKey": "GCS Name = Jupiter|Datum = Jupiter|Ellipsoid = Jupiter|Primem = Jupiter Prime Meridian|",
+        "GeogGeodeticDatumGeoKey": 32767,
+        "GeogAngularUnitsGeoKey": 9102,
+        "GeogEllipsoidGeoKey": 32767,
+        "GeogSemiMajorAxisGeoKey": 71492000.0,
+        "GeogInvFlatteningGeoKey": 15.4144027598103,
+        "GeogPrimeMeridianLongGeoKey": 0.0,
+        "ProjectedCSTypeGeoKey": 32767,
+        "ProjectionGeoKey": 32767,
+        "ProjCoordTransGeoKey": 10,
+        "ProjLinearUnitsGeoKey": 9001,
+        "ProjFalseEastingGeoKey": 0.0,
+        "ProjFalseNorthingGeoKey": 0.0,
+        "ProjCenterLongGeoKey": -33.75,
+        "ProjCenterLatGeoKey": 5.25099992752075,
+        "ModelPixelScale": [
+          62500.0,
+          62500.0,
+          0.0
+        ],
+        "ModelTiepoint": [
+          0.0,
+          0.0,
+          0.0,
+          -8000000.0,
+          8000000.0,
+          0.0
+        ]
+      },
+      "nodata_tag": "None"
+    },
+    {
+      "name": "data_calibrated_PJ13_SPR_PJ_13_jc_000000.tif",
+      "source": "https://pds-atmospheres.nmsu.edu/PDS/data/PDS4/junocam_atm-ml-calib/data_calibrated/PJ13/SPR_PJ_13_jc_000000.tif",
+      "shape": [
+        256,
+        256,
+        5
+      ],
+      "sha256": "27a79129ff1e8030c58e66e47ecca81a78e406213432f01cc132acd6d955dc6b",
+      "start_time": "",
+      "stop_time": "",
+      "units": "I/F",
+      "finite_fraction": 1.0,
+      "range": [
+        0.21934348344802856,
+        0.9357520937919617
+      ],
+      "geotiff": {
+        "KeyDirectoryVersion": 1,
+        "KeyRevision": 1,
+        "KeyRevisionMinor": 0,
+        "GTModelTypeGeoKey": 1,
+        "GTRasterTypeGeoKey": 1,
+        "GTCitationGeoKey": "Jupiter LAEA",
+        "GeographicTypeGeoKey": 32767,
+        "GeogCitationGeoKey": "GCS Name = Jupiter|Datum = Jupiter|Ellipsoid = Jupiter|Primem = Jupiter Prime Meridian|",
+        "GeogGeodeticDatumGeoKey": 32767,
+        "GeogAngularUnitsGeoKey": 9102,
+        "GeogEllipsoidGeoKey": 32767,
+        "GeogSemiMajorAxisGeoKey": 71492000.0,
+        "GeogInvFlatteningGeoKey": 15.4144027598103,
+        "GeogPrimeMeridianLongGeoKey": 0.0,
+        "ProjectedCSTypeGeoKey": 32767,
+        "ProjectionGeoKey": 32767,
+        "ProjCoordTransGeoKey": 10,
+        "ProjLinearUnitsGeoKey": 9001,
+        "ProjFalseEastingGeoKey": 0.0,
+        "ProjFalseNorthingGeoKey": 0.0,
+        "ProjCenterLongGeoKey": -111.09375,
+        "ProjCenterLatGeoKey": -26.7880001068115,
+        "ModelPixelScale": [
+          62500.0,
+          62500.0,
+          0.0
+        ],
+        "ModelTiepoint": [
+          0.0,
+          0.0,
+          0.0,
+          -8000000.0,
+          8000000.0,
+          0.0
+        ]
+      },
+      "nodata_tag": "None"
+    }
+  ],
+  "mosaic_primary": {
+    "SIMPLE": "T",
+    "BITPIX": "8",
+    "NAXIS": "0",
+    "EXTEND": "T",
+    "CKPT": "junocam_calibration_C25_PJ15",
+    "MODELEP": "50",
+    "JUNOPJ": "13",
+    "HSTCYC": "25"
+  },
+  "mosaic_first_extension": {
+    "XTENSION": "IMAGE",
+    "BITPIX": "-64",
+    "NAXIS": "2",
+    "NAXIS1": "3601",
+    "NAXIS2": "1801",
+    "PCOUNT": "0",
+    "GCOUNT": "1",
+    "WCSAXES": "2",
+    "CRPIX1": "1800.5",
+    "CRPIX2": "900.5",
+    "CDELT1": "-0.099972229936129",
+    "CDELT2": "0.099972229936129",
+    "CUNIT1": "deg",
+    "CUNIT2": "deg",
+    "CTYPE1": "JULN-CAR",
+    "CTYPE2": "JULT-CAR",
+    "CRVAL1": "180.0",
+    "CRVAL2": "0.0",
+    "LONPOLE": "0.0",
+    "LATPOLE": "90.0",
+    "MJDREF": "0.0",
+    "UNIT": "I/F",
+    "EXTNAME": "F275W"
+  },
+  "mosaic_sample_rows": [
+    {
+      "filter": "F275W",
+      "row": 900,
+      "byte_range": [
+        25932960,
+        25961767
+      ],
+      "finite_fraction": 1.0,
+      "zero_fraction": 0.9411274645931685,
+      "positive_range": [
+        0.301960784309951,
+        0.37647058819764706
+      ]
+    },
+    {
+      "filter": "F395N",
+      "row": 900,
+      "byte_range": [
+        77821920,
+        77850727
+      ],
+      "finite_fraction": 1.0,
+      "zero_fraction": 0.9411274645931685,
+      "positive_range": [
+        0.42990196077894,
+        0.478431372533072
+      ]
+    },
+    {
+      "filter": "F502N",
+      "row": 900,
+      "byte_range": [
+        129710880,
+        129739687
+      ],
+      "finite_fraction": 1.0,
+      "zero_fraction": 0.9411274645931685,
+      "positive_range": [
+        0.7117647058752352,
+        0.7856209150064923
+      ]
+    },
+    {
+      "filter": "F631N",
+      "row": 900,
+      "byte_range": [
+        181599840,
+        181628647
+      ],
+      "finite_fraction": 1.0,
+      "zero_fraction": 0.9411274645931685,
+      "positive_range": [
+        0.7843137254117649,
+        0.8692810457226583
+      ]
+    },
+    {
+      "filter": "FQ889N",
+      "row": 900,
+      "byte_range": [
+        233488800,
+        233517607
+      ],
+      "finite_fraction": 1.0,
+      "zero_fraction": 0.9411274645931685,
+      "positive_range": [
+        0.27058823526705883,
+        0.4250980392071843
+      ]
+    }
+  ],
+  "limitations": "Three PJ13 tiles and one row per mosaic band; no complete mosaic or native-scene comparison."
+}

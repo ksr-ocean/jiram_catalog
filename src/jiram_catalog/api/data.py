@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from threading import RLock
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -71,7 +72,8 @@ _TEXT_COLUMNS = ("product_id", "half", "band", "seq_id")
 
 _CATALOG_CACHE: dict[str, pd.DataFrame] = {}
 _JUNOCAM_CACHE: dict[str, pd.DataFrame] = {}
-_STRIPS_CACHE: dict[str, pd.DataFrame] = {}
+_STRIPS_CACHE: dict[tuple, pd.DataFrame] = {}
+_STRIPS_TABLE_LOCK = RLock()
 _TRACKABILITY_CACHE: dict[str, pd.DataFrame | None] = {}
 _STACK_CACHE: dict[str, xr.Dataset] = {}
 _STRIP_CACHE: dict[str, xr.Dataset] = {}
@@ -197,26 +199,17 @@ def junocam_catalog(mirror: str | Path | None = None) -> pd.DataFrame:
     JIRAM rows alone rather than with an error.
     """
     root = mirror_root(mirror)
-    key = str(root)
+    from ..junocam.policy import policy_signature
+    key = str(policy_signature(root))
     cached = _JUNOCAM_CACHE.get(key)
     if cached is not None:
         return cached
-    try:
-        from ..junocam.geo import load_geo
-        from ..junocam.quality import load_quality
-
-        # The geometry table already carries the band list and the start time,
-        # so the image index is not needed here; only the tier is joined.
-        geo = load_geo(root)
-        quality = load_quality(root)[["product_id", "quality_tier"]]
-    except (FileNotFoundError, OSError, KeyError, ImportError) as exc:
-        LOGGER.info("no JunoCam catalog rows: %s", exc)
-        table = _empty_junocam()
-        _JUNOCAM_CACHE[key] = table
-        return table
-
-    geo = geo.loc[geo["geo_ok"].fillna(False).astype(bool)].reset_index(drop=True)
-    merged = geo.merge(quality, on="product_id", how="left")
+    from ..junocam.policy import eligible_images
+    from .arrow import epoch_ms
+    merged = eligible_images(root)
+    if merged.empty or "geo_ok" not in merged:
+        return _empty_junocam()
+    merged = merged.loc[merged["geo_ok"].fillna(False).astype(bool)].reset_index(drop=True)
     table = pd.DataFrame(index=range(len(merged)))
     table["product_id"] = merged["product_id"].astype(str).astype(object)
     table["half"] = ""
@@ -224,6 +217,10 @@ def junocam_catalog(mirror: str | Path | None = None) -> pd.DataFrame:
     table["orbit"] = pd.to_numeric(merged["orbit"], errors="coerce").fillna(0).astype("int64")
     table["seq_id"] = merged["product_id"].astype(str).astype(object)
     table["start_time"] = pd.to_datetime(merged["start_time"])
+    table["start_time_ms"] = epoch_ms(table["start_time"])
+    for column in ("observation_id", "native_version", "is_preferred", "quality_status", "quality_reason"):
+        table[column] = merged[column]
+    table["trackability_status"] = "unassessed"
     for name in (
         "bore_lat",
         "bore_lon_east",
@@ -274,6 +271,8 @@ def _empty_junocam() -> pd.DataFrame:
         "c1_lat", "c1_lon", "c2_lat", "c2_lon", "c3_lat", "c3_lon", "c4_lat",
         "c4_lon", "has_partner", "trackable_30", "best_dt_s", "instrument",
         "bands", "quality_tier", "fp_lon", "fp_lat", "lat_band", "month",
+        "start_time_ms", "observation_id", "native_version", "is_preferred",
+        "quality_status", "quality_reason", "trackability_status",
     ]
     return pd.DataFrame({name: pd.Series(dtype="object") for name in columns})
 
@@ -284,15 +283,58 @@ def junocam_count(mirror: str | Path | None = None) -> int:
 
 
 def strips_table(mirror: str | Path | None = None) -> pd.DataFrame:
-    """The strip library index with real timestamps and derived columns."""
+    """Policy-filtered strip index, one build per source/policy snapshot.
+
+    Config and Arrow requests arrive concurrently during browser startup.
+    They share this complete build; all source and policy identities are
+    rechecked under the lock before a cached table can be returned.
+    """
+    from ..junocam.policy import eligible_images, observation_id, preferred_rows, policy_signature
     root = mirror_root(mirror)
-    key = str(root)
-    cached = _STRIPS_CACHE.get(key)
-    if cached is not None:
-        return cached
-    table = _coerce_strips(load_index(root))
-    _STRIPS_CACHE[key] = table
-    return table
+    with _STRIPS_TABLE_LOCK:
+        index_path = root / "strips" / "strips.parquet"
+        try:
+            stat = index_path.stat()
+            index_signature = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            index_signature = None
+        key = (str(root), index_signature, policy_signature(root))
+        cached = _STRIPS_CACHE.get(key)
+        if cached is not None:
+            return cached.copy()
+        table = _coerce_strips(load_index(root))
+        if "instrument" in table:
+            jc = table["instrument"].astype(str).str.lower() == "junocam"
+            allowed = set(eligible_images(root, preferred=False)["product_id"].astype(str))
+            subset = table.loc[jc].copy()
+            identity = "seq_id" if "seq_id" in subset else "strip_id"
+            subset = subset.loc[subset[identity].astype(str).isin(allowed)]
+            # Keep the established per-band/grid version choice and row order.
+            # Sort only identities/positions: the full index carries many
+            # Arrow-backed provenance columns that need not be copied here.
+            groups = [c for c in ("band", "resolution_class") if c in subset]
+            if not subset.empty:
+                parts = []
+                grouped = (group for _, group in subset.groupby(groups, dropna=False)) if groups else [subset]
+                for group in grouped:
+                    fields = {identity: group[identity].to_numpy(),
+                              "_strip_position": np.arange(len(group))}
+                    if "start_time" in group:
+                        fields["start_time"] = group["start_time"].to_numpy()
+                    identities = pd.DataFrame(fields)
+                    identities.columns = pd.Index(identities.columns, dtype=object)
+                    selected = preferred_rows(identities, id_column=identity)
+                    parts.append(group.iloc[selected["_strip_position"].to_numpy(dtype=int)])
+                subset = pd.concat(parts, ignore_index=True)
+            subset["observation_id"] = subset[identity].astype(str).map(observation_id)
+            subset["quality_status"] = "eligible"
+            table = pd.concat([table.loc[~jc], subset], ignore_index=True)
+        # Keep only the newest snapshot per mirror, retaining other mirrors.
+        for old_key in list(_STRIPS_CACHE):
+            if old_key[0] == str(root):
+                del _STRIPS_CACHE[old_key]
+        _STRIPS_CACHE[key] = table
+        return table.copy()
 
 
 def _coerce_strips(table: pd.DataFrame) -> pd.DataFrame:
@@ -348,22 +390,57 @@ def has_trackability(mirror: str | Path | None = None) -> bool:
 def open_stack(path: str | Path) -> xr.Dataset:
     """Open a region stack lazily and keep the handle; never ``.load()``."""
     key = str(Path(path))
-    cached = _STACK_CACHE.get(key)
-    if cached is not None:
-        return cached
-    dataset = read_stack(key)
-    _STACK_CACHE[key] = dataset
-    return dataset
+    dataset = _STACK_CACHE.get(key)
+    if dataset is None:
+        dataset = read_stack(key)
+        _STACK_CACHE[key] = dataset
+    root = Path(path).resolve().parents[2]
+    return filter_stack_policy(dataset, root)
+
+
+def filter_stack_policy(dataset: xr.Dataset, mirror: str | Path | None) -> xr.Dataset:
+    """Policy view of an old stack; source NetCDF and its versions are intact."""
+    from fastapi import HTTPException
+    from ..junocam.policy import eligible_images, preferred_rows, POLICY_VERSION
+    if str(dataset.attrs.get("instrument", "JIRAM")).lower() != "junocam":
+        return dataset
+    if "product_id" not in dataset or dataset["product_id"].dims != ("time",):
+        raise HTTPException(403, "JunoCam stack withheld: per-step observation identity is missing")
+    allowed = set(eligible_images(mirror, preferred=False).product_id.astype(str))
+    table = pd.DataFrame({"product_id": dataset["product_id"].values.astype(str),
+                          "start_time": dataset["time"].values,
+                          "position": np.arange(dataset.sizes["time"])})
+    kept = preferred_rows(table.loc[table.product_id.isin(allowed)])
+    if kept.empty:
+        raise HTTPException(403, "JunoCam stack withheld: no eligible observations under " + POLICY_VERSION)
+    result = dataset.isel(time=kept.position.to_numpy(dtype=int))
+    result.attrs = dict(dataset.attrs, quality_policy=POLICY_VERSION,
+                        source_time_steps=int(dataset.sizes["time"]),
+                        withheld_or_superseded_steps=int(dataset.sizes["time"] - len(kept)))
+    return result
 
 
 def open_strip(mirror: str | Path | None, strip: str) -> xr.Dataset:
-    """Open a strip by ``strip_id`` (a few MB; still opened lazily)."""
-    key = f"{mirror_root(mirror)}::{strip}"
-    cached = _STRIP_CACHE.get(key)
-    if cached is not None:
-        return cached
-    dataset = read_strip(mirror, strip)
-    _STRIP_CACHE[key] = dataset
+    """Open a strip by ID, enforcing evidence before any pixels/statistics."""
+    from fastapi import HTTPException
+    from ..junocam.policy import eligible_images
+    root = mirror_root(mirror)
+    key = f"{root}::{strip}"
+    dataset = _STRIP_CACHE.get(key)
+    if dataset is None:
+        dataset = read_strip(root, strip)
+        _STRIP_CACHE[key] = dataset
+    if str(dataset.attrs.get("instrument", "JIRAM")).lower() == "junocam":
+        identifiers = []
+        for name in ("product_ids", "product_id"):
+            if name in dataset:
+                identifiers = np.asarray(dataset[name].values).astype(str).ravel().tolist()
+                break
+        if not identifiers:
+            identifiers = [str(dataset.attrs.get("seq_id", ""))]
+        allowed = set(eligible_images(root, preferred=False).product_id.astype(str))
+        if not identifiers or any(identifier not in allowed for identifier in identifiers):
+            raise HTTPException(403, "JunoCam strip withheld: instrument/radiometric eligibility is excluded or unassessed")
     return dataset
 
 
@@ -492,6 +569,12 @@ def normalised_stretch(
         images.norm_label(*pair): [] for pair in wanted
     }
     for index in indices:
+        source = dataset.get("image")
+        if source is None:
+            continue
+        if "time" in source.dims:
+            source = source.isel(time=int(index))
+        stride = max(1, int(np.ceil(np.sqrt(source.size / per_step))))
 
         def plane(variable: str) -> np.ndarray | None:
             if variable not in dataset:
@@ -499,20 +582,17 @@ def normalised_stretch(
             array = dataset[variable]
             if "time" in array.dims:
                 array = array.isel(time=int(index))
+            # Slice the lazy backend before materialising it. Loading every
+            # native plane here defeats the bounded display sample, and
+            # serialises unrelated image requests behind avoidable I/O.
+            array = array.isel({dim: slice(None, None, stride) for dim in array.dims[-2:]})
             return np.asarray(array.values)
 
         image = plane("image")
-        if image is None:
-            continue
-        stride = max(1, int(np.ceil(np.sqrt(image.size / per_step))))
-        cut = (slice(None, None, stride), slice(None, None, stride))
-        image = image[cut]
         valid = plane("valid")
-        valid = None if valid is None else np.asarray(valid, dtype=bool)[cut]
-        incidence = plane("incidence")
-        incidence = None if incidence is None else incidence[cut]
-        emission = plane("emission")
-        emission = None if emission is None else emission[cut]
+        valid = None if valid is None else np.asarray(valid, dtype=bool)
+        incidence = plane("incidence") if any(name != "none" for name, _ in wanted) else None
+        emission = plane("emission") if any(name == "minnaert" for name, _ in wanted) else None
         for name, parameter in wanted:
             values, mask = images.normalise_plane(
                 image,

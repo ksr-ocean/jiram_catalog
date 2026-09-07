@@ -15,6 +15,7 @@ declare module 'plotly.js-dist-min' {
     config?: Config,
   ): Promise<HTMLElement>;
   export function purge(root: HTMLElement): void;
+  export function toImage(root:HTMLElement,options:{format:'svg'|'png';width?:number;height?:number;scale?:number}):Promise<string>;
   export function Plots(): void;
   const _default: {
     newPlot: typeof newPlot;

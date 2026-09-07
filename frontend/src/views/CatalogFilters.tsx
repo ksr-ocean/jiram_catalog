@@ -1,232 +1,254 @@
-/** The filter row of the catalog toolbar; every control is labelled. */
 import { useMemo } from 'react';
 import styles from './Views.module.css';
 import { useStore } from '../store/store';
-import { DEFAULT_FILTERS } from '../lib/filters';
+import { DEFAULT_FILTERS, CATALOG_PRESETS } from '../lib/filters';
 import { LAT_BAND_NAMES, latBandLimits } from '../lib/latbands';
-import {
-  bandOptions,
-  INSTRUMENTS,
-  QUALITY_LABELS,
-  QUALITY_TIERS,
-  type Instrument,
-  type QualityTier,
-} from '../lib/bands';
-
-function numberOrNull(text: string): number | null {
-  if (text.trim() === '') return null;
-  const value = Number(text);
-  return Number.isFinite(value) ? value : null;
-}
-
+import { bandOptions, INSTRUMENTS, type Instrument } from '../lib/bands';
+const numberOrNull = (text: string) =>
+  text.trim() === '' || !Number.isFinite(Number(text)) ? null : Number(text);
 export function CatalogFilters() {
-  const filters = useStore((s) => s.filters);
-  const setFilters = useStore((s) => s.setFilters);
-  const resetFilters = useStore((s) => s.resetFilters);
-  const hasTrackability = useStore((s) => s.config?.has_trackability ?? false);
-  const bandsByInstrument = useStore((s) => s.bandsByInstrument);
-  const junocamImages = useStore((s) => s.config?.counts.junocam_images ?? 0);
-  const hasJunocam = junocamImages > 0 || bandsByInstrument.JunoCam !== undefined;
-
-  // The band options follow the instrument choice, so the menu never offers a
-  // band that nothing in view carries.
+  const filters = useStore((s) => s.filters),
+    setFilters = useStore((s) => s.setFilters),
+    reset = useStore((s) => s.resetFilters),
+    hasTrackability = useStore((s) => s.config?.has_trackability ?? false),
+    byInstrument = useStore((s) => s.bandsByInstrument);
   const bands = useMemo(
-    () => bandOptions(bandsByInstrument, filters.instrument),
-    [bandsByInstrument, filters.instrument],
+    () => bandOptions(byInstrument, filters.instrument),
+    [byInstrument, filters.instrument],
   );
-
-  const bandName =
+  const junocam = filters.instrument === 'JunoCam';
+  const latitudeBand =
     LAT_BAND_NAMES.find((name) => {
       const [lo, hi] = latBandLimits(name);
       return lo === filters.latMin && hi === filters.latMax;
     }) ?? 'all';
-
   return (
-    <div className={styles.toolbar} data-testid="catalog-filters">
-      <div className={styles.group}>
-        <label htmlFor="f-orbit-min">orbit</label>
-        <input
-          id="f-orbit-min"
-          data-testid="filter-orbit-min"
-          type="number"
-          style={{ width: 58 }}
-          value={filters.orbitMin}
-          onChange={(e) => setFilters({ orbitMin: Number(e.target.value) })}
-        />
-        <span className={styles.muted}>to</span>
-        <input
-          id="f-orbit-max"
-          data-testid="filter-orbit-max"
-          type="number"
-          style={{ width: 58 }}
-          value={filters.orbitMax}
-          onChange={(e) => setFilters({ orbitMax: Number(e.target.value) })}
-        />
-      </div>
-      <div className={styles.sep} />
-      {hasJunocam && (
-        <div className={styles.group}>
-          <label htmlFor="f-instrument">instrument</label>
+    <div className={styles.card} data-testid="catalog-filters">
+      <div className={styles.toolbar}>
+        <label>
+          Workflow{' '}
+          <select
+            data-testid="catalog-preset"
+            value=""
+            onChange={(e) => {
+              const preset = CATALOG_PRESETS.find((p) => p.id === e.target.value);
+              if (preset) setFilters({ ...DEFAULT_FILTERS, ...preset.filters });
+            }}
+          >
+            <option value="">Choose a starting point</option>
+            {CATALOG_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Instrument{' '}
           <select
             id="f-instrument"
             data-testid="filter-instrument"
             value={filters.instrument}
             onChange={(e) => {
               const instrument = e.target.value as 'all' | Instrument;
-              // A band the new instrument does not have would filter the map
-              // down to nothing, so the band choice is dropped with it.
-              const keep =
-                filters.band !== null && bandOptions(bandsByInstrument, instrument).includes(filters.band);
-              setFilters({ instrument, band: keep ? filters.band : null });
+              setFilters({
+                instrument,
+                band:
+                  filters.band && bandOptions(byInstrument, instrument).includes(filters.band)
+                    ? filters.band
+                    : null,
+                ...(instrument === 'JunoCam' ? { half: 'all', revisitOnly: false } : {}),
+              });
             }}
           >
-            <option value="all">both</option>
+            <option value="all">Both instruments</option>
             {INSTRUMENTS.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
+              <option key={name}>{name}</option>
             ))}
           </select>
-        </div>
-      )}
-      <div className={styles.group}>
-        <label htmlFor="f-band">band</label>
-        <select
-          id="f-band"
-          data-testid="filter-band"
-          value={filters.band ?? 'all'}
-          onChange={(e) => setFilters({ band: e.target.value === 'all' ? null : e.target.value })}
-        >
-          <option value="all">all</option>
-          {bands.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </div>
-      {hasJunocam && (
-        <div className={styles.group}>
-          <label htmlFor="f-quality">quality</label>
-          <select
-            id="f-quality"
-            data-testid="filter-quality"
-            value={filters.qualityMin}
-            onChange={(e) => setFilters({ qualityMin: e.target.value as QualityTier })}
-          >
-            {QUALITY_TIERS.map((tier) => (
-              <option key={tier} value={tier}>
-                {QUALITY_LABELS[tier]}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div className={styles.group}>
-        <label htmlFor="f-half">band half</label>
-        <select
-          id="f-half"
-          data-testid="filter-half"
-          value={filters.half}
-          onChange={(e) => setFilters({ half: e.target.value as 'all' | 'L' | 'M' })}
-        >
-          <option value="all">all</option>
-          <option value="L">L</option>
-          <option value="M">M</option>
-        </select>
-      </div>
-      <div className={styles.group}>
-        <label htmlFor="f-pixel">pixel &lt;= km</label>
-        <input
-          id="f-pixel"
-          data-testid="filter-pixel-max"
-          type="number"
-          style={{ width: 66 }}
-          placeholder="any"
-          value={filters.pixelMaxKm ?? ''}
-          onChange={(e) => setFilters({ pixelMaxKm: numberOrNull(e.target.value) })}
-        />
-      </div>
-      <div className={styles.group}>
-        <label htmlFor="f-emission">emission &lt;= deg</label>
-        <input
-          id="f-emission"
-          data-testid="filter-emission-max"
-          type="number"
-          style={{ width: 66 }}
-          placeholder="any"
-          value={filters.emissionMax ?? ''}
-          onChange={(e) => setFilters({ emissionMax: numberOrNull(e.target.value) })}
-        />
-      </div>
-      <div className={styles.group}>
-        <label htmlFor="f-onplanet">on-planet &gt;=</label>
-        <input
-          id="f-onplanet"
-          data-testid="filter-on-planet-min"
-          type="number"
-          step="0.05"
-          style={{ width: 66 }}
-          placeholder="any"
-          value={filters.onPlanetMin ?? ''}
-          onChange={(e) => setFilters({ onPlanetMin: numberOrNull(e.target.value) })}
-        />
-      </div>
-      <div className={styles.sep} />
-      <div className={styles.group}>
-        <label htmlFor="f-latband">latitude band</label>
-        <select
-          id="f-latband"
-          data-testid="filter-lat-band"
-          value={bandName}
-          onChange={(e) => {
-            const [lo, hi] = e.target.value === 'all' ? [-90, 90] : latBandLimits(e.target.value);
-            setFilters({ latMin: lo, latMax: hi });
-          }}
-        >
-          <option value="all">all</option>
-          {LAT_BAND_NAMES.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className={styles.group}>
-        <label>
-          <input
-            type="checkbox"
-            data-testid="filter-dayside"
-            checked={filters.daysideOnly}
-            onChange={(e) => setFilters({ daysideOnly: e.target.checked })}
-          />
-          dayside only
         </label>
+        <label>
+          Band{' '}
+          <select
+            id="f-band"
+            data-testid="filter-band"
+            value={filters.band ?? 'all'}
+            onChange={(e) => setFilters({ band: e.target.value === 'all' ? null : e.target.value })}
+          >
+            <option value="all">All</option>
+            {bands.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Pass{' '}
+          <input
+            data-testid="filter-orbit-min"
+            aria-label="First pass"
+            type="number"
+            style={{ width: 64 }}
+            value={filters.orbitMin}
+            onChange={(e) => setFilters({ orbitMin: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          to{' '}
+          <input
+            data-testid="filter-orbit-max"
+            aria-label="Last pass"
+            type="number"
+            style={{ width: 64 }}
+            value={filters.orbitMax}
+            onChange={(e) => setFilters({ orbitMax: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          Latitude{' '}
+          <select
+            data-testid="filter-lat-band"
+            value={latitudeBand}
+            onChange={(e) => {
+              const [latMin, latMax] =
+                e.target.value === 'all' ? [-90, 90] : latBandLimits(e.target.value);
+              setFilters({ latMin, latMax });
+            }}
+          >
+            <option value="all">All</option>
+            {LAT_BAND_NAMES.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Match{' '}
+          <select
+            data-testid="filter-latitude-mode"
+            value={filters.latitudeMode}
+            onChange={(e) =>
+              setFilters({ latitudeMode: e.target.value as 'coverage' | 'boresight' })
+            }
+          >
+            <option value="coverage">Footprint overlap</option>
+            <option value="boresight">Boresight centre</option>
+          </select>
+        </label>
+        <button data-testid="reset-filters" onClick={reset}>
+          Reset filters
+        </button>
       </div>
-      {hasTrackability && (
-        <div className={styles.group}>
+      <details>
+        <summary>Advanced geometry and time filters</summary>
+        <div className={styles.toolbar}>
+          {!junocam && (
+            <label>
+              JIRAM half{' '}
+              <select
+                data-testid="filter-half"
+                value={filters.half}
+                onChange={(e) => setFilters({ half: e.target.value as 'all' | 'L' | 'M' })}
+              >
+                <option value="all">All</option>
+                <option>L</option>
+                <option>M</option>
+              </select>
+            </label>
+          )}
+          <label>
+            Pixel ≤ km{' '}
+            <input
+              data-testid="filter-pixel-max"
+              type="number"
+              value={filters.pixelMaxKm ?? ''}
+              placeholder="Any"
+              style={{ width: 85 }}
+              onChange={(e) => setFilters({ pixelMaxKm: numberOrNull(e.target.value) })}
+            />
+          </label>
+          <label>
+            Emission ≤ °{' '}
+            <input
+              data-testid="filter-emission-max"
+              type="number"
+              value={filters.emissionMax ?? ''}
+              placeholder="Any"
+              style={{ width: 85 }}
+              onChange={(e) => setFilters({ emissionMax: numberOrNull(e.target.value) })}
+            />
+          </label>
+          <label>
+            On planet ≥{' '}
+            <input
+              data-testid="filter-on-planet-min"
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              value={filters.onPlanetMin ?? ''}
+              placeholder="Any"
+              style={{ width: 85 }}
+              onChange={(e) => setFilters({ onPlanetMin: numberOrNull(e.target.value) })}
+            />
+          </label>
+          <label>
+            From (UTC){' '}
+            <input
+              type="date"
+              value={filters.timeMin ? new Date(filters.timeMin).toISOString().slice(0, 10) : ''}
+              onChange={(e) =>
+                setFilters({ timeMin: e.target.value ? Date.parse(e.target.value) : null })
+              }
+            />
+          </label>
+          <label>
+            Through (UTC){' '}
+            <input
+              type="date"
+              value={filters.timeMax ? new Date(filters.timeMax).toISOString().slice(0, 10) : ''}
+              onChange={(e) =>
+                setFilters({
+                  timeMax: e.target.value ? Date.parse(e.target.value) + 86399999 : null,
+                })
+              }
+            />
+          </label>
           <label>
             <input
+              data-testid="filter-dayside"
               type="checkbox"
-              data-testid="filter-revisit"
-              checked={filters.revisitOnly}
-              onChange={(e) => setFilters({ revisitOnly: e.target.checked })}
+              checked={filters.daysideOnly}
+              onChange={(e) => setFilters({ daysideOnly: e.target.checked })}
             />
-            same-pass revisit only
+            Dayside only
           </label>
+          {hasTrackability && !junocam && (
+            <label>
+              <input
+                data-testid="filter-revisit"
+                type="checkbox"
+                checked={filters.revisitOnly}
+                onChange={(e) =>
+                  setFilters({
+                    revisitOnly: e.target.checked,
+                    instrument: e.target.checked ? 'JIRAM' : filters.instrument,
+                  })
+                }
+              />
+              JIRAM same-pass revisit
+            </label>
+          )}
         </div>
+        <p className={styles.muted}>
+          Missing emission or resolution measurements remain included. Latitude is planetocentric;
+          footprint search includes swaths whose centres lie outside the region.
+        </p>
+      </details>
+      {junocam && (
+        <p className={styles.muted} data-testid="junocam-policy-note">
+          JunoCam trackability is unassessed. Only observations eligible under the
+          instrument-failure policy are shown; archive metadata is available in Coverage.
+        </p>
       )}
-      <div className={styles.sep} />
-      <button
-        data-testid="reset-filters"
-        onClick={resetFilters}
-        disabled={JSON.stringify(filters) === JSON.stringify(DEFAULT_FILTERS)}
-      >
-        reset filters
-      </button>
-      <span className={styles.muted}>
-        thresholds exclude, they do not require: a frame with no emission angle stays on the map
-      </span>
     </div>
   );
 }

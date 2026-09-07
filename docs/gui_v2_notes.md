@@ -1,5 +1,14 @@
 # The GUI v2 front end: architecture, state, and how to extend it
 
+The 2026-09-07 extension adds Compare and Coverage to the three original
+views, now labelled Explore, Time series and Image library. It adds
+population analysis, physical-band readiness, exclusion explanations,
+collapsible panels, density maps and figure/recipe exports. These use
+`api/research.ts` and the corresponding `api/science.py`/`api/coverage.py`
+routers. The [current guide](research_workflow.md) and
+[implementation specification](specs/2026-09-07_review_implementation.md)
+supersede older feature-status statements below.
+
 The earlier GUI was a server-rendered application in which the server held the state, computed
 the pictures, and pushed rasters to the browser; the browser was, in effect, a
 screen. That arrangement is what produced the five failures the owner found in

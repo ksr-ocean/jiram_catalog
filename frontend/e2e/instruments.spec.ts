@@ -7,6 +7,7 @@
  * test that fails for want of data says nothing about the code.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { parseStrips } from '../src/lib/stripsTable';
 import {
   captionCounts,
   centreOf,
@@ -27,7 +28,9 @@ async function requireJunocam(page: Page): Promise<void> {
 async function stackIds(page: Page): Promise<string[]> {
   return page
     .locator('[data-testid="stack-select"] option')
-    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value).filter(Boolean));
+    .evaluateAll((options) =>
+      options.map((option) => (option as HTMLOptionElement).value).filter(Boolean),
+    );
 }
 
 test.describe('instruments in the catalog', () => {
@@ -38,7 +41,10 @@ test.describe('instruments in the catalog', () => {
     expect(before.instrument_filter).toBe('all');
 
     await page.locator('[data-testid="filter-instrument"]').selectOption('JunoCam');
-    const junocam = await waitForState(page, (s) => s.instrument_filter === 'JunoCam' && s.n_filtered > 0);
+    const junocam = await waitForState(
+      page,
+      (s) => s.instrument_filter === 'JunoCam' && s.n_filtered > 0,
+    );
     expect(junocam.n_filtered).toBeLessThan(before.n_filtered);
     // A JunoCam row is a swath, so every drawn row has an outline.
     expect(junocam.n_footprints).toBeGreaterThan(0);
@@ -121,7 +127,9 @@ test.describe('bands and composites in the Poles viewer', () => {
     await requireJunocam(page);
     await page.locator('[data-testid="tab-poles"]').click();
     const select = page.locator('[data-testid="stack-select"]');
-    await expect.poll(async () => select.locator('option').count(), { timeout: 90_000 }).toBeGreaterThan(1);
+    await expect
+      .poll(async () => select.locator('option').count(), { timeout: 90_000 })
+      .toBeGreaterThan(1);
     const junocam = (await stackIds(page)).filter((id) => id.toLowerCase().includes('junocam'));
     test.skip(junocam.length === 0, 'this mirror has no JunoCam stack');
 
@@ -135,7 +143,9 @@ test.describe('bands and composites in the Poles viewer', () => {
     await expect(page.locator('[data-testid="mode-sequence"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="mode-cumulative"]')).toHaveCount(0);
 
-    await expect(page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first()).toBeAttached({
+    await expect(
+      page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first(),
+    ).toBeAttached({
       timeout: 90_000,
     });
     const single = await frameCanvasStats(page);
@@ -155,9 +165,13 @@ test.describe('bands and composites in the Poles viewer', () => {
     // pixels on the canvas rather than the mode, so waiting on it waits for
     // the composite itself to arrive rather than for the click to register.
     await expect
-      .poll(async () => page.locator('[data-testid="frame-canvas"]').first().getAttribute('data-composite'), {
-        timeout: 60_000,
-      })
+      .poll(
+        async () =>
+          page.locator('[data-testid="frame-canvas"]').first().getAttribute('data-composite'),
+        {
+          timeout: 60_000,
+        },
+      )
       .toBe('true');
     await expect(page.locator('[data-testid="cmap-select"]')).toBeDisabled();
     const composite = await frameCanvasStats(page);
@@ -171,6 +185,7 @@ test.describe('bands and composites in the Poles viewer', () => {
     });
 
     // Unlinking the bands puts a stretch pair per channel on screen.
+    await page.getByText('Advanced illumination and display stretch', { exact: true }).click();
     await page.locator('[data-testid="link-bands"]').uncheck();
     await expect(page.locator('[data-testid="band-stretch"]')).toBeVisible();
     await expect(page.locator('[data-testid="stretch-g-min"]')).toBeVisible();
@@ -191,7 +206,9 @@ test.describe('illumination normalisation in the Poles viewer', () => {
     await requireJunocam(page);
     await page.locator('[data-testid="tab-poles"]').click();
     const select = page.locator('[data-testid="stack-select"]');
-    await expect.poll(async () => select.locator('option').count(), { timeout: 90_000 }).toBeGreaterThan(1);
+    await expect
+      .poll(async () => select.locator('option').count(), { timeout: 90_000 })
+      .toBeGreaterThan(1);
     const junocam = (await stackIds(page)).filter((id) => id.toLowerCase().includes('junocam'));
     test.skip(junocam.length === 0, 'this mirror has no JunoCam stack');
 
@@ -203,20 +220,33 @@ test.describe('illumination normalisation in the Poles viewer', () => {
     expect(opened.stretch_mode).toBe('linear');
     await expect(page.locator('[data-testid="norm-select"]')).toHaveValue('lambert');
 
-    await expect(page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first()).toBeAttached({
+    await expect(
+      page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first(),
+    ).toBeAttached({
       timeout: 90_000,
     });
     const corrected = await frameCanvasStats(page);
     expect(corrected?.visible ?? 0, 'the corrected frame has visible pixels').toBeGreaterThan(0);
 
     // Turning the model off is a different picture of the same numbers.
+    await page.getByText('Advanced illumination and display stretch', { exact: true }).click();
     await page.locator('[data-testid="norm-select"]').selectOption('none');
     await waitForState(page, (s) => s.norm === 'none');
     await expect
-      .poll(async () => (await frameCanvasStats(page))?.signature, { timeout: 90_000, intervals: [500] })
-      .not.toBe(corrected?.signature);
+      .poll(
+        async () => {
+          const loaded = await frameCanvasStats(page);
+          return Boolean(loaded && loaded.visible > 0 && loaded.signature !== corrected?.signature);
+        },
+        {
+          timeout: 90_000,
+          intervals: [500],
+        },
+      )
+      .toBe(true);
     const raw = await frameCanvasStats(page);
     expect(raw?.visible ?? 0).toBeGreaterThan(0);
+    expect(raw?.signature).not.toBe(corrected?.signature);
     testInfo.annotations.push({
       type: 'illumination',
       description: `raw signature ${raw?.signature} vs lambert ${corrected?.signature}`,
@@ -252,7 +282,15 @@ test.describe('bands in the Strips viewer', () => {
     await instrumentFilter.selectOption('JunoCam');
     await expect.poll(async () => rows.count(), { timeout: 60_000 }).toBeGreaterThan(0);
 
-    await rows.first().click();
+    // Exercise the native analysis contract on the smallest available swath.
+    // A 6000² scene performs the same calculation but takes several minutes.
+    const library = await page.request.get('/api/strips.arrow');
+    expect(library.ok()).toBe(true);
+    const smallest = parseStrips(await library.body())
+      .filter((row) => row.instrument.toUpperCase() === 'JUNOCAM' && row.bands.includes('GREEN'))
+      .sort((a, b) => a.rows * a.cols - b.rows * b.cols)[0];
+    expect(smallest, 'an eligible physical GREEN band is available').toBeDefined();
+    await page.getByTitle(smallest.strip_id, { exact: true }).click();
     await expect(page.locator('[data-testid="current-strip"]')).toBeVisible({ timeout: 90_000 });
     const bandSelect = page.locator('[data-testid="strip-band-select"]');
     await expect(bandSelect).toBeVisible({ timeout: 60_000 });
@@ -260,7 +298,6 @@ test.describe('bands in the Strips viewer', () => {
       .locator('option')
       .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
     test.skip(!bands.includes('GREEN'), 'this strip has no GREEN band');
-
     // The statistics request carries the illumination model: a spectrum of a
     // limb-darkened swath and a spectrum of the corrected one are two
     // different measurements and must not share a label.
@@ -270,16 +307,20 @@ test.describe('bands in the Strips viewer', () => {
     );
     await bandSelect.selectOption('GREEN');
     await waitForState(page, (s) => s.strip_band === 'GREEN');
-    expect((await statsRequest).url()).toContain('band=GREEN');
-    expect((await debugState(page)).strip_norm).toBe('lambert');
-    await expect(page.locator('[data-testid="strip-image"] canvas').first()).toBeVisible({ timeout: 120_000 });
-
     if (!(await debugState(page)).stats_visible) {
       await page.locator('[data-testid="toggle-stats"]').click();
     }
+    expect((await statsRequest).url()).toContain('band=GREEN');
+    expect((await debugState(page)).strip_norm).toBe('lambert');
+    await expect(page.locator('[data-testid="strip-image"] canvas').first()).toBeVisible({
+      timeout: 120_000,
+    });
+
     await expect.poll(async () => (await debugState(page)).stats_visible).toBe(true);
     // The statistics are computed for the band on screen, and say so.
-    await expect(page.locator('[data-testid="plot-isotropic"] .js-plotly-plot')).toBeVisible({ timeout: 180_000 });
+    await expect(page.locator('[data-testid="plot-isotropic"] .js-plotly-plot')).toBeVisible({
+      timeout: 180_000,
+    });
     await expect(page.locator('[data-testid="strip-stats"]')).toContainText('GREEN');
     await expect(page.locator('[data-testid="download-stats"]')).toBeEnabled();
 
@@ -313,7 +354,9 @@ test.describe('bands in the Strips viewer', () => {
 
     await bandSelect.selectOption('__rgb');
     await waitForState(page, (s) => s.strip_composite === true);
-    await expect(page.locator('[data-testid="strip-composite-note"]')).toContainText('RGB composite');
+    await expect(page.locator('[data-testid="strip-composite-note"]')).toContainText(
+      'RGB composite',
+    );
     await expect(page.locator('[data-testid="strip-cmap-select"]')).toBeDisabled();
   });
 });

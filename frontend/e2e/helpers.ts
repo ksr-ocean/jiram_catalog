@@ -32,14 +32,13 @@ export interface DebugState {
  * failing, so this suite stays green either way.
  */
 export async function junocamCount(page: Page): Promise<number> {
-  try {
-    const response = await page.request.get('/api/config');
-    if (!response.ok()) return 0;
-    const config = (await response.json()) as { counts?: { junocam_images?: number } };
-    return config.counts?.junocam_images ?? 0;
-  } catch {
-    return 0;
-  }
+  const response = await page.request.get('/api/config');
+  expect(
+    response.ok(),
+    'instrument availability must be read from a successful config response',
+  ).toBe(true);
+  const config = (await response.json()) as { counts?: { junocam_images?: number } };
+  return config.counts?.junocam_images ?? 0;
 }
 
 /** The app's own state, read from the hidden `#debug-state` element. */
@@ -63,21 +62,34 @@ export async function waitForState(
   predicate: (state: DebugState) => boolean,
   timeout = 90_000,
 ): Promise<DebugState> {
-  await expect.poll(async () => predicate(await debugState(page)), { timeout, intervals: [400] }).toBe(true);
+  await expect
+    .poll(async () => predicate(await debugState(page)), { timeout, intervals: [400] })
+    .toBe(true);
   return debugState(page);
 }
 
 /** The centre of an element, in page coordinates. */
-export async function centreOf(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+export async function centreOf(
+  locator: Locator,
+): Promise<{ x: number; y: number; width: number; height: number }> {
   const box = await locator.boundingBox();
   if (!box) throw new Error('element has no box');
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width, height: box.height };
+  return {
+    x: box.x + box.width / 2,
+    y: box.y + box.height / 2,
+    width: box.width,
+    height: box.height,
+  };
 }
 
 /** The first non-transparent pixel of the colour-mapped frame canvas. */
-export async function sampleFrameCanvas(page: Page): Promise<[number, number, number, number] | null> {
+export async function sampleFrameCanvas(
+  page: Page,
+): Promise<[number, number, number, number] | null> {
   return page.evaluate(() => {
-    const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="frame-canvas"][data-loaded="true"]');
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      '[data-testid="frame-canvas"][data-loaded="true"]',
+    );
     if (!canvas) return null;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) return null;
@@ -86,7 +98,8 @@ export async function sampleFrameCanvas(page: Page): Promise<[number, number, nu
     const centre = (Math.floor(height / 2) * width + Math.floor(width / 2)) * 4;
     for (let offset = 0; offset < data.length; offset += 4) {
       const p = (centre + offset) % data.length;
-      if (data[p + 3] > 0) return [data[p], data[p + 1], data[p + 2], data[p + 3]] as [number, number, number, number];
+      if (data[p + 3] > 0)
+        return [data[p], data[p + 1], data[p + 2], data[p + 3]] as [number, number, number, number];
     }
     return null;
   });
@@ -106,7 +119,9 @@ export async function frameCanvasStats(
   page: Page,
 ): Promise<{ visible: number; nonGray: number; signature: number } | null> {
   return page.evaluate(() => {
-    const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="frame-canvas"][data-loaded="true"]');
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      '[data-testid="frame-canvas"][data-loaded="true"]',
+    );
     if (!canvas) return null;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) return null;

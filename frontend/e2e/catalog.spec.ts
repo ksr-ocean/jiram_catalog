@@ -20,6 +20,7 @@ test.describe('catalog view', () => {
   test('a filter reduces the drawn set, and the server agrees', async ({ page }) => {
     await openApp(page);
     const before = (await debugState(page)).n_filtered;
+    await page.getByText('Advanced geometry and time filters', {exact:true}).click();
     await page.locator('[data-testid="filter-half"]').selectOption('M');
     const after = await waitForState(page, (s) => s.n_filtered < before);
     expect(after.n_filtered).toBeLessThan(before);

@@ -1,0 +1,2657 @@
+{
+ "orbit": 4,
+ "day": "2017-033",
+ "mirror": "/expanse/lustre/projects/cla119/kaushiks/jiram_mirror",
+ "written": "2026-09-07T08:49:54+00:00",
+ "grid_km_per_px": 10.0,
+ "grid_shape": [
+  512,
+  512
+ ],
+ "skipped": [
+  {
+   "product_id": "JNCR_2017033_04M00098_V03",
+   "samples": 816,
+   "sampling_factor": 2,
+   "reason": "on-board summed: not on the IK's 1648-sample framelet grid"
+  },
+  {
+   "product_id": "JNCR_2017033_04M00098_V01",
+   "samples": 816,
+   "sampling_factor": 2,
+   "reason": "on-board summed: not on the IK's 1648-sample framelet grid"
+  },
+  {
+   "product_id": "JNCR_2017033_04M00098_V02",
+   "samples": 816,
+   "sampling_factor": 2,
+   "reason": "on-board summed: not on the IK's 1648-sample framelet grid"
+  },
+  {
+   "product_id": "JNCR_2017033_04M00110_V03",
+   "samples": 816,
+   "sampling_factor": 2,
+   "reason": "on-board summed: not on the IK's 1648-sample framelet grid"
+  },
+  {
+   "product_id": "JNCR_2017033_04M00110_V01",
+   "samples": 816,
+   "sampling_factor": 2,
+   "reason": "on-board summed: not on the IK's 1648-sample framelet grid"
+  },
+  {
+   "product_id": "JNCR_2017033_04M00110_V02",
+   "samples": 816,
+   "sampling_factor": 2,
+   "reason": "on-board summed: not on the IK's 1648-sample framelet grid"
+  }
+ ],
+ "images": [
+  {
+   "product_id": "JNCR_2017033_04C00049_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 8,
+   "sc_altitude_km": 891117.7,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 615.06103515625,
+   "on_planet_fraction": 0.023901485702366505,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 69,
+   "n_limb_framelets": 8,
+   "reason": "only 69 candidate limb points",
+   "geometry_seconds": 3.1720412727445364
+  },
+  {
+   "product_id": "JNCR_2017033_04M00050_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 8,
+   "sc_altitude_km": 890674.4,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 614.9498901367188,
+   "on_planet_fraction": 0.024416432797330096,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 23,
+   "n_limb_framelets": 3,
+   "reason": "only 23 candidate limb points",
+   "geometry_seconds": 1.0169138293713331
+  },
+  {
+   "product_id": "JNCR_2017033_04C00051_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 8,
+   "sc_altitude_km": 864788.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 597.1923828125,
+   "on_planet_fraction": 0.02525196260618932,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 71,
+   "n_limb_framelets": 8,
+   "reason": "only 71 candidate limb points",
+   "geometry_seconds": 3.0097742062062025
+  },
+  {
+   "product_id": "JNCR_2017033_04M00052_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 8,
+   "sc_altitude_km": 864338.8,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 597.12255859375,
+   "on_planet_fraction": 0.02566794978762136,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 25,
+   "n_limb_framelets": 3,
+   "reason": "only 25 candidate limb points",
+   "geometry_seconds": 1.0155384074896574
+  },
+  {
+   "product_id": "JNCR_2017033_04C00053_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 8,
+   "sc_altitude_km": 838067.0,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 579.0953979492188,
+   "on_planet_fraction": 0.026802137060072815,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 77,
+   "n_limb_framelets": 8,
+   "reason": "only 77 candidate limb points",
+   "geometry_seconds": 3.006729317829013
+  },
+  {
+   "product_id": "JNCR_2017033_04M00054_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 8,
+   "sc_altitude_km": 837611.4,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 579.0133056640625,
+   "on_planet_fraction": 0.027162422254247573,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 24,
+   "n_limb_framelets": 3,
+   "reason": "only 24 candidate limb points",
+   "geometry_seconds": 1.0219046529382467
+  },
+  {
+   "product_id": "JNCR_2017033_04C00055_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 810935.0,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 560.770751953125,
+   "on_planet_fraction": 0.022882692404935276,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 73,
+   "n_limb_framelets": 9,
+   "reason": "only 73 candidate limb points",
+   "geometry_seconds": 3.7525577154010534
+  },
+  {
+   "product_id": "JNCR_2017033_04M00056_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 810470.5,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 560.2781982421875,
+   "on_planet_fraction": 0.023231758191747574,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 25,
+   "n_limb_framelets": 3,
+   "reason": "only 25 candidate limb points",
+   "geometry_seconds": 1.2662937007844448
+  },
+  {
+   "product_id": "JNCR_2017033_04C00057_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 783367.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 542.1063232421875,
+   "on_planet_fraction": 0.024390675566343042,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 81,
+   "n_limb_framelets": 9,
+   "reason": "only 81 candidate limb points",
+   "geometry_seconds": 3.7280702386051416
+  },
+  {
+   "product_id": "JNCR_2017033_04M00058_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 782895.5,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 541.8106689453125,
+   "on_planet_fraction": 0.02466673619538835,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 27,
+   "n_limb_framelets": 3,
+   "reason": "only 27 candidate limb points",
+   "geometry_seconds": 1.2618975974619389
+  },
+  {
+   "product_id": "JNCR_2017033_04C00059_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 755339.2,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 523.178955078125,
+   "on_planet_fraction": 0.026080381523058253,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 82,
+   "n_limb_framelets": 9,
+   "reason": "only 82 candidate limb points",
+   "geometry_seconds": 3.7429525796324015
+  },
+  {
+   "product_id": "JNCR_2017033_04M00060_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 754858.7,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 522.5757446289062,
+   "on_planet_fraction": 0.026393734830097087,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 26,
+   "n_limb_framelets": 3,
+   "reason": "only 26 candidate limb points",
+   "geometry_seconds": 1.2353756539523602
+  },
+  {
+   "product_id": "JNCR_2017033_04C00061_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 726821.4,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 503.8111572265625,
+   "on_planet_fraction": 0.028092921976132685,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 83,
+   "n_limb_framelets": 10,
+   "reason": "only 83 candidate limb points",
+   "geometry_seconds": 3.712171671912074
+  },
+  {
+   "product_id": "JNCR_2017033_04M00062_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 726334.7,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 503.7100524902344,
+   "on_planet_fraction": 0.028161502578883495,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 28,
+   "n_limb_framelets": 3,
+   "reason": "only 28 candidate limb points",
+   "geometry_seconds": 1.2664570584893227
+  },
+  {
+   "product_id": "JNCR_2017033_04C00063_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 697785.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 484.1335144042969,
+   "on_planet_fraction": 0.030164403822815534,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 89,
+   "n_limb_framelets": 9,
+   "reason": "only 89 candidate limb points",
+   "geometry_seconds": 3.7519510351121426
+  },
+  {
+   "product_id": "JNCR_2017033_04M00064_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 697288.3,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 483.61749267578125,
+   "on_planet_fraction": 0.03038057493932039,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 30,
+   "n_limb_framelets": 3,
+   "reason": "only 30 candidate limb points",
+   "geometry_seconds": 1.2185591384768486
+  },
+  {
+   "product_id": "JNCR_2017033_04C00065_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 668193.9,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 464.1382751464844,
+   "on_planet_fraction": 0.03276335583535599,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 89,
+   "n_limb_framelets": 10,
+   "reason": "only 89 candidate limb points",
+   "geometry_seconds": 3.7503717374056578
+  },
+  {
+   "product_id": "JNCR_2017033_04M00066_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 667687.2,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 463.48187255859375,
+   "on_planet_fraction": 0.032867016838592236,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 30,
+   "n_limb_framelets": 3,
+   "reason": "only 30 candidate limb points",
+   "geometry_seconds": 1.2654991019517183
+  },
+  {
+   "product_id": "JNCR_2017033_04C00067_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 638009.5,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 443.7041015625,
+   "on_planet_fraction": 0.03561466550364078,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 95,
+   "n_limb_framelets": 10,
+   "reason": "only 95 candidate limb points",
+   "geometry_seconds": 3.74572666734457
+  },
+  {
+   "product_id": "JNCR_2017033_04M00068_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 637491.8,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 443.0066833496094,
+   "on_planet_fraction": 0.035699048088592235,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 32,
+   "n_limb_framelets": 3,
+   "reason": "only 32 candidate limb points",
+   "geometry_seconds": 1.2186064571142197
+  },
+  {
+   "product_id": "JNCR_2017033_04C00069_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 607186.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 422.826171875,
+   "on_planet_fraction": 0.03891664770428803,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 100,
+   "n_limb_framelets": 10,
+   "reason": "only 100 candidate limb points",
+   "geometry_seconds": 3.7416560854762793
+  },
+  {
+   "product_id": "JNCR_2017033_04M00070_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 606658.2,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 422.36175537109375,
+   "on_planet_fraction": 0.039449332524271845,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 30,
+   "n_limb_framelets": 4,
+   "reason": "only 30 candidate limb points",
+   "geometry_seconds": 1.2682749833911657
+  },
+  {
+   "product_id": "JNCR_2017033_04C00071_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 575674.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 401.5265197753906,
+   "on_planet_fraction": 0.04296669574231392,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 104,
+   "n_limb_framelets": 10,
+   "reason": "only 104 candidate limb points",
+   "geometry_seconds": 3.755116378888488
+  },
+  {
+   "product_id": "JNCR_2017033_04M00072_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 575134.6,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 401.0743408203125,
+   "on_planet_fraction": 0.04357270175970874,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 33,
+   "n_limb_framelets": 4,
+   "reason": "only 33 candidate limb points",
+   "geometry_seconds": 1.2665913794189692
+  },
+  {
+   "product_id": "JNCR_2017033_04C00073_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 542863.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 379.26824951171875,
+   "on_planet_fraction": 0.0478807961670712,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 108,
+   "n_limb_framelets": 12,
+   "reason": "only 108 candidate limb points",
+   "geometry_seconds": 3.7573842499405146
+  },
+  {
+   "product_id": "JNCR_2017033_04M00074_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 542308.7,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 378.6888732910156,
+   "on_planet_fraction": 0.04809665124393204,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 34,
+   "n_limb_framelets": 4,
+   "reason": "only 34 candidate limb points",
+   "geometry_seconds": 1.2708754632622004
+  },
+  {
+   "product_id": "JNCR_2017033_04C00075_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 509778.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 356.7719421386719,
+   "on_planet_fraction": 0.05355370777710356,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 115,
+   "n_limb_framelets": 12,
+   "reason": "only 115 candidate limb points",
+   "geometry_seconds": 3.768431978300214
+  },
+  {
+   "product_id": "JNCR_2017033_04M00076_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 509209.3,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 356.360107421875,
+   "on_planet_fraction": 0.05403709041262136,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 37,
+   "n_limb_framelets": 4,
+   "reason": "only 37 candidate limb points",
+   "geometry_seconds": 1.2379889264702797
+  },
+  {
+   "product_id": "JNCR_2017033_04C00077_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 475800.0,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 333.7225646972656,
+   "on_planet_fraction": 0.060516219154530745,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 128,
+   "n_limb_framelets": 12,
+   "reason": "only 128 candidate limb points",
+   "geometry_seconds": 3.7661475222557783
+  },
+  {
+   "product_id": "JNCR_2017033_04M00078_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 475215.9,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 333.3441467285156,
+   "on_planet_fraction": 0.06105791110436893,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 41,
+   "n_limb_framelets": 4,
+   "reason": "only 41 candidate limb points",
+   "geometry_seconds": 1.233635375276208
+  },
+  {
+   "product_id": "JNCR_2017033_04C00079_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 440838.3,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 310.03802490234375,
+   "on_planet_fraction": 0.06945287216828479,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 128,
+   "n_limb_framelets": 13,
+   "reason": "only 128 candidate limb points",
+   "geometry_seconds": 3.758408570662141
+  },
+  {
+   "product_id": "JNCR_2017033_04M00080_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 440236.8,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 309.7734375,
+   "on_planet_fraction": 0.07040920813106796,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 43,
+   "n_limb_framelets": 5,
+   "reason": "only 43 candidate limb points",
+   "geometry_seconds": 1.273674177005887
+  },
+  {
+   "product_id": "JNCR_2017033_04C00081_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 404785.8,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 285.5950622558594,
+   "on_planet_fraction": 0.0672826015962109,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 139,
+   "n_limb_framelets": 14,
+   "reason": "only 139 candidate limb points",
+   "geometry_seconds": 4.51129019074142
+  },
+  {
+   "product_id": "JNCR_2017033_04M00082_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 404164.1,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 285.36614990234375,
+   "on_planet_fraction": 0.06824441557949029,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 46,
+   "n_limb_framelets": 5,
+   "reason": "only 46 candidate limb points",
+   "geometry_seconds": 1.5240225661545992
+  },
+  {
+   "product_id": "JNCR_2017033_04C00083_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 367509.7,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 260.2585144042969,
+   "on_planet_fraction": 0.07967807148395362,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 153,
+   "n_limb_framelets": 15,
+   "reason": "only 153 candidate limb points",
+   "geometry_seconds": 4.52938798815012
+  },
+  {
+   "product_id": "JNCR_2017033_04M00084_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 366866.6,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 259.87774658203125,
+   "on_planet_fraction": 0.08060354090817153,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 53,
+   "n_limb_framelets": 5,
+   "reason": "only 53 candidate limb points",
+   "geometry_seconds": 1.5247680209577084
+  },
+  {
+   "product_id": "JNCR_2017033_04C00085_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 328854.9,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 233.97401428222656,
+   "on_planet_fraction": 0.09648795678263215,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 167,
+   "n_limb_framelets": 16,
+   "reason": "only 167 candidate limb points",
+   "geometry_seconds": 4.532821509987116
+  },
+  {
+   "product_id": "JNCR_2017033_04M00086_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 328185.1,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 233.43450927734375,
+   "on_planet_fraction": 0.09734416085153721,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 58,
+   "n_limb_framelets": 5,
+   "reason": "only 58 candidate limb points",
+   "geometry_seconds": 1.5259538348764181
+  },
+  {
+   "product_id": "JNCR_2017033_04C00087_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 288628.4,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 206.55224609375,
+   "on_planet_fraction": 0.12044521031384843,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 165,
+   "n_limb_framelets": 16,
+   "reason": "only 165 candidate limb points",
+   "geometry_seconds": 4.526797037571669
+  },
+  {
+   "product_id": "JNCR_2017033_04M00088_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 287931.9,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 206.07810974121094,
+   "on_planet_fraction": 0.12203791843648867,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 63,
+   "n_limb_framelets": 6,
+   "reason": "only 63 candidate limb points",
+   "geometry_seconds": 1.5331600531935692
+  },
+  {
+   "product_id": "JNCR_2017033_04C00089_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 246593.8,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 177.90806579589844,
+   "on_planet_fraction": 0.134165826904184,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 139,
+   "n_limb_framelets": 16,
+   "reason": "only 139 candidate limb points",
+   "geometry_seconds": 5.28089402616024
+  },
+  {
+   "product_id": "JNCR_2017033_04M00090_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 245137.2,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 176.84820556640625,
+   "on_planet_fraction": 0.13602188258495146,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 71,
+   "n_limb_framelets": 6,
+   "reason": "only 71 candidate limb points",
+   "geometry_seconds": 1.7835402060300112
+  },
+  {
+   "product_id": "JNCR_2017033_04C00091_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 202477.7,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 147.74295043945312,
+   "on_planet_fraction": 0.18441127683628064,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 166,
+   "n_limb_framelets": 16,
+   "reason": "only 166 candidate limb points",
+   "geometry_seconds": 5.313698688521981
+  },
+  {
+   "product_id": "JNCR_2017033_04M00092_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 200941.4,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 146.7170867919922,
+   "on_planet_fraction": 0.18752675049843967,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 83,
+   "n_limb_framelets": 7,
+   "reason": "only 83 candidate limb points",
+   "geometry_seconds": 1.800714137032628
+  },
+  {
+   "product_id": "JNCR_2017033_04C00093_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 16,
+   "sc_altitude_km": 155976.3,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 115.81995391845703,
+   "on_planet_fraction": 0.24136875979722897,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 188,
+   "n_limb_framelets": 16,
+   "reason": "only 188 candidate limb points",
+   "geometry_seconds": 6.133377300575376
+  },
+  {
+   "product_id": "JNCR_2017033_04M00094_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 16,
+   "sc_altitude_km": 154354.6,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 114.6678237915039,
+   "on_planet_fraction": 0.24715031003489077,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 104,
+   "n_limb_framelets": 9,
+   "reason": "only 104 candidate limb points",
+   "geometry_seconds": 2.069965535774827
+  },
+  {
+   "product_id": "JNCR_2017033_04C00095_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 20,
+   "sc_altitude_km": 106922.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 81.91618347167969,
+   "on_planet_fraction": 0.33131692139461977,
+   "refined": true,
+   "dt_refined_s": 0.0029223356561774846,
+   "limb_residual_px_before": 1.0035537988326695,
+   "limb_residual_px_after": 0.8613629469671054,
+   "n_limb_points": 219,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 7.701516631990671
+  },
+  {
+   "product_id": "JNCR_2017033_04M00096_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 20,
+   "sc_altitude_km": 105217.9,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 80.68441772460938,
+   "on_planet_fraction": 0.34126355810072817,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 123,
+   "n_limb_framelets": 11,
+   "reason": "only 123 candidate limb points",
+   "geometry_seconds": 2.6299281641840935
+  },
+  {
+   "product_id": "JNCR_2017033_04C00097_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 26,
+   "sc_altitude_km": 67312.7,
+   "exposure_ms": 6.4,
+   "tdi_stages": 2,
+   "scale_km_per_px": 53.90060806274414,
+   "on_planet_fraction": 0.44751237902974855,
+   "refined": true,
+   "dt_refined_s": 0.0017360943665352705,
+   "limb_residual_px_before": 0.8020875521269524,
+   "limb_residual_px_after": 0.5850271246221794,
+   "n_limb_points": 271,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 10.113823587074876
+  },
+  {
+   "product_id": "JNCR_2017033_04C00097_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 26,
+   "sc_altitude_km": 67312.7,
+   "exposure_ms": 6.4,
+   "tdi_stages": 2,
+   "scale_km_per_px": 53.9005241394043,
+   "on_planet_fraction": 0.4475104949472554,
+   "refined": true,
+   "dt_refined_s": 0.001596077575498972,
+   "limb_residual_px_before": 0.8702821829543836,
+   "limb_residual_px_after": 0.6156850402552152,
+   "n_limb_points": 271,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 10.03961107134819
+  },
+  {
+   "product_id": "JNCR_2017033_04C00097_V03",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 26,
+   "sc_altitude_km": 67312.5,
+   "exposure_ms": 6.4,
+   "tdi_stages": 2,
+   "scale_km_per_px": 53.9005126953125,
+   "on_planet_fraction": 0.4475108596083831,
+   "refined": true,
+   "dt_refined_s": -0.006167972462355643,
+   "limb_residual_px_before": 1.7401549439482622,
+   "limb_residual_px_after": 0.6147354091542354,
+   "n_limb_points": 275,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 10.10858103632927
+  },
+  {
+   "product_id": "JNCR_2017033_04C00099_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 32,
+   "sc_altitude_km": 32838.3,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 26.877912521362305,
+   "on_planet_fraction": 0.5680890129607858,
+   "refined": true,
+   "dt_refined_s": -0.0031488875830698957,
+   "limb_residual_px_before": 1.2871352294934937,
+   "limb_residual_px_after": 0.4648879752514299,
+   "n_limb_points": 446,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 12.537976374849677
+  },
+  {
+   "product_id": "JNCR_2017033_04C00099_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 32,
+   "sc_altitude_km": 32838.1,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 26.877906799316406,
+   "on_planet_fraction": 0.5680891117231746,
+   "refined": true,
+   "dt_refined_s": -0.011419523129889537,
+   "limb_residual_px_before": 3.1489986549571007,
+   "limb_residual_px_after": 0.44150871154338134,
+   "n_limb_points": 442,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 12.555792212486267
+  },
+  {
+   "product_id": "JNCR_2017033_04C00100_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 36,
+   "sc_altitude_km": 18783.1,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 15.551263809204102,
+   "on_planet_fraction": 0.6230080723548184,
+   "refined": true,
+   "dt_refined_s": -0.00913357568646121,
+   "limb_residual_px_before": 3.13733663882401,
+   "limb_residual_px_after": 0.48950069717447775,
+   "n_limb_points": 549,
+   "n_limb_framelets": 14,
+   "reason": "",
+   "geometry_seconds": 14.221162697300315
+  },
+  {
+   "product_id": "JNCR_2017033_04C00100_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 36,
+   "sc_altitude_km": 18782.9,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 15.551335334777832,
+   "on_planet_fraction": 0.6230116716952085,
+   "refined": true,
+   "dt_refined_s": -0.016444521870531054,
+   "limb_residual_px_before": 4.843851263292672,
+   "limb_residual_px_after": 0.5357940502029805,
+   "n_limb_points": 544,
+   "n_limb_framelets": 14,
+   "reason": "",
+   "geometry_seconds": 14.194426516070962
+  },
+  {
+   "product_id": "JNCR_2017033_04C00101_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 38,
+   "sc_altitude_km": 13750.8,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 11.511504173278809,
+   "on_planet_fraction": 0.6453007233648441,
+   "refined": true,
+   "dt_refined_s": -0.005661386953390647,
+   "limb_residual_px_before": 2.144112438337455,
+   "limb_residual_px_after": 0.4173017345185528,
+   "n_limb_points": 594,
+   "n_limb_framelets": 13,
+   "reason": "",
+   "geometry_seconds": 15.068274574354291
+  },
+  {
+   "product_id": "JNCR_2017033_04C00101_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 38,
+   "sc_altitude_km": 13750.5,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 11.511495590209961,
+   "on_planet_fraction": 0.6452999332657341,
+   "refined": true,
+   "dt_refined_s": -0.020143262530494012,
+   "limb_residual_px_before": 5.945220584293352,
+   "limb_residual_px_after": 0.48640434673663435,
+   "n_limb_points": 577,
+   "n_limb_framelets": 13,
+   "reason": "",
+   "geometry_seconds": 15.020505517721176
+  },
+  {
+   "product_id": "JNCR_2017033_04C00102_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 40,
+   "sc_altitude_km": 6107.5,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 5.2874650955200195,
+   "on_planet_fraction": 0.7271736811665656,
+   "refined": true,
+   "dt_refined_s": -0.01429859121813899,
+   "limb_residual_px_before": 4.2340417709575675,
+   "limb_residual_px_after": 0.5567961942085766,
+   "n_limb_points": 798,
+   "n_limb_framelets": 10,
+   "reason": "",
+   "geometry_seconds": 15.982913564890623
+  },
+  {
+   "product_id": "JNCR_2017033_04C00102_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 40,
+   "sc_altitude_km": 6107.4,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 5.287456512451172,
+   "on_planet_fraction": 0.7271738786913431,
+   "refined": true,
+   "dt_refined_s": -0.02220265804702995,
+   "limb_residual_px_before": 6.4479712347213365,
+   "limb_residual_px_after": 0.5964671875675496,
+   "n_limb_points": 782,
+   "n_limb_framelets": 10,
+   "reason": "",
+   "geometry_seconds": 15.954790906980634
+  },
+  {
+   "product_id": "JNCR_2017033_04C00103_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 42,
+   "sc_altitude_km": 4769.7,
+   "exposure_ms": 12.8,
+   "tdi_stages": 4,
+   "scale_km_per_px": 4.171821117401123,
+   "on_planet_fraction": 0.7201161942325474,
+   "refined": true,
+   "dt_refined_s": -0.005941420535463233,
+   "limb_residual_px_before": 2.3420954374902507,
+   "limb_residual_px_after": 0.658964757978552,
+   "n_limb_points": 940,
+   "n_limb_framelets": 10,
+   "reason": "",
+   "geometry_seconds": 16.92136649414897
+  },
+  {
+   "product_id": "JNCR_2017033_04C00103_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 42,
+   "sc_altitude_km": 4769.6,
+   "exposure_ms": 12.8,
+   "tdi_stages": 4,
+   "scale_km_per_px": 4.171818256378174,
+   "on_planet_fraction": 0.720117661559466,
+   "refined": true,
+   "dt_refined_s": -0.0253082780621718,
+   "limb_residual_px_before": 7.222304613057091,
+   "limb_residual_px_after": 0.7629118331032885,
+   "n_limb_points": 919,
+   "n_limb_framelets": 10,
+   "reason": "",
+   "geometry_seconds": 16.901892870664597
+  },
+  {
+   "product_id": "JNCR_2017033_04C00104_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 42,
+   "sc_altitude_km": 4334.7,
+   "exposure_ms": 12.8,
+   "tdi_stages": 4,
+   "scale_km_per_px": 3.804640054702759,
+   "on_planet_fraction": 0.7295066726503506,
+   "refined": true,
+   "dt_refined_s": -0.003288904374106203,
+   "limb_residual_px_before": 1.7286089688223214,
+   "limb_residual_px_after": 0.7532940787707485,
+   "n_limb_points": 1034,
+   "n_limb_framelets": 9,
+   "reason": "",
+   "geometry_seconds": 16.875360377132893
+  },
+  {
+   "product_id": "JNCR_2017033_04C00104_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 42,
+   "sc_altitude_km": 4334.7,
+   "exposure_ms": 12.8,
+   "tdi_stages": 4,
+   "scale_km_per_px": 3.8046302795410156,
+   "on_planet_fraction": 0.7295066726503506,
+   "refined": true,
+   "dt_refined_s": -0.02590139870699291,
+   "limb_residual_px_before": 7.3021910470638005,
+   "limb_residual_px_after": 0.7970767082705521,
+   "n_limb_points": 935,
+   "n_limb_framelets": 8,
+   "reason": "",
+   "geometry_seconds": 16.88079168088734
+  },
+  {
+   "product_id": "JNCR_2017033_04C00105_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 40,
+   "sc_altitude_km": 7351.7,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 6.300597667694092,
+   "on_planet_fraction": 0.7004819604571197,
+   "refined": true,
+   "dt_refined_s": 0.0077207824699265844,
+   "limb_residual_px_before": 3.787541811300244,
+   "limb_residual_px_after": 1.5192715975352513,
+   "n_limb_points": 899,
+   "n_limb_framelets": 10,
+   "reason": "",
+   "geometry_seconds": 16.02318606339395
+  },
+  {
+   "product_id": "JNCR_2017033_04C00105_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 40,
+   "sc_altitude_km": 7351.9,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 6.300436496734619,
+   "on_planet_fraction": 0.7004546625328681,
+   "refined": true,
+   "dt_refined_s": -0.0018226295023913847,
+   "limb_residual_px_before": 2.0490893871824483,
+   "limb_residual_px_after": 1.5495953851853699,
+   "n_limb_points": 925,
+   "n_limb_framelets": 10,
+   "reason": "",
+   "geometry_seconds": 16.070272494107485
+  },
+  {
+   "product_id": "JNCR_2017033_04C00106_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 38,
+   "sc_altitude_km": 15597.7,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 12.970162391662598,
+   "on_planet_fraction": 0.6178530129556293,
+   "refined": true,
+   "dt_refined_s": 0.011419523129889537,
+   "limb_residual_px_before": 2.7475361518302037,
+   "limb_residual_px_after": 1.0731821579769623,
+   "n_limb_points": 715,
+   "n_limb_framelets": 13,
+   "reason": "",
+   "geometry_seconds": 15.066698845475912
+  },
+  {
+   "product_id": "JNCR_2017033_04C00106_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 38,
+   "sc_altitude_km": 15597.8,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 12.970172882080078,
+   "on_planet_fraction": 0.6178533456289389,
+   "refined": true,
+   "dt_refined_s": 0.0031488875830698957,
+   "limb_residual_px_before": 2.000929482595023,
+   "limb_residual_px_after": 1.0467633014013558,
+   "n_limb_points": 722,
+   "n_limb_framelets": 13,
+   "reason": "",
+   "geometry_seconds": 15.057324532419443
+  },
+  {
+   "product_id": "JNCR_2017033_04C00107_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 28,
+   "sc_altitude_km": 58875.3,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 47.448707580566406,
+   "on_planet_fraction": 0.46094952079360263,
+   "refined": true,
+   "dt_refined_s": 0.004248593736856016,
+   "limb_residual_px_before": 1.688147193043548,
+   "limb_residual_px_after": 0.5891143682041502,
+   "n_limb_points": 357,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 10.888111835345626
+  },
+  {
+   "product_id": "JNCR_2017033_04C00107_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 28,
+   "sc_altitude_km": 58875.5,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 47.448543548583984,
+   "on_planet_fraction": 0.46094726336757397,
+   "refined": true,
+   "dt_refined_s": -0.0023292150113563715,
+   "limb_residual_px_before": 0.8666923287441364,
+   "limb_residual_px_after": 0.5268855740177685,
+   "n_limb_points": 363,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 10.889746356755495
+  },
+  {
+   "product_id": "JNCR_2017033_04C00108_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 24,
+   "sc_altitude_km": 78166.4,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 61.80081558227539,
+   "on_planet_fraction": 0.4138290257129854,
+   "refined": true,
+   "dt_refined_s": -0.0010029569306778563,
+   "limb_residual_px_before": 0.43426036666999046,
+   "limb_residual_px_after": 0.38059535748894113,
+   "n_limb_points": 240,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 9.312284791842103
+  },
+  {
+   "product_id": "JNCR_2017033_04C00108_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 24,
+   "sc_altitude_km": 78166.5,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 61.800819396972656,
+   "on_planet_fraction": 0.4138290257129854,
+   "refined": true,
+   "dt_refined_s": -0.004981731172713418,
+   "limb_residual_px_before": 1.4645729196608954,
+   "limb_residual_px_after": 0.30611850673174956,
+   "n_limb_points": 239,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 9.277221083641052
+  },
+  {
+   "product_id": "JNCR_2017033_04C00109_V03",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 22,
+   "sc_altitude_km": 102558.5,
+   "exposure_ms": 6.4,
+   "tdi_stages": 2,
+   "scale_km_per_px": 78.88309478759766,
+   "on_planet_fraction": 0.32022357793652545,
+   "refined": true,
+   "dt_refined_s": 0.002695783729285086,
+   "limb_residual_px_before": 1.0295810909651344,
+   "limb_residual_px_after": 0.3698843408473138,
+   "n_limb_points": 214,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 8.461207611486316
+  },
+  {
+   "product_id": "JNCR_2017033_04C00109_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 22,
+   "sc_altitude_km": 102558.6,
+   "exposure_ms": 6.4,
+   "tdi_stages": 2,
+   "scale_km_per_px": 78.88311004638672,
+   "on_planet_fraction": 0.3202230751461827,
+   "refined": true,
+   "dt_refined_s": -0.0010029569306778563,
+   "limb_residual_px_before": 0.500118342912856,
+   "limb_residual_px_after": 0.389202196438621,
+   "n_limb_points": 212,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 8.434064796194434
+  },
+  {
+   "product_id": "JNCR_2017033_04C00109_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 22,
+   "sc_altitude_km": 102558.6,
+   "exposure_ms": 6.4,
+   "tdi_stages": 2,
+   "scale_km_per_px": 78.88304138183594,
+   "on_planet_fraction": 0.3202238652452927,
+   "refined": true,
+   "dt_refined_s": -0.0012829905127504475,
+   "limb_residual_px_before": 0.49660523208810226,
+   "limb_residual_px_after": 0.37059538305921436,
+   "n_limb_points": 212,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 8.404607269912958
+  },
+  {
+   "product_id": "JNCR_2017033_04C00111_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 20,
+   "sc_altitude_km": 117137.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 89.00523376464844,
+   "on_planet_fraction": 0.29451291970064725,
+   "refined": true,
+   "dt_refined_s": 0.0015095424396428566,
+   "limb_residual_px_before": 0.5132914456071518,
+   "limb_residual_px_after": 0.3761265420847497,
+   "n_limb_points": 232,
+   "n_limb_framelets": 16,
+   "reason": "",
+   "geometry_seconds": 7.61619695276022
+  },
+  {
+   "product_id": "JNCR_2017033_04M00112_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 20,
+   "sc_altitude_km": 118839.4,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 90.21834564208984,
+   "on_planet_fraction": 0.29102842460558254,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 134,
+   "n_limb_framelets": 10,
+   "reason": "only 134 candidate limb points",
+   "geometry_seconds": 2.573038613423705
+  },
+  {
+   "product_id": "JNCR_2017033_04C00113_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 16,
+   "sc_altitude_km": 166001.5,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 122.71988677978516,
+   "on_planet_fraction": 0.22279254209648058,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 195,
+   "n_limb_framelets": 16,
+   "reason": "only 195 candidate limb points",
+   "geometry_seconds": 6.080243468284607
+  },
+  {
+   "product_id": "JNCR_2017033_04M00114_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 16,
+   "sc_altitude_km": 167610.1,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 123.86092376708984,
+   "on_planet_fraction": 0.22137510429308252,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 100,
+   "n_limb_framelets": 9,
+   "reason": "only 100 candidate limb points",
+   "geometry_seconds": 2.0498722046613693
+  },
+  {
+   "product_id": "JNCR_2017033_04C00115_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 212169.2,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 154.341552734375,
+   "on_planet_fraction": 0.17401797452901063,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 168,
+   "n_limb_framelets": 16,
+   "reason": "only 168 candidate limb points",
+   "geometry_seconds": 5.29586566798389
+  },
+  {
+   "product_id": "JNCR_2017033_04M00116_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 213691.8,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 155.44056701660156,
+   "on_planet_fraction": 0.17306827539875175,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 87,
+   "n_limb_framelets": 7,
+   "reason": "only 87 candidate limb points",
+   "geometry_seconds": 1.7897422388195992
+  },
+  {
+   "product_id": "JNCR_2017033_04C00117_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 256659.0,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 184.7187042236328,
+   "on_planet_fraction": 0.12781354293082525,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 185,
+   "n_limb_framelets": 16,
+   "reason": "only 185 candidate limb points",
+   "geometry_seconds": 5.274715987965465
+  },
+  {
+   "product_id": "JNCR_2017033_04M00118_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 14,
+   "sc_altitude_km": 258103.9,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 185.74937438964844,
+   "on_planet_fraction": 0.12735370524878642,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 74,
+   "n_limb_framelets": 6,
+   "reason": "only 74 candidate limb points",
+   "geometry_seconds": 1.7776387054473162
+  },
+  {
+   "product_id": "JNCR_2017033_04C00119_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 42,
+   "sc_altitude_km": 273841.3,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 196.43569946289062,
+   "on_planet_fraction": 0.038289331585182614,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 173,
+   "n_limb_framelets": 16,
+   "reason": "only 173 candidate limb points",
+   "geometry_seconds": 15.559188211336732
+  },
+  {
+   "product_id": "JNCR_2017033_04C00119_V02",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 42,
+   "sc_altitude_km": 273841.3,
+   "exposure_ms": 9.6,
+   "tdi_stages": 3,
+   "scale_km_per_px": 196.43569946289062,
+   "on_planet_fraction": 0.038289331585182614,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 173,
+   "n_limb_framelets": 16,
+   "reason": "only 173 candidate limb points",
+   "geometry_seconds": 15.595918539911509
+  },
+  {
+   "product_id": "JNCR_2017033_04C00120_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 298329.7,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 213.11293029785156,
+   "on_planet_fraction": 0.11599524044296117,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 183,
+   "n_limb_framelets": 16,
+   "reason": "only 183 candidate limb points",
+   "geometry_seconds": 4.5261465180665255
+  },
+  {
+   "product_id": "JNCR_2017033_04M00121_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 299021.5,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 213.6669921875,
+   "on_planet_fraction": 0.11646574446298544,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 63,
+   "n_limb_framelets": 6,
+   "reason": "only 63 candidate limb points",
+   "geometry_seconds": 1.5297893658280373
+  },
+  {
+   "product_id": "JNCR_2017033_04C00122_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 338228.8,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 240.25656127929688,
+   "on_planet_fraction": 0.09370325246932308,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 169,
+   "n_limb_framelets": 16,
+   "reason": "only 169 candidate limb points",
+   "geometry_seconds": 4.515526194125414
+  },
+  {
+   "product_id": "JNCR_2017033_04M00123_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 338891.6,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 240.70118713378906,
+   "on_planet_fraction": 0.09384836733919903,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 57,
+   "n_limb_framelets": 5,
+   "reason": "only 57 candidate limb points",
+   "geometry_seconds": 1.501138998195529
+  },
+  {
+   "product_id": "JNCR_2017033_04C00124_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 376587.0,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 266.3656005859375,
+   "on_planet_fraction": 0.07780593164273193,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 155,
+   "n_limb_framelets": 15,
+   "reason": "only 155 candidate limb points",
+   "geometry_seconds": 4.466315176337957
+  },
+  {
+   "product_id": "JNCR_2017033_04M00125_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 12,
+   "sc_altitude_km": 377224.0,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 266.6773681640625,
+   "on_planet_fraction": 0.0780345336519013,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 51,
+   "n_limb_framelets": 5,
+   "reason": "only 51 candidate limb points",
+   "geometry_seconds": 1.5198296681046486
+  },
+  {
+   "product_id": "JNCR_2017033_04C00126_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 413594.8,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 291.5103759765625,
+   "on_planet_fraction": 0.079199376769822,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 143,
+   "n_limb_framelets": 14,
+   "reason": "only 143 candidate limb points",
+   "geometry_seconds": 3.7306928876787424
+  },
+  {
+   "product_id": "JNCR_2017033_04M00127_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 414210.2,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 291.8211669921875,
+   "on_planet_fraction": 0.07966047861043689,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 46,
+   "n_limb_framelets": 5,
+   "reason": "only 46 candidate limb points",
+   "geometry_seconds": 1.2825047988444567
+  },
+  {
+   "product_id": "JNCR_2017033_04C00128_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 449404.3,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 315.8020935058594,
+   "on_planet_fraction": 0.0684423354065534,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 133,
+   "n_limb_framelets": 14,
+   "reason": "only 133 candidate limb points",
+   "geometry_seconds": 3.7531930841505527
+  },
+  {
+   "product_id": "JNCR_2017033_04M00129_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 450000.6,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 316.0400695800781,
+   "on_planet_fraction": 0.06846082372572816,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 44,
+   "n_limb_framelets": 4,
+   "reason": "only 44 candidate limb points",
+   "geometry_seconds": 1.271239610388875
+  },
+  {
+   "product_id": "JNCR_2017033_04C00130_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 484142.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 339.3817443847656,
+   "on_planet_fraction": 0.05993454818972492,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 122,
+   "n_limb_framelets": 13,
+   "reason": "only 122 candidate limb points",
+   "geometry_seconds": 3.737675493583083
+  },
+  {
+   "product_id": "JNCR_2017033_04M00131_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 484723.7,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 339.7649841308594,
+   "on_planet_fraction": 0.05999649195995146,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 41,
+   "n_limb_framelets": 4,
+   "reason": "only 41 candidate limb points",
+   "geometry_seconds": 1.2649829722940922
+  },
+  {
+   "product_id": "JNCR_2017033_04C00132_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 517917.2,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 362.2722473144531,
+   "on_planet_fraction": 0.05300332473705502,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 114,
+   "n_limb_framelets": 12,
+   "reason": "only 114 candidate limb points",
+   "geometry_seconds": 3.7427086792886257
+  },
+  {
+   "product_id": "JNCR_2017033_04M00133_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 518482.3,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 362.66595458984375,
+   "on_planet_fraction": 0.053309409132281556,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 37,
+   "n_limb_framelets": 4,
+   "reason": "only 37 candidate limb points",
+   "geometry_seconds": 1.269510282203555
+  },
+  {
+   "product_id": "JNCR_2017033_04C00134_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 550846.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 384.61126708984375,
+   "on_planet_fraction": 0.05056823927993528,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 117,
+   "n_limb_framelets": 12,
+   "reason": "only 117 candidate limb points",
+   "geometry_seconds": 3.7314628083258867
+  },
+  {
+   "product_id": "JNCR_2017033_04M00135_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 551398.3,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 384.8203125,
+   "on_planet_fraction": 0.05056839729975728,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 38,
+   "n_limb_framelets": 4,
+   "reason": "only 38 candidate limb points",
+   "geometry_seconds": 1.2667752373963594
+  },
+  {
+   "product_id": "JNCR_2017033_04C00136_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 582973.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 406.3988037109375,
+   "on_planet_fraction": 0.04578719154530744,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 112,
+   "n_limb_framelets": 12,
+   "reason": "only 112 candidate limb points",
+   "geometry_seconds": 3.7428333945572376
+  },
+  {
+   "product_id": "JNCR_2017033_04M00137_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 583510.5,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 407.04791259765625,
+   "on_planet_fraction": 0.04636870449029126,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 39,
+   "n_limb_framelets": 4,
+   "reason": "only 39 candidate limb points",
+   "geometry_seconds": 1.2711751591414213
+  },
+  {
+   "product_id": "JNCR_2017033_04C00138_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 614377.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 427.6858825683594,
+   "on_planet_fraction": 0.04174662469660194,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 108,
+   "n_limb_framelets": 11,
+   "reason": "only 108 candidate limb points",
+   "geometry_seconds": 3.761642726138234
+  },
+  {
+   "product_id": "JNCR_2017033_04M00139_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 614902.3,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 428.5151062011719,
+   "on_planet_fraction": 0.042392767748786406,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 37,
+   "n_limb_framelets": 4,
+   "reason": "only 37 candidate limb points",
+   "geometry_seconds": 1.2696072850376368
+  },
+  {
+   "product_id": "JNCR_2017033_04C00140_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 645116.9,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 448.43499755859375,
+   "on_planet_fraction": 0.03820540048543689,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 102,
+   "n_limb_framelets": 10,
+   "reason": "only 102 candidate limb points",
+   "geometry_seconds": 3.735151967033744
+  },
+  {
+   "product_id": "JNCR_2017033_04M00141_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 645631.7,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 449.1706848144531,
+   "on_planet_fraction": 0.03882641838592233,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 34,
+   "n_limb_framelets": 4,
+   "reason": "only 34 candidate limb points",
+   "geometry_seconds": 1.2702028304338455
+  },
+  {
+   "product_id": "JNCR_2017033_04C00142_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 675225.0,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 468.826904296875,
+   "on_planet_fraction": 0.03532691140776699,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 93,
+   "n_limb_framelets": 10,
+   "reason": "only 93 candidate limb points",
+   "geometry_seconds": 3.7402392830699682
+  },
+  {
+   "product_id": "JNCR_2017033_04M00143_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 675729.4,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 469.8128662109375,
+   "on_planet_fraction": 0.03594698118932039,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 34,
+   "n_limb_framelets": 4,
+   "reason": "only 34 candidate limb points",
+   "geometry_seconds": 1.2218452580273151
+  },
+  {
+   "product_id": "JNCR_2017033_04C00144_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 704746.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 488.8475341796875,
+   "on_planet_fraction": 0.032732067910598704,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 98,
+   "n_limb_framelets": 10,
+   "reason": "only 98 candidate limb points",
+   "geometry_seconds": 3.742865512147546
+  },
+  {
+   "product_id": "JNCR_2017033_04M00145_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 705243.4,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 488.8613586425781,
+   "on_planet_fraction": 0.03283952138956311,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 31,
+   "n_limb_framelets": 3,
+   "reason": "only 31 candidate limb points",
+   "geometry_seconds": 1.2675872221589088
+  },
+  {
+   "product_id": "JNCR_2017033_04C00146_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 733717.6,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 508.3849792480469,
+   "on_planet_fraction": 0.030359400283171523,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 96,
+   "n_limb_framelets": 9,
+   "reason": "only 96 candidate limb points",
+   "geometry_seconds": 3.736694945022464
+  },
+  {
+   "product_id": "JNCR_2017033_04M00147_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 734205.2,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 508.8805847167969,
+   "on_planet_fraction": 0.03051710406553398,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 30,
+   "n_limb_framelets": 3,
+   "reason": "only 30 candidate limb points",
+   "geometry_seconds": 1.2666326127946377
+  },
+  {
+   "product_id": "JNCR_2017033_04C00148_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 762176.3,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 527.6593017578125,
+   "on_planet_fraction": 0.02847137944983819,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 88,
+   "n_limb_framelets": 10,
+   "reason": "only 88 candidate limb points",
+   "geometry_seconds": 3.724392954260111
+  },
+  {
+   "product_id": "JNCR_2017033_04M00149_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 762653.6,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 528.2791748046875,
+   "on_planet_fraction": 0.028509462226941746,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 30,
+   "n_limb_framelets": 3,
+   "reason": "only 30 candidate limb points",
+   "geometry_seconds": 1.2665739115327597
+  },
+  {
+   "product_id": "JNCR_2017033_04C00150_V01",
+   "bands": [
+    "BLUE",
+    "GREEN",
+    "RED"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 790149.1,
+   "exposure_ms": 3.2,
+   "tdi_stages": 1,
+   "scale_km_per_px": 546.5891723632812,
+   "on_planet_fraction": 0.02668575546116505,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 85,
+   "n_limb_framelets": 10,
+   "reason": "only 85 candidate limb points",
+   "geometry_seconds": 3.7399196326732635
+  },
+  {
+   "product_id": "JNCR_2017033_04M00151_V01",
+   "bands": [
+    "METHANE"
+   ],
+   "n_frames": 10,
+   "sc_altitude_km": 790618.5,
+   "exposure_ms": 204.8,
+   "tdi_stages": 64,
+   "scale_km_per_px": 547.1859130859375,
+   "on_planet_fraction": 0.026755442202669903,
+   "refined": false,
+   "dt_refined_s": NaN,
+   "limb_residual_px_before": NaN,
+   "limb_residual_px_after": NaN,
+   "n_limb_points": 30,
+   "n_limb_framelets": 3,
+   "reason": "only 30 candidate limb points",
+   "geometry_seconds": 1.2687719836831093
+  }
+ ],
+ "registration": [
+  {
+   "product_id": "JNCR_2017033_04C00105_V01",
+   "km_per_px": 10.0,
+   "grid_shape": [
+    512,
+    512
+   ],
+   "center_lat": -15.85210132598877,
+   "center_lon_east": 79.73270416259766,
+   "scale_km_per_px": 6.300597667694092,
+   "dt_refined_s": 0.0077207824699265844,
+   "reproject_seconds": 0.73893016949296,
+   "cells_per_band": {
+    "BLUE": 262144,
+    "GREEN": 262144,
+    "RED": 262144
+   },
+   "max_frames_per_cell": 2,
+   "rg_shift_px": [
+    0.14504747298600143,
+    0.5724106915601429
+   ],
+   "rb_shift_px": [
+    -0.5647987863084722,
+    0.6057021251591355
+   ],
+   "n_overlap": 262144
+  },
+  {
+   "product_id": "JNCR_2017033_04C00105_V02",
+   "km_per_px": 10.0,
+   "grid_shape": [
+    512,
+    512
+   ],
+   "center_lat": -15.864296913146973,
+   "center_lon_east": 79.73248291015625,
+   "scale_km_per_px": 6.300436496734619,
+   "dt_refined_s": -0.0018226295023913847,
+   "reproject_seconds": 0.726471234112978,
+   "cells_per_band": {
+    "BLUE": 262144,
+    "GREEN": 262144,
+    "RED": 262144
+   },
+   "max_frames_per_cell": 2,
+   "rg_shift_px": [
+    -0.13630576516202172,
+    0.4857620209593193
+   ],
+   "rb_shift_px": [
+    -0.635341089539736,
+    0.19330811540093967
+   ],
+   "n_overlap": 262144
+  },
+  {
+   "product_id": "JNCR_2017033_04C00102_V01",
+   "km_per_px": 10.0,
+   "grid_shape": [
+    512,
+    512
+   ],
+   "center_lat": 20.63734245300293,
+   "center_lon_east": 88.67991638183594,
+   "scale_km_per_px": 5.2874650955200195,
+   "dt_refined_s": -0.01429859121813899,
+   "reproject_seconds": 0.7260145507752895,
+   "cells_per_band": {
+    "BLUE": 262144,
+    "GREEN": 262144,
+    "RED": 262144
+   },
+   "max_frames_per_cell": 2,
+   "rg_shift_px": [
+    -0.18925017255156276,
+    0.04391794282292041
+   ],
+   "rb_shift_px": [
+    -0.3146992670730342,
+    0.03293737993135101
+   ],
+   "n_overlap": 262144
+  },
+  {
+   "product_id": "JNCR_2017033_04C00102_V02",
+   "km_per_px": 10.0,
+   "grid_shape": [
+    512,
+    512
+   ],
+   "center_lat": 20.63724136352539,
+   "center_lon_east": 88.67991638183594,
+   "scale_km_per_px": 5.287456512451172,
+   "dt_refined_s": -0.02220265804702995,
+   "reproject_seconds": 0.7169266380369663,
+   "cells_per_band": {
+    "BLUE": 262144,
+    "GREEN": 262144,
+    "RED": 262144
+   },
+   "max_frames_per_cell": 2,
+   "rg_shift_px": [
+    -0.19491316778481338,
+    0.055279793111791514
+   ],
+   "rb_shift_px": [
+    -0.3344163310281475,
+    0.03531140177188451
+   ],
+   "n_overlap": 262144
+  },
+  {
+   "product_id": "JNCR_2017033_04C00103_V01",
+   "km_per_px": 10.0,
+   "grid_shape": [
+    512,
+    512
+   ],
+   "center_lat": 13.017792701721191,
+   "center_lon_east": 86.7593002319336,
+   "scale_km_per_px": 4.171821117401123,
+   "dt_refined_s": -0.005941420535463233,
+   "reproject_seconds": 0.7276438530534506,
+   "cells_per_band": {
+    "BLUE": 262144,
+    "GREEN": 262144,
+    "RED": 262144
+   },
+   "max_frames_per_cell": 2,
+   "rg_shift_px": [
+    -0.11507404858964626,
+    0.019671222574839744
+   ],
+   "rb_shift_px": [
+    -0.25367675523911215,
+    0.027642855768393215
+   ],
+   "n_overlap": 262144
+  }
+ ]
+}

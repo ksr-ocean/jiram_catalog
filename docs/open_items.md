@@ -183,3 +183,15 @@ minutes and 29 GB from an existing frame stack (the frame stack is
 read whole; the zlib write of a 3.6 GB file dominates). Streaming the
 frame file step by step and writing with larger chunks would cut both;
 a job in the GUI shows progress meanwhile.
+
+## JunoCam timing and limb physics (added 2026-09-07)
+Limb-fit refinement of the start time gives offsets of 1-26 ms on
+perijove 4 (median 4.6 ms) and residuals of about 0.5 px. Two findings
+worth follow-up: (1) the limb where the planet enters a strip sits 1-8
+px outside the 1-bar ellipsoid, more in blue and at high latitude,
+i.e. haze above 1 bar, while the trailing limb sits on the ellipsoid;
+a limb-height model or a trailing-edge-only fit would tighten the
+residual. (2) Band registration across the strips prefers an
+inter-frame delta near 2 ms rather than the kernel's 1 ms; the kernel
+value is kept; a per-image rate term could be fitted alongside the
+offset. See `docs/reports/junocam_pj4_geometry.md`.

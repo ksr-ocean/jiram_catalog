@@ -67,6 +67,7 @@ TRACKABILITY_COLUMNS: tuple[str, ...] = ("has_partner", "best_dt_s", "trackable_
 _TEXT_COLUMNS = ("product_id", "half", "band", "seq_id")
 
 _CATALOG_CACHE: dict[str, pd.DataFrame] = {}
+_JUNOCAM_CACHE: dict[str, pd.DataFrame] = {}
 _STRIPS_CACHE: dict[str, pd.DataFrame] = {}
 _TRACKABILITY_CACHE: dict[str, pd.DataFrame | None] = {}
 _STACK_CACHE: dict[str, xr.Dataset] = {}
@@ -170,6 +171,115 @@ def catalog_table(mirror: str | Path | None = None) -> pd.DataFrame:
     return table
 
 
+#: Columns a JunoCam catalog row carries that a JIRAM one does not, and the
+#: value a JIRAM row takes for each.  ``quality_tier`` is ``A`` for JIRAM
+#: because the tier is a JunoCam radiometric judgement (streaks, saturation,
+#: the CCD's damage epochs) and the JIRAM rows must not be hidden by a filter
+#: that has nothing to say about them.
+JIRAM_INSTRUMENT_DEFAULTS: dict[str, Any] = {"instrument": "JIRAM", "quality_tier": "A"}
+
+
+def junocam_catalog(mirror: str | Path | None = None) -> pd.DataFrame:
+    """JunoCam images as catalog rows, in the frame catalog's own columns.
+
+    One row per placed RDR image -- the unit of the JunoCam archive is the
+    swath, not the framelet -- with ``half`` empty because a JunoCam product
+    has no detector half, the four corner columns NaN because a swath's
+    footprint is a ribbon rather than a quadrilateral (the outline is in
+    ``fp_lon``/``fp_lat`` instead), and the revisit columns empty because
+    trackability is a JIRAM product.
+
+    An empty frame comes back when the JunoCam tables are absent, so a mirror
+    that has never run the JunoCam layer answers the amended contract with
+    JIRAM rows alone rather than with an error.
+    """
+    root = mirror_root(mirror)
+    key = str(root)
+    cached = _JUNOCAM_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        from ..junocam.geo import load_geo
+        from ..junocam.quality import load_quality
+
+        # The geometry table already carries the band list and the start time,
+        # so the image index is not needed here; only the tier is joined.
+        geo = load_geo(root)
+        quality = load_quality(root)[["product_id", "quality_tier"]]
+    except (FileNotFoundError, OSError, KeyError, ImportError) as exc:
+        LOGGER.info("no JunoCam catalog rows: %s", exc)
+        table = _empty_junocam()
+        _JUNOCAM_CACHE[key] = table
+        return table
+
+    geo = geo.loc[geo["geo_ok"].fillna(False).astype(bool)].reset_index(drop=True)
+    merged = geo.merge(quality, on="product_id", how="left")
+    table = pd.DataFrame(index=range(len(merged)))
+    table["product_id"] = merged["product_id"].astype(str).astype(object)
+    table["half"] = ""
+    table["band"] = merged["bands"].astype(str).astype(object)
+    table["orbit"] = pd.to_numeric(merged["orbit"], errors="coerce").fillna(0).astype("int64")
+    table["seq_id"] = merged["product_id"].astype(str).astype(object)
+    table["start_time"] = pd.to_datetime(merged["start_time"])
+    for name in (
+        "bore_lat",
+        "bore_lon_east",
+        "bore_emission",
+        "on_planet_frac",
+        "median_pixel_km",
+        "dayside_frac",
+        "min_lat",
+        "max_lat",
+        "lon_span_deg",
+    ):
+        table[name] = pd.to_numeric(merged[name], errors="coerce")
+    table["pole_inside"] = merged["pole_inside"].fillna(False).astype(bool)
+    for index in range(1, 5):
+        table[f"c{index}_lat"] = np.nan
+        table[f"c{index}_lon"] = np.nan
+    table["has_partner"] = False
+    table["trackable_30"] = False
+    table["best_dt_s"] = np.nan
+    table["instrument"] = "JunoCam"
+    # ``band`` is the ";"-joined filter list, ``bands`` the same names as a
+    # list; see the note on ``CATALOG_SCHEMA`` for why the catalog's column is
+    # a list rather than the amendment's string.
+    table["bands"] = [
+        np.array(
+            [part.strip().upper() for part in str(value).split(";") if part.strip()],
+            dtype=object,
+        )
+        for value in merged["bands"]
+    ]
+    table["quality_tier"] = (
+        merged["quality_tier"].where(merged["quality_tier"].notna(), "B").astype(str).astype(object)
+    )
+    table["fp_lon"] = [np.asarray(value, dtype=np.float32) for value in merged["fp_lon"]]
+    table["fp_lat"] = [np.asarray(value, dtype=np.float32) for value in merged["fp_lat"]]
+    table["lat_band"] = lat_band(table["bore_lat"].to_numpy(dtype=np.float64))
+    table["month"] = table["start_time"].dt.strftime("%Y-%m")
+    _JUNOCAM_CACHE[key] = table
+    LOGGER.info("JunoCam catalog rows: %d from %s", len(table), root)
+    return table
+
+
+def _empty_junocam() -> pd.DataFrame:
+    columns = [
+        "product_id", "half", "band", "orbit", "seq_id", "start_time", "bore_lat",
+        "bore_lon_east", "bore_emission", "on_planet_frac", "median_pixel_km",
+        "dayside_frac", "min_lat", "max_lat", "lon_span_deg", "pole_inside",
+        "c1_lat", "c1_lon", "c2_lat", "c2_lon", "c3_lat", "c3_lon", "c4_lat",
+        "c4_lon", "has_partner", "trackable_30", "best_dt_s", "instrument",
+        "bands", "quality_tier", "fp_lon", "fp_lat", "lat_band", "month",
+    ]
+    return pd.DataFrame({name: pd.Series(dtype="object") for name in columns})
+
+
+def junocam_count(mirror: str | Path | None = None) -> int:
+    """How many JunoCam images the catalog carries (0 without the tables)."""
+    return int(len(junocam_catalog(mirror)))
+
+
 def strips_table(mirror: str | Path | None = None) -> pd.DataFrame:
     """The strip library index with real timestamps and derived columns."""
     root = mirror_root(mirror)
@@ -254,19 +364,25 @@ def open_strip(mirror: str | Path | None, strip: str) -> xr.Dataset:
     return dataset
 
 
-def strip_stats(mirror: str | Path | None, strip: str) -> xr.Dataset:
+def strip_stats(
+    mirror: str | Path | None, strip: str, band: str | None = None
+) -> xr.Dataset:
     """Statistics of one strip, computed once and cached on disk.
 
     The cache is ``<mirror>/gui_cache/stats_<strip_id>.nc`` -- the same
     Dataset :func:`stats2d.strip_statistics` returns, so the file is also
-    what a later population run would read.
+    what a later population run would read.  A multi-band strip has one
+    spectrum per band and therefore one cache file per band, named
+    ``stats_<strip_id>__<band>.nc``; the band-less name stays what it was, so
+    every JIRAM cache already on disk is still found.
     """
     root = mirror_root(mirror)
-    key = f"{root}::{strip}"
+    suffix = "" if band is None else f"__{str(band).upper()}"
+    key = f"{root}::{strip}{suffix}"
     cached = _STATS_CACHE.get(key)
     if cached is not None:
         return cached
-    path = gui_cache_dir(root) / f"stats_{strip}.nc"
+    path = gui_cache_dir(root) / f"stats_{strip}{suffix}.nc"
     if path.exists():
         try:
             with xr.open_dataset(path, engine="netcdf4") as stored:
@@ -275,7 +391,7 @@ def strip_stats(mirror: str | Path | None, strip: str) -> xr.Dataset:
             return statistics
         except Exception as exc:
             LOGGER.warning("unreadable statistics cache %s: %s", path, exc)
-    statistics = strip_statistics(open_strip(root, strip))
+    statistics = strip_statistics(open_strip(root, strip), band=band)
     temporary = path.with_suffix(".nc.tmp")
     statistics.to_netcdf(temporary, engine="netcdf4")
     os.replace(temporary, path)

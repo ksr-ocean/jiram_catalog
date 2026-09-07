@@ -11,7 +11,15 @@
  * A stack is one of three views of the same frames -- the snapshot per spin
  * sequence, the sweep filling in, the raw frames -- and the mode selector
  * moves between them by opening the sibling file, or by building it when the
- * mirror does not have it yet.
+ * mirror does not have it yet.  A JunoCam stack has only the one level, so
+ * the selector shows only that one rather than offering to build two files
+ * the instrument cannot produce.
+ *
+ * A stack with a `band` dimension gains a band selector and, when RED, GREEN
+ * and BLUE are all present, an RGB composite.  The composite is the one
+ * picture in the application the browser does not colour-map: it arrives from
+ * the contract's `frame/{t}/rgb.png` already carrying three bands, and the
+ * lookup tables apply to single-band display only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Views.module.css';
@@ -23,13 +31,14 @@ import { COLOR_MAPS, type ColorMapName } from '../lib/lut';
 import {
   LEVEL_BLURBS,
   LEVEL_LABELS,
-  STACK_LEVELS,
+  availableLevels,
   levelLabel,
   orbitsOf,
   siblingsOf,
   sweepReadout,
   type StackLevel,
 } from '../lib/stackModes';
+import { bandForChannel, hasRgb, RGB_BANDS, resolveStretch, uniqueBands } from '../lib/bands';
 
 export function PolesView({ active }: { active: boolean }) {
   const stacks = useStore((s) => s.stacks);
@@ -48,11 +57,21 @@ export function PolesView({ active }: { active: boolean }) {
   const vmin = useStore((s) => s.vmin);
   const vmax = useStore((s) => s.vmax);
   const setStretch = useStore((s) => s.setStretch);
+  const stackBands = useStore((s) => s.stackBands);
+  const band = useStore((s) => s.band);
+  const setBand = useStore((s) => s.setBand);
+  const composite = useStore((s) => s.composite);
+  const setComposite = useStore((s) => s.setComposite);
+  const linkBands = useStore((s) => s.linkBands);
+  const setLinkBands = useStore((s) => s.setLinkBands);
+  const bandStretch = useStore((s) => s.bandStretch);
+  const setBandStretch = useStore((s) => s.setBandStretch);
   const showGraticule = useStore((s) => s.showGraticule);
   const setShowGraticule = useStore((s) => s.setShowGraticule);
   const emissionAlpha = useStore((s) => s.emissionAlpha);
   const setEmissionAlpha = useStore((s) => s.setEmissionAlpha);
   const frameImage = useStore((s) => s.frameImage);
+  const frameComposite = useStore((s) => s.frameComposite);
   const emissionImage = useStore((s) => s.emissionImage);
   const pushToast = useStore((s) => s.pushToast);
   const watchJob = useStore((s) => s.watchJob);
@@ -71,6 +90,9 @@ export function PolesView({ active }: { active: boolean }) {
   const level = meta?.level ?? listing?.level ?? null;
   const siblings = useMemo(() => siblingsOf(listing, stacks), [listing, stacks]);
   const sweep = sweepReadout(meta, t);
+  const instrument = meta?.instrument ?? listing?.instrument ?? 'JIRAM';
+  const levels = useMemo(() => availableLevels(instrument), [instrument]);
+  const rgbReady = hasRgb(stackBands);
 
   // A new stack answers whatever mode question was open.
   useEffect(() => {
@@ -233,7 +255,8 @@ export function PolesView({ active }: { active: boolean }) {
             </option>
             {stacks.map((stack) => (
               <option key={stack.id} value={stack.id}>
-                {stack.id} - {stack.band} {stack.label ?? levelLabel(stack.level)}, {stack.n_time} steps
+                {stack.id} - {uniqueBands(stack.bands).join('/') || stack.band}{' '}
+                {stack.label ?? levelLabel(stack.level)}, {stack.n_time} steps
                 {stack.has_movie ? ' [movie]' : ''}
               </option>
             ))}
@@ -259,7 +282,7 @@ export function PolesView({ active }: { active: boolean }) {
       </div>
 
       <div className={styles.modeHelp} data-testid="mode-help">
-        {STACK_LEVELS.map((name) => (
+        {levels.map((name) => (
           <div key={name}>{LEVEL_BLURBS[name]}</div>
         ))}
       </div>
@@ -275,7 +298,7 @@ export function PolesView({ active }: { active: boolean }) {
         <div className={styles.split}>
           <div className={styles.stack}>
             <div className={styles.toolbar} data-testid="mode-bar" role="group" aria-label="viewing mode">
-              {STACK_LEVELS.map((name) => (
+              {levels.map((name) => (
                 <button
                   key={name}
                   data-testid={`mode-${name}`}
@@ -338,6 +361,32 @@ export function PolesView({ active }: { active: boolean }) {
                 value={fps}
                 onChange={(event) => setFps(Number(event.target.value))}
               />
+              {stackBands.length > 0 && (
+                <>
+                  <div className={styles.sep} />
+                  <label htmlFor="band-select">band</label>
+                  <select
+                    id="band-select"
+                    data-testid="band-select"
+                    value={composite ? '__rgb' : band ?? ''}
+                    onChange={(event) => {
+                      if (event.target.value === '__rgb') {
+                        setComposite(true);
+                        return;
+                      }
+                      if (composite) setComposite(false);
+                      setBand(event.target.value);
+                    }}
+                  >
+                    {stackBands.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                    {rgbReady && <option value="__rgb">RGB composite</option>}
+                  </select>
+                </>
+              )}
               <div className={styles.sep} />
               <label htmlFor="cmap-select">colour map</label>
               <select
@@ -345,6 +394,8 @@ export function PolesView({ active }: { active: boolean }) {
                 data-testid="cmap-select"
                 value={cmap}
                 onChange={(event) => setCmap(event.target.value as ColorMapName)}
+                disabled={composite}
+                title={composite ? 'the composite carries its own colour' : undefined}
               >
                 {COLOR_MAPS.map((name) => (
                   <option key={name} value={name}>
@@ -352,7 +403,16 @@ export function PolesView({ active }: { active: boolean }) {
                   </option>
                 ))}
               </select>
-              <ColorBar cmap={cmap} vmin={vmin} vmax={vmax} />
+              {composite ? (
+                <span className={styles.muted} data-testid="composite-note">
+                  RGB composite:{' '}
+                  {(['r', 'g', 'b'] as const)
+                    .map((channel, i) => bandForChannel(stackBands, channel) ?? RGB_BANDS[i])
+                    .join(', ')}
+                </span>
+              ) : (
+                <ColorBar cmap={cmap} vmin={vmin} vmax={vmax} />
+              )}
               <div className={styles.sep} />
               <label>
                 <input
@@ -399,18 +459,66 @@ export function PolesView({ active }: { active: boolean }) {
                 onChange={(event) => setDraftStretch([draftStretch[0], Number(event.target.value)])}
               />
               <button
-                onClick={() => meta && setStretch(meta.stretch.p1, meta.stretch.p99)}
+                onClick={() => {
+                  if (!meta) return;
+                  const stretch = resolveStretch(meta.stretch, band);
+                  setStretch(stretch.p1, stretch.p99);
+                }}
                 disabled={!meta}
               >
                 reset stretch
               </button>
+              {composite && (
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="link-bands"
+                    checked={linkBands}
+                    onChange={(event) => setLinkBands(event.target.checked)}
+                  />
+                  link bands
+                </label>
+              )}
             </div>
+
+            {composite && !linkBands && (
+              <div className={styles.toolbar} data-testid="band-stretch">
+                {(['r', 'g', 'b'] as const).map((channel) => {
+                  const name = bandForChannel(stackBands, channel);
+                  if (!name) return null;
+                  const pair = bandStretch[name] ?? [vmin, vmax];
+                  return (
+                    <div className={styles.group} key={channel}>
+                      <label htmlFor={`stretch-${channel}`}>{name}</label>
+                      <input
+                        id={`stretch-${channel}`}
+                        data-testid={`stretch-${channel}-min`}
+                        type="number"
+                        step="any"
+                        style={{ width: 96 }}
+                        value={pair[0]}
+                        onChange={(event) => setBandStretch(name, Number(event.target.value), pair[1])}
+                      />
+                      <input
+                        data-testid={`stretch-${channel}-max`}
+                        type="number"
+                        step="any"
+                        style={{ width: 96 }}
+                        value={pair[1]}
+                        onChange={(event) => setBandStretch(name, pair[0], Number(event.target.value))}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <ImageView
               image={frameImage}
               overlay={emissionImage}
               overlayAlpha={emissionAlpha}
               cmap={cmap}
+              composite={frameComposite}
               graticule={meta?.graticule ?? null}
               showGraticule={showGraticule}
               testId="poles-image"
@@ -435,6 +543,10 @@ export function PolesView({ active }: { active: boolean }) {
                 <b>{perTime?.n_frames ?? '--'}</b>
                 <span>emission</span>
                 <b>{fmt(perTime?.bore_emission, 1)}</b>
+                <span>instrument</span>
+                <b data-testid="stack-instrument">{instrument}</b>
+                <span>band</span>
+                <b>{composite ? 'RGB composite' : band ?? meta?.band ?? '--'}</b>
                 <span>km/px</span>
                 <b>{fmt(meta?.km_per_px, 2)}</b>
                 <span>x range (km)</span>

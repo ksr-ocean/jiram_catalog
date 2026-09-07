@@ -12,6 +12,13 @@
  * Box and lasso are done as a polygon test over the same typed arrays: the
  * screen polygon is unprojected once and the test is one pass over the
  * filtered indices.
+ *
+ * JunoCam rows are not points.  One JunoCam image is a swath tens of degrees
+ * across, so it is drawn as its outline -- a `PolygonLayer` under the points,
+ * stroked and filled at low alpha, cut at the 0/360 seam by
+ * `src/lib/footprints.ts` -- and the outlines are pickable on the same terms
+ * as the points, by the GPU when the pan tool is out and by a bounding-box
+ * plus point-in-polygon test when the selection overlay is covering the canvas.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DeckGL from '@deck.gl/react';
@@ -21,8 +28,10 @@ import styles from './Views.module.css';
 import { useStore, type ColorBy } from '../store/store';
 import { categoricalColor, rampColor, rgbCss, type RGB } from '../lib/colorScale';
 import { graticule, viewLimits } from '../lib/projection';
-import { boxPolygon, indicesInPolygon } from '../lib/filters';
+import { boxPolygon, indicesInPolygon, pointInPolygon } from '../lib/filters';
 import { fmt, fmtTime } from '../lib/format';
+import { INSTRUMENTS } from '../lib/bands';
+import type { FootprintItem } from '../lib/footprints';
 
 type Tool = 'pan' | 'box' | 'lasso';
 
@@ -71,6 +80,7 @@ export function CatalogMap() {
   const columns = useStore((s) => s.columns);
   const filtered = useStore((s) => s.filtered);
   const positions = useStore((s) => s.positions);
+  const footprints = useStore((s) => s.footprints);
   const viewMode = useStore((s) => s.viewMode);
   const colorBy = useStore((s) => s.colorBy);
   const selectionKeys = useStore((s) => s.selectionKeys);
@@ -140,19 +150,34 @@ export function CatalogMap() {
         return columns.medianPixelKm;
       case 'emission':
         return columns.boreEmission;
+      case 'instrument': {
+        // The instrument is a name, so it is coloured by its position in the
+        // contract's list rather than by a number the row happens to carry.
+        const values = new Float32Array(columns.n);
+        for (let i = 0; i < columns.n; i++) {
+          const at = INSTRUMENTS.indexOf(columns.instrument[i] as (typeof INSTRUMENTS)[number]);
+          values[i] = at < 0 ? INSTRUMENTS.length : at;
+        }
+        return values;
+      }
       default:
         return columns.orbit;
     }
   }, [colorBy, columns]);
 
+  const categorical = colorBy === 'orbit' || colorBy === 'year' || colorBy === 'instrument';
   const range = useMemo(() => colorRange(colorValues, filtered), [colorValues, filtered]);
+  const colorOf = useCallback(
+    (row: number): RGB =>
+      categorical ? categoricalColor(colorValues[row]) : rampColor(colorValues[row], range[0], range[1]),
+    [categorical, colorValues, range],
+  );
 
   /** One packed buffer per (filter, view, colour) change; deck uploads it once. */
   const binary = useMemo(() => {
     const n = filtered.length;
     const xy = new Float32Array(n * 2);
     const rgb = new Uint8Array(n * 3);
-    const categorical = colorBy === 'orbit' || colorBy === 'year';
     for (let k = 0; k < n; k++) {
       const i = filtered[k];
       xy[2 * k] = positions[2 * i];
@@ -164,7 +189,7 @@ export function CatalogMap() {
       rgb[3 * k + 2] = color[2];
     }
     return { length: n, attributes: { getPosition: { value: xy, size: 2 }, getFillColor: { value: rgb, size: 3 } } };
-  }, [filtered, positions, colorValues, colorBy, range]);
+  }, [filtered, positions, colorValues, categorical, range]);
 
   /** The selected subset drawn on top, so the tray's contents are visible. */
   const selectedXy = useMemo(() => {
@@ -204,6 +229,27 @@ export function CatalogMap() {
     [filtered, positions, viewState, size],
   );
 
+  /**
+   * The footprint under a screen position.
+   *
+   * A bounding-box rejection first, because a point-in-polygon test over
+   * thousands of 64-vertex outlines on every mouse move is not free; the
+   * outlines are already in view coordinates, so the mouse is unprojected
+   * once rather than the outlines projected many times.
+   */
+  const footprintAt = useCallback(
+    (sx: number, sy: number): FootprintItem | null => {
+      const [wx, wy] = unproject(sx, sy, viewState, size[0], size[1]);
+      for (const item of footprints.items) {
+        const [xMin, xMax, yMin, yMax] = item.bounds;
+        if (wx < xMin || wx > xMax || wy < yMin || wy > yMax) continue;
+        if (pointInPolygon(wx, wy, item.polygon)) return item;
+      }
+      return null;
+    },
+    [footprints, viewState, size],
+  );
+
   const onDeckHover = useCallback(
     (info: PickingInfo) => {
       const sx = info.x ?? 0;
@@ -212,10 +258,22 @@ export function CatalogMap() {
         setHover({ index: filtered[info.index], x: sx, y: sy, source: 'gpu' });
         return;
       }
+      if (info.index >= 0 && info.layer?.id === 'catalog-footprints') {
+        const item = (info.object ?? null) as FootprintItem | null;
+        if (item) {
+          setHover({ index: item.row, x: sx, y: sy, source: 'gpu' });
+          return;
+        }
+      }
       const fallback = nearest(sx, sy);
-      setHover(fallback === null ? null : { index: fallback, x: sx, y: sy, source: 'cpu' });
+      if (fallback !== null) {
+        setHover({ index: fallback, x: sx, y: sy, source: 'cpu' });
+        return;
+      }
+      const item = footprintAt(sx, sy);
+      setHover(item === null ? null : { index: item.row, x: sx, y: sy, source: 'cpu' });
     },
-    [filtered, nearest],
+    [filtered, nearest, footprintAt],
   );
 
   const commitPolygon = useCallback(
@@ -240,6 +298,32 @@ export function CatalogMap() {
         widthUnits: 'pixels',
         widthMinPixels: 1,
       }),
+    ];
+    if (footprints.items.length > 0) {
+      // Below the points on purpose: a swath is large enough to swallow every
+      // JIRAM boresight inside it, and the point is the more precise target.
+      list.push(
+        new PolygonLayer<FootprintItem>({
+          id: 'catalog-footprints',
+          data: footprints.items,
+          getPolygon: (d) => d.polygon,
+          pickable: true,
+          filled: true,
+          stroked: true,
+          getFillColor: (d) => [...colorOf(d.row), 34] as [number, number, number, number],
+          getLineColor: (d) => [...colorOf(d.row), 220] as [number, number, number, number],
+          lineWidthUnits: 'pixels',
+          getLineWidth: 1.2,
+          lineWidthMinPixels: 1,
+          onHover: onDeckHover,
+          onClick: (info: PickingInfo<FootprintItem>) => {
+            if (info.object) void openDetail(columns.productId[info.object.row]);
+          },
+          updateTriggers: { getFillColor: [colorBy, range], getLineColor: [colorBy, range] },
+        }),
+      );
+    }
+    list.push(
       new ScatterplotLayer({
         id: 'catalog-points',
         data: binary as never,
@@ -255,7 +339,7 @@ export function CatalogMap() {
         },
         updateTriggers: { getPosition: binary, getFillColor: binary },
       }),
-    ];
+    );
     if (selectedXy.length > 0) {
       list.push(
         new ScatterplotLayer({
@@ -293,7 +377,22 @@ export function CatalogMap() {
       );
     }
     return list;
-  }, [viewMode, binary, selectedXy, drag, viewState, size, onDeckHover, openDetail, columns, filtered]);
+  }, [
+    viewMode,
+    binary,
+    footprints,
+    colorOf,
+    colorBy,
+    range,
+    selectedXy,
+    drag,
+    viewState,
+    size,
+    onDeckHover,
+    openDetail,
+    columns,
+    filtered,
+  ]);
 
   const hoverIndex = hover?.index ?? null;
 
@@ -348,6 +447,7 @@ export function CatalogMap() {
             <option value="year">year</option>
             <option value="pixel">pixel size (km)</option>
             <option value="emission">emission (deg)</option>
+            <option value="instrument">instrument</option>
           </select>
         </div>
         <button data-testid="zoom-to-data" onClick={fitToFiltered}>
@@ -358,6 +458,7 @@ export function CatalogMap() {
         </button>
         <span className={styles.muted} data-testid="point-count">
           {filtered.length.toLocaleString()} of {columns.n.toLocaleString()} drawn
+          {footprints.n > 0 ? `, ${footprints.n.toLocaleString()} as footprints` : ''}
         </span>
       </div>
 
@@ -391,7 +492,15 @@ export function CatalogMap() {
               const point: [number, number] = [event.clientX - rect.left, event.clientY - rect.top];
               if (!drag) {
                 const index = nearest(point[0], point[1]);
-                setHover(index === null ? null : { index, x: point[0], y: point[1], source: 'cpu' });
+                if (index !== null) {
+                  setHover({ index, x: point[0], y: point[1], source: 'cpu' });
+                  return;
+                }
+                // The overlay swallows deck.gl's own picking, so the outlines
+                // are tested here too -- otherwise hovering a JunoCam swath
+                // would do nothing unless the pan tool was chosen first.
+                const item = footprintAt(point[0], point[1]);
+                setHover(item === null ? null : { index: item.row, x: point[0], y: point[1], source: 'cpu' });
                 return;
               }
               setDrag((previous) => {
@@ -438,7 +547,12 @@ export function CatalogMap() {
             style={{ left: Math.min(hover.x + 12, size[0] - 260), top: Math.min(hover.y + 12, size[1] - 96) }}
           >
             <div>
-              <b data-testid="tooltip-product-id">{columns.productId[hoverIndex]}</b> ({columns.half[hoverIndex]})
+              <b data-testid="tooltip-product-id">{columns.productId[hoverIndex]}</b>{' '}
+              ({columns.half[hoverIndex] || columns.bands[hoverIndex] || '--'})
+            </div>
+            <div data-testid="tooltip-instrument">
+              {columns.instrument[hoverIndex] || 'JIRAM'}
+              {columns.qualityTier[hoverIndex] ? ` · tier ${columns.qualityTier[hoverIndex]}` : ''}
             </div>
             <div>{fmtTime(columns.startTimeMs[hoverIndex])}</div>
             <div>
@@ -452,7 +566,16 @@ export function CatalogMap() {
         )}
         <div className={styles.legend} data-testid="catalog-legend">
           <div style={{ marginBottom: 3 }}>{colorBy}</div>
-          {colorBy === 'orbit' || colorBy === 'year' ? (
+          {colorBy === 'instrument' ? (
+            <>
+              {INSTRUMENTS.map((name, index) => (
+                <div className={styles.swatchRow} key={name}>
+                  <span className={styles.swatch} style={{ background: rgbCss(categoricalColor(index)) }} />
+                  <span>{name}</span>
+                </div>
+              ))}
+            </>
+          ) : colorBy === 'orbit' || colorBy === 'year' ? (
             <div className={styles.swatchRow}>
               {[0, 1, 2, 3, 4, 5].map((k) => (
                 <span key={k} className={styles.swatch} style={{ background: rgbCss(categoricalColor(k)) }} />

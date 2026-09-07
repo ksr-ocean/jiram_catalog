@@ -305,6 +305,7 @@ def test_config_counts_the_synthetic_mirror(client, mirror):
     assert payload["mirror"] == str(mirror)
     assert payload["counts"] == {
         "frames_on_planet": 20,
+        "junocam_images": 0,
         "strips": 1,
         "stacks": 1,
         "selections": 0,
@@ -621,7 +622,9 @@ def test_strip_meta_and_image(client):
 
 
 def test_strip_stats_uses_the_contract_names(client, monkeypatch):
-    monkeypatch.setattr(api_data, "strip_stats", lambda mirror, strip: synthetic_stats())
+    monkeypatch.setattr(
+        api_data, "strip_stats", lambda mirror, strip, band=None: synthetic_stats()
+    )
     payload = client.get(f"/api/strips/{STRIP_ID}/stats").json()
     assert len(payload["k"]) == len(payload["E"]) == 40
     assert len(payload["r_m"]) == len(payload["S2"]) == len(payload["S3"]) == 20
@@ -687,3 +690,205 @@ def test_static_falls_back_to_a_hint_then_to_index_html(client, tmp_path, monkey
     assert "jiram" in client.get("/strips/04_L_synth_00").text, "client routes fall back"
     assert client.get("/assets/app.js").text == "console.log(1)"
     assert client.get("/api/nothing").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# the 2026-09-07 amendment: instruments, bands, footprints
+# ---------------------------------------------------------------------------
+BANDED_STACK_ID = "banded/junocam_RED-GREEN-BLUE_orbits4_frame"
+BANDED_STRIP_ID = "JNCR_TEST_04C00001_V01"
+BANDS = ["RED", "GREEN", "BLUE"]
+
+
+def synthetic_band_stack(steps: int = 2, size: int = 32) -> xr.Dataset:
+    """A JunoCam-shaped stack: ``(time, band, y, x)`` with a band-less mask."""
+    x_km, y_km, lat, lon = _grid(size)
+    rng = np.random.default_rng(11)
+    image = rng.normal(1.0, 0.1, (steps, 3, size, size)).astype("float32")
+    valid = np.ones((steps, size, size), dtype=bool)
+    valid[:, :2, :] = False
+    image[:, :, :2, :] = np.nan
+    return xr.Dataset(
+        data_vars={
+            "image": (("time", "band", "y", "x"), image),
+            "valid": (("time", "y", "x"), valid),
+            "emission": (("time", "band", "y", "x"), (60.0 * np.ones_like(image)).astype("float32")),
+            "n_frames": (("time", "band", "y", "x"), np.ones_like(image, dtype="uint8")),
+        },
+        coords={
+            "time": pd.to_datetime(["2017-02-02T08:10", "2017-02-02T08:20"])[:steps],
+            "band": ("band", np.array(BANDS)),
+            "x_km": ("x", x_km),
+            "y_km": ("y", y_km),
+            "lat": (("y", "x"), lat),
+            "lon_east": (("y", "x"), lon),
+            "product_id": ("time", np.array([f"JNCR_TEST_{i}" for i in range(steps)])),
+            "seq_id": ("time", np.array([f"JNCR_TEST_{i}" for i in range(steps)])),
+            "orbit": ("time", np.full(steps, 4, dtype="int32")),
+            "quality_tier": ("time", np.array(["A"] * steps)),
+            "dt_refined_s": ("time", np.array([0.003, np.nan][:steps], dtype="float32")),
+        },
+        attrs={
+            "region": "banded",
+            "instrument": "JunoCam",
+            "band": ";".join(BANDS),
+            "bands": ";".join(BANDS),
+            "level": "frame",
+            "km_per_px": 15.0,
+        },
+    )
+
+
+def synthetic_band_strip(size: int = 32) -> xr.Dataset:
+    """A JunoCam-shaped strip: ``(band, y, x)`` image, ``(y, x)`` mask."""
+    base = synthetic_strip(BANDED_STRIP_ID, size=size)
+    rng = np.random.default_rng(13)
+    image = rng.normal(1.0, 0.05, (3, size, size)).astype("float32")
+    dataset = xr.Dataset(
+        data_vars={
+            "image": (("band", "y", "x"), image),
+            "valid": (("y", "x"), np.asarray(base["valid"].values)),
+            "emission": (("band", "y", "x"), (45.0 * np.ones_like(image)).astype("float32")),
+            "incidence": (("band", "y", "x"), (70.0 * np.ones_like(image)).astype("float32")),
+        },
+        coords={
+            "band": ("band", np.array(BANDS)),
+            **{name: base[name] for name in ("x_km", "y_km", "lat", "lon_east", "local_time_h")},
+        },
+        attrs={**base.attrs, "strip_id": BANDED_STRIP_ID, "instrument": "JunoCam",
+               "band": ";".join(BANDS), "bands": ";".join(BANDS)},
+    )
+    return dataset
+
+
+@pytest.fixture(scope="module")
+def banded_mirror(tmp_path_factory) -> Path:
+    """A mirror whose only stack and strip carry a band axis."""
+    root = tmp_path_factory.mktemp("banded")
+    (root / "index").mkdir()
+    _frames_table().to_parquet(root / "index" / "frames.parquet")
+    _geo_table().to_parquet(root / "index" / "frames_geo.parquet")
+
+    write_stack(synthetic_band_stack(), root / "regions" / "banded" / f"{Path(BANDED_STACK_ID).name}.nc")
+
+    strip = synthetic_band_strip()
+    relative = Path("strips") / "junocam" / "orbit04" / f"{BANDED_STRIP_ID}.nc"
+    write_strip(strip, root / relative)
+    index = _strips_index(root, strip, str(relative))
+    index["strip_id"] = BANDED_STRIP_ID
+    index["instrument"] = "JunoCam"
+    index["band"] = ";".join(BANDS)
+    index["bands"] = ";".join(BANDS)
+    index.to_parquet(root / "strips" / "strips.parquet")
+    return root
+
+
+@pytest.fixture(scope="module")
+def banded_client(banded_mirror) -> TestClient:
+    api_catalog.clear_caches()
+    api_data._STACK_CACHE.clear()
+    api_data._STRIP_CACHE.clear()
+    api_data._STRIPS_CACHE.clear()
+    api_data._STATS_CACHE.clear()
+    with TestClient(create_app(banded_mirror)) as instance:
+        yield instance
+    api_catalog.clear_caches()
+
+
+def test_jiram_rows_declare_their_instrument_and_empty_footprint(client):
+    table = _arrow(client.get("/api/catalog/frames.arrow"))
+    assert set(table.column("instrument").to_pylist()) == {"JIRAM"}
+    assert set(table.column("quality_tier").to_pylist()) == {"A"}
+    assert {tuple(value) for value in table.column("bands").to_pylist()} == {("L",), ("M",)}
+    assert all(len(value) == 0 for value in table.column("fp_lon").to_pylist())
+    assert all(len(value) == 0 for value in table.column("fp_lat").to_pylist())
+
+
+def test_summary_filters_on_instrument_band_and_tier(client):
+    total = client.get("/api/catalog/summary").json()["n"]
+    assert client.get("/api/catalog/summary", params={"instrument": "JIRAM"}).json()["n"] == total
+    assert client.get("/api/catalog/summary", params={"instrument": "JunoCam"}).json()["n"] == 0
+    assert client.get("/api/catalog/summary", params={"bands": "M"}).json()["n"] == total // 2
+    assert client.get("/api/catalog/summary", params={"bands": "RED"}).json()["n"] == 0
+    # Every JIRAM row is tier A, so no tier threshold can hide one.
+    for tier in ("A", "B", "C"):
+        assert client.get("/api/catalog/summary", params={"quality_min": tier}).json()["n"] == total
+
+
+def test_apply_filters_hides_tier_c_unless_asked():
+    table = pd.DataFrame(
+        {
+            "orbit": [4, 4, 4],
+            "start_time": pd.to_datetime(["2017-02-02"] * 3),
+            "half": ["", "", ""],
+            "instrument": ["JunoCam"] * 3,
+            "bands": ["RED;GREEN;BLUE"] * 3,
+            "quality_tier": ["A", "B", "C"],
+        }
+    )
+    assert len(api_catalog.apply_filters(table)) == 2
+    assert len(api_catalog.apply_filters(table, quality_min="A")) == 1
+    assert len(api_catalog.apply_filters(table, quality_min="C")) == 3
+    assert len(api_catalog.apply_filters(table, bands="RED")) == 2
+    assert len(api_catalog.apply_filters(table, bands="L")) == 0
+
+
+def test_banded_stack_listing_and_meta(banded_client):
+    entry = banded_client.get("/api/stacks").json()[0]
+    assert entry["instrument"] == "JunoCam" and entry["bands"] == BANDS
+    meta = banded_client.get(f"/api/stacks/{entry['id']}/meta").json()
+    assert meta["bands"] == BANDS
+    assert set(meta["stretch"]) == set(BANDS)
+    assert all({"p1", "p99"} <= set(value) for value in meta["stretch"].values())
+    assert meta["per_time"][0]["quality_tier"] == "A"
+
+
+def test_banded_frame_png_needs_a_band_and_rgb_composites(banded_client):
+    import imageio.v3 as iio
+
+    assert banded_client.get(f"/api/stacks/{BANDED_STACK_ID}/frame/0.png").status_code == 400
+    assert (
+        banded_client.get(f"/api/stacks/{BANDED_STACK_ID}/frame/0.png", params={"band": "PURPLE"}).status_code
+        == 404
+    )
+    grey = banded_client.get(f"/api/stacks/{BANDED_STACK_ID}/frame/0.png", params={"band": "RED"})
+    assert grey.status_code == 200 and grey.headers["content-type"] == "image/png"
+    rgb = banded_client.get(f"/api/stacks/{BANDED_STACK_ID}/frame/0/rgb.png")
+    assert rgb.status_code == 200
+    picture = iio.imread(io.BytesIO(rgb.content))
+    assert picture.ndim == 3 and picture.shape[2] == 4
+    # Three independent random bands: the channels must not be identical.
+    assert not np.array_equal(picture[..., 0], picture[..., 1])
+    assert (picture[..., 3] == 0).any() and (picture[..., 3] == 255).any()
+
+
+def test_banded_strip_meta_image_and_stats(banded_client):
+    meta = banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/meta").json()
+    assert meta["bands"] == BANDS and set(meta["stretch"]) == set(BANDS)
+    assert banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/image.png").status_code == 200
+    assert (
+        banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/image.png", params={"band": "BLUE"}).status_code
+        == 200
+    )
+    assert (
+        banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/image.png", params={"band": "X"}).status_code
+        == 404
+    )
+    stats = banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/stats", params={"band": "GREEN"}).json()
+    assert len(stats["k"]) == len(stats["E"]) > 5
+    assert stats["attrs"]["band"] == "GREEN"
+
+
+def test_strips_arrow_carries_the_instrument(banded_client):
+    table = _arrow(banded_client.get("/api/strips.arrow"))
+    assert table.column("instrument").to_pylist() == ["JunoCam"]
+    assert table.column("bands").to_pylist() == [";".join(BANDS)]
+
+
+def test_build_request_needs_a_band_only_for_jiram(client):
+    assert client.post("/api/stacks/build", json={"region": "synthetic"}).status_code == 422
+    accepted = client.post(
+        "/api/stacks/build",
+        json={"region": "synthetic", "instrument": "JunoCam", "bands": BANDS, "orbits": [4]},
+    )
+    assert accepted.status_code == 200 and accepted.json()["job_id"]

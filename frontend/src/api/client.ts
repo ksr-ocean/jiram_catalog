@@ -93,15 +93,45 @@ export const api = {
 
   stacks: () => getJson<StackListing[]>('/api/stacks'),
   stackMeta: (id: string) => getJson<StackMeta>(`/api/stacks/${id}/meta`),
-  stackFrameUrl: (id: string, t: number, vmin?: number, vmax?: number, maxPx = 1600) =>
-    url(`/api/stacks/${id}/frame/${t}.png`, { vmin, vmax, max_px: maxPx }),
+  /** `band` is required by the contract once a stack has more than one. */
+  stackFrameUrl: (id: string, t: number, vmin?: number, vmax?: number, maxPx = 1600, band?: string | null) =>
+    url(`/api/stacks/${id}/frame/${t}.png`, { vmin, vmax, max_px: maxPx, band: band ?? undefined }),
+  /**
+   * The RGB composite of the amendment: one stretch pair per channel, so the
+   * three bands can be balanced against each other rather than sharing a
+   * range that suits none of them.
+   */
+  stackRgbUrl: (
+    id: string,
+    t: number,
+    stretch: { r: [number, number]; g: [number, number]; b: [number, number] },
+    maxPx = 1600,
+  ) =>
+    url(`/api/stacks/${id}/frame/${t}/rgb.png`, {
+      vmin_r: stretch.r[0],
+      vmax_r: stretch.r[1],
+      vmin_g: stretch.g[0],
+      vmax_g: stretch.g[1],
+      vmin_b: stretch.b[0],
+      vmax_b: stretch.b[1],
+      max_px: maxPx,
+    }),
   stackEmissionUrl: (id: string, t: number, maxPx = 1600) =>
     url(`/api/stacks/${id}/frame/${t}/emission.png`, { max_px: maxPx }),
   movieUrl: (id: string) => url(`/api/stacks/${id}/movie`),
   renderMovie: (id: string, body: { fps?: number; pct?: [number, number]; cmap?: string }) =>
     postJson<{ job_id: string }>(`/api/stacks/${id}/movie`, body),
-  buildStack: (body: { region: string; band: string; level: string; orbits?: number[]; selection_id?: string; max_emission?: number }) =>
-    postJson<{ job_id: string }>('/api/stacks/build', body),
+  buildStack: (body: {
+    region: string;
+    band: string;
+    level: string;
+    orbits?: number[];
+    selection_id?: string;
+    max_emission?: number;
+    instrument?: string;
+    bands?: string[];
+    quality_min?: string;
+  }) => postJson<{ job_id: string }>('/api/stacks/build', body),
   exportTriples: (id: string, body: { out_dir?: string; dt_tol?: number; min_frames?: number; crop_to_valid?: boolean }) =>
     postJson<{ job_id: string }>(`/api/stacks/${id}/export`, body),
 
@@ -109,9 +139,15 @@ export const api = {
     return (await request('/api/strips.arrow')).arrayBuffer();
   },
   stripMeta: (id: string) => getJson<StripMeta>(`/api/strips/${encodeURIComponent(id)}/meta`),
-  stripImageUrl: (id: string, vmin?: number, vmax?: number, maxPx = 1600) =>
-    url(`/api/strips/${encodeURIComponent(id)}/image.png`, { vmin, vmax, max_px: maxPx }),
-  stripStats: (id: string) => getJson<StripStats>(`/api/strips/${encodeURIComponent(id)}/stats`),
+  stripImageUrl: (id: string, vmin?: number, vmax?: number, maxPx = 1600, band?: string | null) =>
+    url(`/api/strips/${encodeURIComponent(id)}/image.png`, {
+      vmin,
+      vmax,
+      max_px: maxPx,
+      band: band ?? undefined,
+    }),
+  stripStats: (id: string, band?: string | null) =>
+    getJson<StripStats>(`/api/strips/${encodeURIComponent(id)}/stats`, { band: band ?? undefined }),
 
   jobs: () => getJson<JobRecord[]>('/api/jobs'),
   job: (id: string) => getJson<JobRecord>(`/api/jobs/${encodeURIComponent(id)}`),

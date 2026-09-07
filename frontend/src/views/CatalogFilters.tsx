@@ -1,8 +1,17 @@
 /** The filter row of the catalog toolbar; every control is labelled. */
+import { useMemo } from 'react';
 import styles from './Views.module.css';
 import { useStore } from '../store/store';
 import { DEFAULT_FILTERS } from '../lib/filters';
 import { LAT_BAND_NAMES, latBandLimits } from '../lib/latbands';
+import {
+  bandOptions,
+  INSTRUMENTS,
+  QUALITY_LABELS,
+  QUALITY_TIERS,
+  type Instrument,
+  type QualityTier,
+} from '../lib/bands';
 
 function numberOrNull(text: string): number | null {
   if (text.trim() === '') return null;
@@ -15,6 +24,16 @@ export function CatalogFilters() {
   const setFilters = useStore((s) => s.setFilters);
   const resetFilters = useStore((s) => s.resetFilters);
   const hasTrackability = useStore((s) => s.config?.has_trackability ?? false);
+  const bandsByInstrument = useStore((s) => s.bandsByInstrument);
+  const junocamImages = useStore((s) => s.config?.counts.junocam_images ?? 0);
+  const hasJunocam = junocamImages > 0 || bandsByInstrument.JunoCam !== undefined;
+
+  // The band options follow the instrument choice, so the menu never offers a
+  // band that nothing in view carries.
+  const bands = useMemo(
+    () => bandOptions(bandsByInstrument, filters.instrument),
+    [bandsByInstrument, filters.instrument],
+  );
 
   const bandName =
     LAT_BAND_NAMES.find((name) => {
@@ -45,6 +64,64 @@ export function CatalogFilters() {
         />
       </div>
       <div className={styles.sep} />
+      {hasJunocam && (
+        <div className={styles.group}>
+          <label htmlFor="f-instrument">instrument</label>
+          <select
+            id="f-instrument"
+            data-testid="filter-instrument"
+            value={filters.instrument}
+            onChange={(e) => {
+              const instrument = e.target.value as 'all' | Instrument;
+              // A band the new instrument does not have would filter the map
+              // down to nothing, so the band choice is dropped with it.
+              const keep =
+                filters.band !== null && bandOptions(bandsByInstrument, instrument).includes(filters.band);
+              setFilters({ instrument, band: keep ? filters.band : null });
+            }}
+          >
+            <option value="all">both</option>
+            {INSTRUMENTS.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className={styles.group}>
+        <label htmlFor="f-band">band</label>
+        <select
+          id="f-band"
+          data-testid="filter-band"
+          value={filters.band ?? 'all'}
+          onChange={(e) => setFilters({ band: e.target.value === 'all' ? null : e.target.value })}
+        >
+          <option value="all">all</option>
+          {bands.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {hasJunocam && (
+        <div className={styles.group}>
+          <label htmlFor="f-quality">quality</label>
+          <select
+            id="f-quality"
+            data-testid="filter-quality"
+            value={filters.qualityMin}
+            onChange={(e) => setFilters({ qualityMin: e.target.value as QualityTier })}
+          >
+            {QUALITY_TIERS.map((tier) => (
+              <option key={tier} value={tier}>
+                {QUALITY_LABELS[tier]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className={styles.group}>
         <label htmlFor="f-half">band half</label>
         <select

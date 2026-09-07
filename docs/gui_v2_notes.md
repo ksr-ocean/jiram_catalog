@@ -77,8 +77,12 @@ selection a human makes.
 
 It should be noted that the store also renders a hidden `<pre id="debug-state">`
 element, `src/components/DebugState.tsx`, carrying
-`{n_points, n_filtered, selection_n, view, stack_id, level, t, cmap, stats_visible}`
-as JSON. v1 could not be tested from the outside because everything it did
+`{n_points, n_filtered, selection_n, view, stack_id, level, t, cmap, stats_visible,
+instrument_filter, band, composite, n_footprints, strip_band, strip_composite}`
+as JSON. The last six arrived with the instrument work of 2026-09-07; `band` and
+`composite` are the Poles viewer's, which is what the amendment's tests name,
+and the strips viewer carries its own pair beside them rather than sharing one
+field whose meaning would depend on which tab happened to be open. v1 could not be tested from the outside because everything it did
 happened inside a server-rendered canvas; the debug element gives the Playwright suite a
 number to wait on instead of a screenshot to compare, and it is the reason the
 end-to-end tests are assertions rather than smoke tests.
@@ -99,7 +103,26 @@ because a frame whose boresight misses the planet has no latitude to be inside
 a band. A latitude bound is applied on the client exactly when
 `filtersToParams` sends it, viz. when it differs from the default, so the two
 counts match. The table caption prints both, which turns any future divergence
-into something the user sees rather than something they have to suspect.
+into something the user sees rather than something they have to suspect. Two
+smaller rules protect the same property: a summary response is kept only when
+the filters have not moved on since it was asked for, so two quick filter
+changes cannot leave the earlier answer on screen, and a failed summary drops
+the number entirely rather than leaving the previous filters' count beside a
+new client count, viz. the very disagreement the caption exists to expose.
+
+The amendment of 2026-09-07 adds three filters to the same vocabulary, viz. an
+instrument (JIRAM, JunoCam, or both), a band that a row must carry, and a
+minimum quality tier, and each follows the rule the others already do: they are
+equality or membership tests on a value a row either has or does not, and a row
+with no tier at all is kept. The band is a membership test rather than an
+equality one because a JunoCam row carries several bands at once, as the
+`;`-joined `bands` column of `frames.arrow`; `src/lib/bands.ts` scans that
+string for a whole token instead of splitting it, so a filter pass over 47,000
+rows still allocates nothing. The quality filter defaults to `B` rather than to
+`C` precisely so that the client and the server start out counting the same
+rows: the contract hides tier `C` unless it is asked for, and a client default
+of "show everything" would have disagreed with the server's summary on the
+first paint.
 
 ## The three views
 
@@ -116,10 +139,37 @@ fourteen pixels; the tooltip reports which of the two answered in its
 node it is GPU picking that answers. Box and lasso selection are a polygon
 test in the typed arrays: the screen polygon is unprojected once through the
 orthographic view's scalar zoom and the test is one pass over the filtered
-indices. Colour is by orbit, year, pixel size or emission, categorical for the
-first two and a viridis ramp for the last two, with a legend. Below the map,
+indices. Colour is by orbit, year, pixel size, emission or instrument, categorical for
+the first two and the last and a viridis ramp for the two physical quantities,
+with a legend. Below the map,
 the summary charts come from `/api/catalog/summary` and the table pages 200
 rows at a time with checkboxes and a client-side CSV blob.
+
+A JunoCam row is not a point. One JunoCam image is a swath tens of degrees
+across, and drawing it as its boresight would be a lie about what the
+instrument saw, so `frames.arrow` carries up to 64 vertices of the on-planet
+outline in `fp_lon`/`fp_lat` and the browser draws the outline itself, as a
+`PolygonLayer` beneath the points, stroked and filled at low alpha. Two things
+make that more than a `map` over the vertices, and both live in
+`src/lib/footprints.ts`. The first is the seam: an outline that straddles 0/360
+is one shape on the sphere and two on a cylindrical map, and drawing it as one
+polygon paints a band right across the picture, so the ring is cut at the seam
+with the crossing latitude interpolated, which is what makes the two pieces
+meet their edges at the same place. The second is the pole: an outline that
+encircles a pole never closes in cylindrical coordinates at all, so the ring's
+winding is accumulated and, when it comes to a full turn, the polygon is closed
+over the top or bottom edge of the map, the hemisphere being read off the mean
+latitude of the vertices. In the two polar projections neither problem exists,
+the seam being a radius and the pole the origin, so there the vertices are
+simply projected with the equator as a clamp rather than a cut. The outlines
+are pickable on the same terms as the points, by the GPU when the pan tool is
+out and by a bounding-box rejection followed by the same point-in-polygon test
+the box tool uses when the selection overlay is covering the canvas; the points
+are drawn above the outlines so that a boresight inside a swath, of which there
+are many, is still the more precise target. Of course a footprint is two orders
+of magnitude more geometry than a point, so `computeFootprints` stops at four
+thousand outlines, which is a guard on the repaint budget rather than a policy
+about what the user may see.
 
 The Poles view (`src/views/PolesView.tsx`) lists stacks from `/api/stacks`,
 opens one through `/meta`, and plays its frames. The colour map is the
@@ -161,6 +211,25 @@ every sweep is bit-for-bit the snapshot `composite_sequences` would produce
 and the first is the bare frame; the extra `seq_index`/`seq_n` coordinates it
 carries are what the time label turns into "sweep k, frame i of n".
 
+Not every instrument has three modes. A JIRAM sweep is a region filling in
+frame by frame, so a per-sequence snapshot and an accumulating sweep are both
+meaningful views of the same frames; a JunoCam image is already the whole
+swath, so `frame` is the only level its stacks come in and `availableLevels`
+hides the other two rather than offering to build files that cannot exist. A
+stack that carries a `band` dimension gains a band selector beside the colour
+map and, when RED, GREEN and BLUE are all present, an RGB composite as one more
+entry in the same menu, the composite being a mode rather than a fourth band.
+It is the one picture in the application the browser does not colour-map: it
+arrives from the contract's `frame/{t}/rgb.png` already carrying three bands,
+`ImageView` draws its bytes as they are, and the colour-map control is disabled
+while it is on screen, since a lookup table over three channels is not a colour
+map but a mistake. Each channel takes its own stretch pair, defaulting to
+`meta.stretch[band]`, and a "link bands" toggle, on by default, drives all
+three from the one pair on the toolbar; unlinking it puts three pairs on
+screen, which is what a deliberate colour balance needs and what a first look
+at a composite does not. The stretches are remembered per band, so moving
+between bands and back does not undo an adjustment.
+
 The Strips view (`src/views/StripsView.tsx`) is the same viewer over
 `/api/strips/{id}/image.png`, with local-time contours as a second path layer,
 beside a filtered table of `strips.arrow` and a small map of strip centres
@@ -173,10 +242,29 @@ along x and y, and the structure functions with S2 on a log axis and the
 signed S3 on a linear secondary axis -- and it starts hidden behind the
 toolbar's "Show statistics" toggle, whose state lives in the store, is mirrored
 into `localStorage`, and gives the image viewer the panel's height whenever the
-figures are away.
+figures are away. A JunoCam strip holds several bands in one file, so the table
+gains an instrument filter and a band filter whose options come from the strips
+actually loaded, and the viewer gains the same band selector the Poles viewer
+has; the band on screen is also the band the statistics are computed for, which
+the contract exposes as `stats?band=` and the panel's headings name, so a
+spectrum is never quietly the wrong filter's. The strip composite, however,
+takes a different route from the stack's. The amendment gives a strip
+`image.png?band=` and no composite endpoint of its own, so the three band
+images are fetched and combined in the browser (`src/lib/rgb.ts`), with the
+alpha channel the union of the three validity masks rather than their
+intersection, since an edge pixel that one filter saw and another did not is
+real data and intersecting would eat a band off every edge where the three
+swaths do not quite overlap. Both routes end at the same object, viz. one RGBA
+buffer with a band per channel, which is why `ImageView` needs one `composite`
+flag and not two code paths.
 
 The selection tray, `src/components/SelectionTray.tsx`, is the organising
-object and is always visible. v1 had "Send to Poles" and "Send to Strips"
+object and is always visible. It counts the working selection by instrument as
+well as by orbit, latitude and band, and its build dialog now chooses the
+instrument first, because the contract's build endpoint takes a single `band`
+for a JIRAM stack and a list of `bands` for a JunoCam one and the two do not
+offer the same levels; choosing the instrument therefore rewrites the rest of
+the form rather than leaving controls on screen that the job would ignore. v1 had "Send to Poles" and "Send to Strips"
 buttons whose effect was invisible, so the user could not tell what had been
 sent or that anything had; the tray replaces the metaphor with a permanent
 column showing what is in the selection, a name field, save and load against
@@ -205,7 +293,19 @@ The unit suite covers the projections including the antimeridian and the
 hemisphere masks, the latitude-band binning against the trackability edges,
 every catalog filter once including both missing-value rules, the query-string
 mapping, the polygon tests, the LUT endpoints, and the selection store
-including a save round trip against a mocked `fetch`. The end-to-end suite
+including a save round trip against a mocked `fetch`. The instrument work adds
+three groups to it: the seam splitting, viz. an outline that misses the seam
+left as one polygon, an outline that straddles it cut into two that meet the
+edges at the interpolated latitude, and an outline that encircles a pole closed
+over the top of the map with its two corner vertices, together with the
+degenerate cases (fewer than three usable vertices, a NaN, a repeated closing
+vertex) and the polar projections, where the equator is a clamp; the instrument,
+band and quality filters against a fixture that now carries two JunoCam rows,
+one of them multi-band and tier `B`, including the whole-token band test that
+keeps `RED` from matching `INFRARED`; and the composite state, viz. which
+stretch pair each channel receives linked and unlinked, what a band switch does
+to the stretch on the toolbar, and the channel-wise composition with its union
+alpha. The end-to-end suite
 runs headless Chromium against a live backend and asserts on the debug
 element and the DOM: the catalog draws at least forty thousand points, a
 filter reduces the count and the server agrees with it, hovering a dense area
@@ -216,7 +316,19 @@ its first frame, switching mode to the instrument frames changes both
 `sweep k, frame i of n` and follows the slider, changing the colour map
 changes both `cmap` and a sampled pixel of the colour-mapped canvas, the movie
 element reaches `readyState >= 1`, and the strip statistics render as Plotly
-figures.
+figures. `e2e/instruments.spec.ts` adds the JunoCam half: the instrument filter
+reduces `n_filtered` and raises `n_footprints` above zero while the server's
+count still agrees with the client's, the band menu offers RED and not M once
+JunoCam is chosen, hovering a footprint produces a tooltip naming the product
+and the instrument, the legend names both instruments when colour is by
+instrument, a JunoCam stack shows its band selector and only the `frame` mode
+and, switched to RGB, sets `composite` true, marks the canvas
+`data-composite="true"`, disables the colour maps and changes the sampled
+pixel, and a JunoCam strip computes and plots its statistics for GREEN. Each of
+those skips itself when `/api/config` reports `counts.junocam_images == 0`,
+which is not a courtesy but the point: the gate runs this file against whatever
+the mirror holds, and a test that fails for want of data says nothing about the
+code.
 
 There is no GPU on the cluster node, so all of this runs on Chromium's
 SwiftShader implementation of WebGL 2, which deck.gl accepts and which does

@@ -1,0 +1,223 @@
+/**
+ * Bands and colour composites: the stretch state, the request each mode
+ * makes, and the browser-side composition the strips viewer needs.
+ *
+ * The two composites take different routes on purpose.  A stack has its three
+ * bands in one file, so the contract gives it `frame/{t}/rgb.png` and the
+ * server does the work; a strip has `image.png?band=` and nothing else, so
+ * the three images are fetched and combined here.  Both end at one RGBA
+ * buffer with a band per channel, and `ImageView` draws it without a LUT.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../src/api/client';
+import type { ImagePayload, StackMeta } from '../src/api/types';
+import { bandForChannel, hasRgb, isPerBandStretch, resolveStretch, uniqueBands } from '../src/lib/bands';
+import { composePayloads, composeRgb } from '../src/lib/rgb';
+import { compositeStretch, useStore } from '../src/store/store';
+
+const META: StackMeta = {
+  id: 'north_pole_paper/junocam_RED-GREEN-BLUE_orbits4_frame',
+  region: 'north_pole_paper',
+  band: 'RGB',
+  level: 'frame',
+  instrument: 'JunoCam',
+  bands: ['RED', 'GREEN', 'BLUE'],
+  km_per_px: 15,
+  x_km: [0, 1],
+  y_km: [0, 1],
+  shape: [4, 4],
+  times: ['a', 'b'],
+  per_time: [{ i: 0 }, { i: 1 }],
+  stretch: { RED: { p1: 1, p99: 9 }, GREEN: { p1: 2, p99: 8 }, BLUE: { p1: 3, p99: 7 } },
+  graticule: { type: 'FeatureCollection', features: [] },
+};
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+/** An `n`-pixel grayscale-plus-alpha buffer: value in red, validity in alpha. */
+function gray(values: number[], alphas: number[]): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(values.length * 4);
+  values.forEach((value, i) => {
+    out[4 * i] = value;
+    out[4 * i + 3] = alphas[i];
+  });
+  return out;
+}
+
+function payload(data: Uint8ClampedArray, width = 2, height = 1): ImagePayload {
+  return { bitmap: null as unknown as ImageBitmap, gray: data, width, height, bounds: [0, 1, 0, 1], stride: 1 };
+}
+
+describe('per-band stretch', () => {
+  it('tells one pair from a pair per band', () => {
+    expect(isPerBandStretch({ p1: 0, p99: 1 })).toBe(false);
+    expect(isPerBandStretch(META.stretch)).toBe(true);
+    expect(isPerBandStretch(null)).toBe(false);
+  });
+
+  it('resolves a band to its own pair, and an unknown band to the first', () => {
+    expect(resolveStretch(META.stretch, 'GREEN')).toEqual({ p1: 2, p99: 8 });
+    expect(resolveStretch(META.stretch, 'green')).toEqual({ p1: 2, p99: 8 });
+    expect(resolveStretch(META.stretch, 'METHANE')).toEqual({ p1: 1, p99: 9 });
+    expect(resolveStretch(META.stretch, null)).toEqual({ p1: 1, p99: 9 });
+  });
+
+  it('gives a single-band stack the one pair whatever band is asked for', () => {
+    expect(resolveStretch({ p1: 4, p99: 6 }, 'M')).toEqual({ p1: 4, p99: 6 });
+    expect(resolveStretch(undefined, 'M')).toEqual({ p1: 0, p99: 1 });
+  });
+
+  it('deduplicates a band list, whatever shape the backend sends it in', () => {
+    expect(uniqueBands(['RED', 'GREEN', 'BLUE'])).toEqual(['RED', 'GREEN', 'BLUE']);
+    // A backend that reports one entry per time step must not fill the
+    // selector with hundreds of copies of the same band.
+    expect(uniqueBands(Array(294).fill('M'))).toEqual(['M']);
+    expect(uniqueBands(['RED', 'red', '', ' '])).toEqual(['RED']);
+    expect(uniqueBands(null)).toEqual([]);
+  });
+
+  it('knows when a composite is possible and which band is which channel', () => {
+    expect(hasRgb(['RED', 'GREEN', 'BLUE'])).toBe(true);
+    expect(hasRgb(['red', 'green', 'blue', 'METHANE'])).toBe(true);
+    expect(hasRgb(['RED', 'GREEN'])).toBe(false);
+    expect(hasRgb(null)).toBe(false);
+    expect(bandForChannel(['RED', 'GREEN', 'BLUE'], 'g')).toBe('GREEN');
+    expect(bandForChannel(['L', 'M'], 'r')).toBeNull();
+  });
+
+  it('sends one pair to all three channels when the bands are linked', () => {
+    const state = {
+      stackBands: ['RED', 'GREEN', 'BLUE'],
+      linkBands: true,
+      bandStretch: { RED: [1, 9] as [number, number], GREEN: [2, 8] as [number, number], BLUE: [3, 7] as [number, number] },
+      vmin: 0,
+      vmax: 100,
+    };
+    expect(compositeStretch(state)).toEqual({ r: [0, 100], g: [0, 100], b: [0, 100] });
+    expect(compositeStretch({ ...state, linkBands: false })).toEqual({ r: [1, 9], g: [2, 8], b: [3, 7] });
+  });
+
+  it('falls back to the shared pair for a band with no stretch of its own', () => {
+    expect(
+      compositeStretch({ stackBands: ['RED', 'GREEN', 'BLUE'], linkBands: false, bandStretch: {}, vmin: 5, vmax: 6 }),
+    ).toEqual({ r: [5, 6], g: [5, 6], b: [5, 6] });
+  });
+});
+
+describe('the requests each mode makes', () => {
+  it('names the band on a single-band request and omits it when there is none', () => {
+    expect(api.stackFrameUrl('r/s', 3, 1, 2, 800, 'GREEN')).toContain('band=GREEN');
+    expect(api.stackFrameUrl('r/s', 3, 1, 2, 800)).not.toContain('band=');
+    expect(api.stackFrameUrl('r/s', 3, 1, 2, 800, null)).not.toContain('band=');
+  });
+
+  it('sends six stretch bounds to the composite endpoint', () => {
+    const target = api.stackRgbUrl('r/s', 2, { r: [1, 9], g: [2, 8], b: [3, 7] }, 900);
+    expect(target).toContain('/api/stacks/r/s/frame/2/rgb.png');
+    for (const pair of ['vmin_r=1', 'vmax_r=9', 'vmin_g=2', 'vmax_g=8', 'vmin_b=3', 'vmax_b=7', 'max_px=900']) {
+      expect(target).toContain(pair);
+    }
+  });
+
+  it('asks a strip for one band at a time, and for that band\'s statistics', () => {
+    expect(api.stripImageUrl('s1', 0, 1, 800, 'BLUE')).toContain('band=BLUE');
+    expect(api.stripStats).toBeTypeOf('function');
+  });
+});
+
+describe('composing three bands in the browser', () => {
+  it('puts each band in its channel', () => {
+    const out = composeRgb(gray([10, 20], [255, 255]), gray([30, 40], [255, 255]), gray([50, 60], [255, 255]));
+    expect([...out.slice(0, 4)]).toEqual([10, 30, 50, 255]);
+    expect([...out.slice(4, 8)]).toEqual([20, 40, 60, 255]);
+  });
+
+  it('keeps a pixel any one band saw, and zeroes the channels that saw nothing', () => {
+    const out = composeRgb(gray([10, 0], [255, 0]), gray([30, 40], [0, 255]), gray([50, 0], [255, 0]));
+    // First pixel: red and blue valid, green not -- green reads zero, alpha 255.
+    expect([...out.slice(0, 4)]).toEqual([10, 0, 50, 255]);
+    // Second pixel: only green -- still drawn, because it is real data.
+    expect([...out.slice(4, 8)]).toEqual([0, 40, 0, 255]);
+  });
+
+  it('drops a pixel no band saw', () => {
+    const out = composeRgb(gray([9], [0]), gray([9], [0]), gray([9], [0]));
+    expect(out[3]).toBe(0);
+  });
+
+  it('refuses to compose three images the server sized differently', () => {
+    const a = payload(gray([1, 2], [255, 255]));
+    const b = payload(gray([1, 2], [255, 255]));
+    const c = payload(gray([1], [255]), 1, 1);
+    expect(composePayloads(a, b, c)).toBeNull();
+    const composed = composePayloads(a, b, payload(gray([3, 4], [255, 255])));
+    expect(composed?.width).toBe(2);
+    expect(composed?.bounds).toEqual([0, 1, 0, 1]);
+  });
+});
+
+describe('the stack viewer\'s band state', () => {
+  beforeEach(() => {
+    useStore.setState({
+      stackId: null,
+      stackMeta: null,
+      stackBands: [],
+      band: null,
+      composite: false,
+      linkBands: true,
+      bandStretch: {},
+      toasts: [],
+    });
+    // Every image request fails in node; the state under test is set before
+    // the fetch and the store turns the failure into a toast, not a throw.
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(META)));
+  });
+
+  it('opens on the first band, in single-band mode, with a pair per band', async () => {
+    await useStore.getState().openStack(META.id);
+    const state = useStore.getState();
+    expect(state.stackBands).toEqual(['RED', 'GREEN', 'BLUE']);
+    expect(state.band).toBe('RED');
+    expect(state.composite).toBe(false);
+    expect(state.vmin).toBe(1);
+    expect(state.vmax).toBe(9);
+    expect(state.bandStretch).toEqual({ RED: [1, 9], GREEN: [2, 8], BLUE: [3, 7] });
+  });
+
+  it('switching band moves the stretch with it', async () => {
+    await useStore.getState().openStack(META.id);
+    useStore.getState().setBand('BLUE');
+    expect(useStore.getState().band).toBe('BLUE');
+    expect([useStore.getState().vmin, useStore.getState().vmax]).toEqual([3, 7]);
+  });
+
+  it('the composite is a mode, and the band survives leaving it', async () => {
+    await useStore.getState().openStack(META.id);
+    useStore.getState().setBand('GREEN');
+    useStore.getState().setComposite(true);
+    expect(useStore.getState().composite).toBe(true);
+    expect(useStore.getState().band).toBe('GREEN');
+    useStore.getState().setComposite(false);
+    expect(useStore.getState().composite).toBe(false);
+  });
+
+  it('an edited stretch is remembered per band', async () => {
+    await useStore.getState().openStack(META.id);
+    useStore.getState().setStretch(0, 5);
+    expect(useStore.getState().bandStretch.RED).toEqual([0, 5]);
+    useStore.getState().setBandStretch('BLUE', 1, 2);
+    expect(useStore.getState().bandStretch.BLUE).toEqual([1, 2]);
+    useStore.getState().setLinkBands(false);
+    expect(compositeStretch(useStore.getState())).toEqual({ r: [0, 5], g: [2, 8], b: [1, 2] });
+  });
+
+  it('a single-band stack has no band selector state at all', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...META, bands: [], stretch: { p1: 0, p99: 1 } })));
+    await useStore.getState().openStack('north_pole_paper/M_orbits4_sequence');
+    expect(useStore.getState().stackBands).toEqual([]);
+    expect(useStore.getState().band).toBeNull();
+    expect([useStore.getState().vmin, useStore.getState().vmax]).toEqual([0, 1]);
+  });
+});

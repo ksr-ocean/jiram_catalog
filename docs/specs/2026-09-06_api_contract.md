@@ -65,3 +65,33 @@ needed (same origin); the backend serves the built front end at `/`.
 
 ## Static
 - `GET /` and any non-`/api` path -> the built front end (`index.html` fallback for client routing) from `src/jiram_catalog/webapp/dist/`; 503 with a plain-text hint when the bundle is missing.
+
+## Amendment 2026-09-07: instruments, bands, footprints (JunoCam)
+- `GET /api/config.counts` gains `junocam_images`.
+- `frames.arrow` gains columns: `instrument` (utf8: `JIRAM` or `JunoCam`),
+  `bands` (list<utf8>; JIRAM: one entry, the half `L`/`M`; JunoCam:
+  the FILTER_NAME order; CORRECTED 2026-09-07 from a `;`-joined string
+  because methane-only products exist), `quality_tier` (utf8: `A`/`B`/`C`, `A` for
+  JIRAM rows), `fp_lon` and `fp_lat` (list<float32>, up to 64 vertices
+  of the on-planet footprint outline in east longitude and
+  planetocentric latitude, split into separate polygons on the seam by
+  the client; empty lists for JIRAM rows). JunoCam rows: one per RDR
+  image with geometry (`junocam_geo.parquet`), `half` = `""`, `orbit`,
+  `seq_id` = product id, `start_time_ms`, `bore_*` = swath-centre
+  values, `on_planet_frac`, `median_pixel_km`, `dayside_frac`,
+  `min_lat`, `max_lat`, `lon_span_deg`, `pole_inside`, corners NaN,
+  `has_partner` false, `best_dt_s` NaN.
+- Summary filters gain `instrument` (`JIRAM`|`JunoCam`|absent for both),
+  `bands` (a band name that must be present: `L`, `M`, `RED`, `GREEN`,
+  `BLUE`, `METHANE`), `quality_min` (`A`|`B`|`C`, default `B`: rows of
+  tier `C` are hidden unless `quality_min=C`).
+- `GET /api/stacks` items gain `instrument` and `bands` (list); stacks
+  with a `band` dimension expose `meta.bands`; `frame/{t}.png` accepts
+  `band=<name>` (required when the stack has several bands) and
+  `frame/{t}/rgb.png?vmin_r&vmax_r&...` returns an RGB composite
+  (per-band linear stretch, defaults from `meta.stretch[band]`).
+- `POST /api/stacks/build` gains `instrument` (default `JIRAM`),
+  `bands` (list; JunoCam default `["RED","GREEN","BLUE"]`),
+  `quality_min` (default `A`).
+- `strips.arrow` gains `instrument` and `bands`; strip `meta.bands`;
+  `image.png?band=`; `stats?band=` (default: the first band).

@@ -660,7 +660,29 @@ def _strip_arrays(dataset: xr.Dataset) -> tuple[np.ndarray, np.ndarray, float]:
     return image, valid, float(km_per_px) * 1000.0
 
 
-def strip_statistics(ds: xr.Dataset, *, max_lag_px: int = 64) -> xr.Dataset:
+def select_band(ds: xr.Dataset, band: str | None = None) -> tuple[xr.Dataset, str | None]:
+    """One band of a multi-band strip, and its name.
+
+    A JIRAM strip has no ``band`` dimension and is returned unchanged; a
+    JunoCam strip has one and the statistics are of one band at a time,
+    because a spectrum of three co-registered colours stacked together is not
+    a spectrum of anything.  ``band=None`` takes the first band, which is the
+    order the label's ``FILTER_NAME`` gave.
+    """
+    if "band" not in ds.dims:
+        return ds, ds.attrs.get("band")
+    names = [str(value) for value in np.asarray(ds["band"].values)]
+    if not names:
+        raise KeyError("the strip has an empty band dimension")
+    wanted = names[0] if band is None else str(band).upper()
+    if wanted not in names:
+        raise KeyError(f"unknown band {wanted!r}; the strip carries {names}")
+    return ds.isel(band=names.index(wanted)), wanted
+
+
+def strip_statistics(
+    ds: xr.Dataset, band: str | None = None, *, max_lag_px: int = 64
+) -> xr.Dataset:
     """The standard statistics of one strip, as a small Dataset.
 
     Isotropic (shell) spectrum on ``k``; one-dimensional spectra along ``x`` and
@@ -668,7 +690,12 @@ def strip_statistics(ds: xr.Dataset, *, max_lag_px: int = 64) -> xr.Dataset:
     canvas is not square); second- and third-order structure functions on ``r``,
     pooled over the two axes.  The strip's identifying attributes are copied
     over, along with the conventions tag.
+
+    ``band`` selects one band of a multi-band (JunoCam) strip and is ignored
+    by a strip that has only one; the band that was used is recorded in the
+    result's ``band`` attribute either way.
     """
+    ds, selected = select_band(ds, band)
     image, valid, dx_m = _strip_arrays(ds)
     spec = power_spectrum_2d(image, valid, dx_m=dx_m)
     shells = isotropic_spectrum(spec)
@@ -703,6 +730,8 @@ def strip_statistics(ds: xr.Dataset, *, max_lag_px: int = 64) -> xr.Dataset:
     for name in STRIP_ATTRS:
         if name in ds.attrs:
             out.attrs[name] = ds.attrs[name]
+    if selected is not None:
+        out.attrs["band"] = str(selected)
     out.attrs.update(
         conventions=CONVENTIONS_VERSION,
         dx_m=dx_m,
@@ -845,7 +874,12 @@ def _configure(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--mirror", help="local mirror root")
     parser.add_argument("--orbits", default="all", metavar="SPEC",
                         help="all or e.g. 4,5,10-20")
-    parser.add_argument("--band", choices=["L", "M"], help="restrict to one band")
+    parser.add_argument(
+        "--band",
+        choices=["L", "M", "RED", "GREEN", "BLUE", "METHANE"],
+        help="restrict to strips carrying this band, and reduce that band of a "
+        "multi-band strip (default: the strip's first band)",
+    )
     parser.add_argument("--resolution-class", type=float, metavar="KM",
                         help="only strips of this km_per_px class (required for --population)")
     parser.add_argument("--max-lag-px", type=int, default=64,
@@ -926,10 +960,16 @@ def run(args: argparse.Namespace) -> int:
         paths.append(source)
         dataset = strips_module.read_strip(root, str(row["strip_id"]))
         try:
-            stats = strip_statistics(dataset, max_lag_px=int(args.max_lag_px))
+            # A JunoCam strip has one spectrum per band, so the band goes in
+            # the file name too; a JIRAM strip keeps the name it always had.
+            banded = "band" in dataset.dims
+            stats = strip_statistics(
+                dataset, band=getattr(args, "band", None), max_lag_px=int(args.max_lag_px)
+            )
         finally:
             dataset.close()
-        target = out_dir / f"{row['strip_id']}_stats.nc"
+        suffix = f"__{stats.attrs['band']}" if banded else ""
+        target = out_dir / f"{row['strip_id']}{suffix}_stats.nc"
         stats.to_netcdf(target, format="NETCDF4", engine="netcdf4")
         written.append(target)
         LOGGER.info("wrote %s", target)

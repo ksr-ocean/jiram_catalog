@@ -524,10 +524,12 @@ def build_strip(
         },
         attrs={
             "strip_id": identifier,
+            "instrument": "JIRAM",
             "orbit": int(orbit),
             "seq_id": sequence,
             "chunk_index": int(chunk_index),
             "band": band,
+            "bands": band,
             "n_frames": int(len(selected)),
             "time_start": normalise_epoch(start),
             "time_end": normalise_epoch(end),
@@ -574,8 +576,8 @@ def build_strip(
 # --------------------------------------------------------------------------
 #: Attributes of a strip, in the order the index carries them.
 INDEX_ATTRS: tuple[str, ...] = (
-    "strip_id", "orbit", "seq_id", "chunk_index", "band", "n_frames",
-    "time_start", "time_end", "time_mid", "center_lat", "center_lon_east",
+    "strip_id", "instrument", "orbit", "seq_id", "chunk_index", "band", "bands",
+    "n_frames", "time_start", "time_end", "time_mid", "center_lat", "center_lon_east",
     "km_per_px", "resolution_class", "projection", "valid_frac", "dayside_frac",
     "median_emission", "lat_min", "lat_max", "lon_min_east", "lon_max_east",
     "lon_span_deg", "pole_inside", "created_utc", "software",
@@ -590,7 +592,9 @@ def write_strip(dataset: xr.Dataset, path: str | Path) -> Path:
     encoding: dict[str, dict[str, Any]] = {}
     for name in list(dataset.data_vars) + ["lat", "lon_east", "local_time_h"]:
         variable = dataset[name]
-        if variable.dims != ("y", "x"):
+        # ``(y, x)`` for a JIRAM strip, ``(band, y, x)`` for a JunoCam one: the
+        # test is on the trailing axes so both are deflated by the same rule.
+        if variable.dims[-2:] != ("y", "x"):
             continue
         encoding[name] = {"zlib": True, "complevel": COMPRESSION_LEVEL}
         if variable.dtype.kind == "f":
@@ -611,9 +615,56 @@ def index_row(dataset: xr.Dataset, path: str | Path, root: str | Path) -> dict[s
     return row
 
 
+def ensure_instrument_columns(table: pd.DataFrame) -> pd.DataFrame:
+    """Give an index written before the instrument column its two new columns.
+
+    A row that predates JunoCam is a JIRAM row with one band, which is what a
+    missing ``instrument`` and a missing ``bands`` mean; filling them here
+    rather than only on disk means a mirror that is never rebuilt still
+    answers the amended contract.
+    """
+    if "instrument" not in table.columns:
+        table["instrument"] = "JIRAM"
+    else:
+        table["instrument"] = (
+            table["instrument"].where(table["instrument"].notna(), "JIRAM").astype(str)
+        )
+    if "band" in table.columns:
+        fallback = table["band"].astype(str)
+    else:
+        fallback = pd.Series([""] * len(table), index=table.index)
+    if "bands" not in table.columns:
+        table["bands"] = fallback
+    else:
+        table["bands"] = table["bands"].where(table["bands"].notna(), fallback).astype(str)
+    return table
+
+
+def migrate_index(mirror: str | Path | None = None) -> Path | None:
+    """Add ``instrument`` and ``bands`` to an index written without them.
+
+    A no-op once the columns are there, so it is safe to call before every
+    build; ``None`` comes back when there is no index yet to migrate.
+    """
+    path = strips_index_path(mirror)
+    if not path.exists():
+        return None
+    table = pd.read_parquet(path)
+    if "instrument" in table.columns and "bands" in table.columns:
+        return path
+    LOGGER.info("adding instrument/bands to %d index row(s) of %s", len(table), path)
+    migrated = ensure_instrument_columns(table)
+    ordered = [name for name in INDEX_COLUMNS if name in migrated.columns]
+    ordered += [name for name in migrated.columns if name not in ordered]
+    temporary = path.with_suffix(".parquet.tmp")
+    migrated[ordered].to_parquet(temporary, index=False)
+    temporary.replace(path)
+    return path
+
+
 def _coerce_index(table: pd.DataFrame) -> pd.DataFrame:
     """Give the index its natural dtypes: real timestamps, a real boolean."""
-    table = table.copy()
+    table = ensure_instrument_columns(table.copy())
     for name in ("time_start", "time_end", "time_mid"):
         if name in table.columns and table[name].dtype.kind != "M":
             table[name] = pd.to_datetime(table[name], errors="coerce")
@@ -649,6 +700,14 @@ def read_strip(mirror: str | Path | None, strip: str) -> xr.Dataset:
         if match.empty:
             raise ValueError(f"unknown strip_id: {text!r}")
         path = root / str(match["path"].iloc[0])
+    if not path.is_file():
+        # A JunoCam strip lives under ``strips/junocam/orbitNN``; an index row
+        # written by an older run may still name the JIRAM layout.
+        alternative = next(
+            (root / "strips" / "junocam").glob(f"orbit*/{Path(text).stem}.nc"), None
+        )
+        if alternative is not None:
+            path = alternative
     return xr.open_dataset(path, engine="netcdf4")
 
 
@@ -656,6 +715,7 @@ def load_strips(
     mirror: str | Path | None = None,
     *,
     orbits: Iterable[int] | None = None,
+    instrument: str | None = None,
     band: str | None = None,
     lat_min: float | None = None,
     lat_max: float | None = None,
@@ -667,16 +727,28 @@ def load_strips(
 ) -> pd.DataFrame:
     """The library index, filtered.
 
-    Latitude and time are *overlap* filters -- a strip is returned when its own
-    span meets the query's span, which is what a coverage question actually
-    asks -- while resolution, valid fraction and dayside fraction are
-    thresholds on the strip's own scalar.
+    ``instrument`` selects one instrument's strips; ``band`` names one band and
+    matches a multi-band row that carries it.  Latitude and time are *overlap*
+    filters -- a strip is returned when its own span meets the query's span,
+    which is what a coverage question actually asks -- while resolution, valid
+    fraction and dayside fraction are thresholds on the strip's own scalar.
     """
     table = _coerce_index(load_index(mirror))
     if orbits is not None:
         table = table.loc[table["orbit"].isin(sorted({int(v) for v in orbits}))]
+    if instrument is not None:
+        table = table.loc[
+            table["instrument"].astype(str).str.lower() == str(instrument).lower()
+        ]
     if band is not None:
-        table = table.loc[table["band"].astype(str) == str(band).upper()]
+        # ``band`` names one band, and a JunoCam row carries several: the row
+        # matches when the band it asks for is one of the row's own.
+        wanted = str(band).upper()
+        names = table["bands"].astype(str).str.upper().str.split(";")
+        table = table.loc[
+            (table["band"].astype(str).str.upper() == wanted)
+            | names.apply(lambda values: wanted in [value.strip() for value in values])
+        ]
     if lat_min is not None:
         table = table.loc[table["lat_max"] >= float(lat_min)]
     if lat_max is not None:

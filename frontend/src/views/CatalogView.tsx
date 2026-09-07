@@ -20,8 +20,10 @@ const PAGE_SIZE = 200;
 
 const TABLE_COLUMNS = [
   'product_id',
+  'instrument',
   'half',
-  'band',
+  'bands',
+  'quality_tier',
   'orbit',
   'seq_id',
   'start_time',
@@ -91,8 +93,10 @@ export function CatalogView({ active }: { active: boolean }) {
   const downloadCsv = () => {
     const body = Array.from(filtered, (i) => [
       columns.productId[i],
+      columns.instrument[i],
       columns.half[i],
-      columns.band[i],
+      columns.bands[i],
+      columns.qualityTier[i],
       columns.orbit[i],
       columns.seqId[i],
       fmtTime(columns.startTimeMs[i]),
@@ -191,8 +195,10 @@ export function CatalogView({ active }: { active: boolean }) {
                       {columns.productId[i]}
                     </a>
                   </td>
+                  <td>{columns.instrument[i]}</td>
                   <td>{columns.half[i]}</td>
-                  <td>{columns.band[i]}</td>
+                  <td>{columns.bands[i]}</td>
+                  <td>{columns.qualityTier[i]}</td>
                   <td>{columns.orbit[i]}</td>
                   <td>{columns.seqId[i]}</td>
                   <td>{fmtTime(columns.startTimeMs[i])}</td>

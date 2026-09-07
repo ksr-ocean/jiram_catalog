@@ -9,12 +9,31 @@
  */
 import { Table, tableFromIPC, type Vector } from 'apache-arrow';
 
+/**
+ * A `list<float32>` column as one values array plus row offsets.
+ *
+ * `offsets[i]` .. `offsets[i + 1]` is row `i`'s slice of `values`, which is
+ * the same shape Arrow itself stores and lets a footprint reach the geometry
+ * code as a `subarray` rather than a fresh array per row.
+ */
+export interface ListColumn {
+  readonly values: Float32Array;
+  readonly offsets: Int32Array;
+}
+
 export interface CatalogColumns {
   readonly n: number;
   readonly productId: string[];
   readonly half: string[];
   readonly band: string[];
   readonly seqId: string[];
+  /** Amendment 2026-09-07: `JIRAM` or `JunoCam`; `JIRAM` on an older backend. */
+  readonly instrument: string[];
+  /** The row's bands: the half for JIRAM, `;`-joined filters for JunoCam. */
+  readonly bands: string[];
+  readonly qualityTier: string[];
+  readonly fpLon: ListColumn;
+  readonly fpLat: ListColumn;
   readonly orbit: Float32Array;
   readonly startTimeMs: Float64Array;
   readonly year: Int16Array;
@@ -86,11 +105,52 @@ export function boolColumn(table: Table, name: string): Uint8Array {
   return out;
 }
 
-/** A utf8 column as a plain string array. */
-export function stringColumn(table: Table, name: string): string[] {
+const EMPTY_LIST: ListColumn = { values: new Float32Array(0), offsets: new Int32Array(1) };
+
+/** An empty list column of `n` rows: every offset zero, no values. */
+function emptyList(n: number): ListColumn {
+  return { values: new Float32Array(0), offsets: new Int32Array(n + 1) };
+}
+
+/**
+ * A `list<float32>` column flattened into values and offsets.
+ *
+ * Arrow's own list vector already stores exactly this, but its offsets are
+ * per chunk, and a missing column has to degrade to "no vertices" rather than
+ * throw -- a backend that predates the amendment sends neither footprint
+ * column and the map must still draw its points.
+ */
+export function listColumn(table: Table, name: string): ListColumn {
+  const vector = table.getChild(name) as Vector | null;
+  if (!vector) return emptyList(table.numRows);
+  const offsets = new Int32Array(table.numRows + 1);
+  const chunks: ArrayLike<number>[] = [];
+  let total = 0;
+  for (let i = 0; i < table.numRows; i++) {
+    const value = vector.get(i) as { toArray?: () => ArrayLike<number>; length?: number } | null;
+    let flat: ArrayLike<number> | null = null;
+    if (value !== null && value !== undefined) {
+      if (typeof value.toArray === 'function') flat = value.toArray();
+      else if (typeof value.length === 'number') flat = value as unknown as ArrayLike<number>;
+    }
+    const length = flat ? flat.length : 0;
+    chunks.push(flat ?? []);
+    total += length;
+    offsets[i + 1] = total;
+  }
+  const values = new Float32Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    for (let j = 0; j < chunk.length; j++) values[at++] = Number(chunk[j]);
+  }
+  return { values, offsets };
+}
+
+/** A utf8 column as a plain string array; `fallback` when the column is absent. */
+export function stringColumn(table: Table, name: string, fallback = ''): string[] {
   const vector = table.getChild(name) as Vector | null;
   const out = new Array<string>(table.numRows);
-  if (!vector) return out.fill('');
+  if (!vector) return out.fill(fallback);
   for (let i = 0; i < table.numRows; i++) {
     const value = vector.get(i);
     out[i] = value === null || value === undefined ? '' : String(value);
@@ -111,6 +171,13 @@ export function columnsFromTable(table: Table): CatalogColumns {
     half: stringColumn(table, 'half'),
     band: stringColumn(table, 'band'),
     seqId: stringColumn(table, 'seq_id'),
+    // A backend from before the amendment sends none of these five: every row
+    // is then a JIRAM row of tier A with no outline, which is what it was.
+    instrument: stringColumn(table, 'instrument', 'JIRAM'),
+    bands: bandsColumn(table),
+    qualityTier: stringColumn(table, 'quality_tier', 'A'),
+    fpLon: listColumn(table, 'fp_lon'),
+    fpLat: listColumn(table, 'fp_lat'),
     orbit: intColumn(table, 'orbit'),
     startTimeMs,
     year,
@@ -129,6 +196,67 @@ export function columnsFromTable(table: Table): CatalogColumns {
   };
 }
 
+/**
+ * The distinct band names each instrument actually has, for the band filter.
+ *
+ * The options have to come from the data rather than from a constant: which
+ * JunoCam filters are in the mirror depends on which orbits were indexed, and
+ * offering a band nothing carries is offering an empty map.
+ */
+export function bandsByInstrument(columns: CatalogColumns): Record<string, string[]> {
+  const found = new Map<string, Set<string>>();
+  for (let i = 0; i < columns.n; i++) {
+    const instrument = columns.instrument[i] || 'JIRAM';
+    let set = found.get(instrument);
+    if (!set) {
+      set = new Set<string>();
+      found.set(instrument, set);
+    }
+    const field = columns.bands[i];
+    if (!field) continue;
+    for (const name of field.split(';')) {
+      const trimmed = name.trim();
+      if (trimmed) set.add(trimmed);
+    }
+  }
+  const out: Record<string, string[]> = {};
+  for (const [instrument, set] of found) out[instrument] = [...set].sort();
+  return out;
+}
+
+/**
+ * The `bands` column, whatever shape it arrives in.
+ *
+ * The contract specifies a utf8 column with the names joined by `;`, but a
+ * backend may equally send it as `list<utf8>`, and reading a list vector
+ * through `String()` yields `[RED,GREEN,BLUE]`, which then looks like one
+ * band with an odd name and quietly empties the band menu.  Both shapes are
+ * normalised to the `;`-joined form the filters expect; a backend with no
+ * `bands` column at all is a JIRAM-only one, whose band is its half.
+ */
+export function bandsColumn(table: Table): string[] {
+  const vector = table.getChild('bands') as Vector | null;
+  if (!vector) return stringColumn(table, 'half');
+  const out = new Array<string>(table.numRows);
+  for (let i = 0; i < table.numRows; i++) {
+    const value = vector.get(i) as unknown;
+    if (value === null || value === undefined) {
+      out[i] = '';
+    } else if (typeof value === 'string') {
+      out[i] = value;
+    } else if (Array.isArray(value)) {
+      out[i] = value.map((name) => String(name)).join(';');
+    } else if (typeof (value as { toArray?: unknown }).toArray === 'function') {
+      out[i] = Array.from((value as { toArray: () => ArrayLike<unknown> }).toArray(), (name) =>
+        String(name),
+      ).join(';');
+    } else {
+      out[i] = String(value);
+    }
+  }
+  return out;
+}
+
 /** Parse the Arrow IPC bytes and split them in one step. */
 export function columnsFromIPC(bytes: ArrayBuffer | Uint8Array): CatalogColumns {
   return columnsFromTable(tableFromIPC(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)));
@@ -140,6 +268,11 @@ export const EMPTY_COLUMNS: CatalogColumns = {
   half: [],
   band: [],
   seqId: [],
+  instrument: [],
+  bands: [],
+  qualityTier: [],
+  fpLon: EMPTY_LIST,
+  fpLat: EMPTY_LIST,
   orbit: new Float32Array(0),
   startTimeMs: new Float64Array(0),
   year: new Int16Array(0),

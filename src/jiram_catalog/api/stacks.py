@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from ..config import mirror_root
 from . import data, images
@@ -48,7 +48,16 @@ PER_TIME_COORDS: tuple[str, ...] = (
     "bore_emission",
     "seq_index",
     "seq_n",
+    # JunoCam only: the tier the quality table gave the image and the
+    # limb-fitted offset that was applied to its epochs (NaN where the image
+    # had too little sunlit limb to fit one).
+    "quality_tier",
+    "dt_refined_s",
 )
+
+#: Which bands a colour composite puts on which channel, when the stack has
+#: them; a stack without all three falls back to its first three bands.
+RGB_BANDS: tuple[str, ...] = ("RED", "GREEN", "BLUE")
 
 #: Suffixes a rendered movie may have, best first.
 MOVIE_SUFFIXES: tuple[str, ...] = (".mp4", ".gif")
@@ -135,6 +144,49 @@ def attrs_of(dataset: xr.Dataset) -> dict[str, Any]:
     return {str(name): _scalar(value) for name, value in dataset.attrs.items()}
 
 
+def band_names(dataset: xr.Dataset) -> list[str]:
+    """The stack's band names, or an empty list for a band-less stack.
+
+    The names come from the ``band`` coordinate rather than from the ``bands``
+    attribute, because the coordinate is what an index into the array means.
+    """
+    if "band" not in dataset.dims:
+        return []
+    if "band" in dataset.coords:
+        return [str(value) for value in np.asarray(dataset["band"].values)]
+    return [str(index) for index in range(int(dataset.sizes["band"]))]
+
+
+def instrument_of(dataset: xr.Dataset) -> str:
+    """The instrument a stack came from; a file written before the amendment
+    carries no such attribute and can only be JIRAM."""
+    return str(dataset.attrs.get("instrument", "JIRAM"))
+
+
+def band_index(dataset: xr.Dataset, band: str | None) -> int | None:
+    """Position of ``band`` in the stack, or ``None`` for a band-less stack.
+
+    A multi-band stack has no default band -- the contract makes ``band``
+    required for it -- because serving one of three colours as though it were
+    "the" image is exactly the confusion the band axis exists to prevent.
+    """
+    names = band_names(dataset)
+    if not names:
+        return None
+    if band is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"this stack has several bands; pass band=<one of {', '.join(names)}>",
+        )
+    wanted = str(band).strip().upper()
+    upper = [name.upper() for name in names]
+    if wanted not in upper:
+        raise HTTPException(
+            status_code=404, detail=f"unknown band {band!r}; the stack carries {names}"
+        )
+    return upper.index(wanted)
+
+
 def linestrings(paths: list[np.ndarray], properties: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """A list of ``(N, 2)`` km polylines as a GeoJSON ``FeatureCollection``.
 
@@ -170,7 +222,11 @@ def graticule_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
 
 
 def stretch_of(
-    mirror: str | Path | None, identifier: str, dataset: xr.Dataset, path: Path
+    mirror: str | Path | None,
+    identifier: str,
+    dataset: xr.Dataset,
+    path: Path,
+    band: str | None = None,
 ) -> dict[str, float]:
     """The 1st and 99th percentiles, computed once and cached on disk.
 
@@ -178,6 +234,10 @@ def stretch_of(
     strided to a couple of million values.  Reading every pixel of every
     step would cost a gigabyte of I/O for a number the eye cannot tell
     apart from this one.
+
+    A multi-band stack gets one stretch per band -- three colour strips of one
+    camera differ in throughput by tens of per cent, so a shared stretch would
+    tint the composite -- and they share one cache file keyed by band name.
     """
     cache = meta_cache_path(mirror, identifier)
     try:
@@ -185,20 +245,47 @@ def stretch_of(
         signature = f"{stat.st_mtime_ns}:{stat.st_size}"
     except OSError:
         signature = ""
+    key = "" if band is None else str(band).strip().upper()
+    entries: dict[str, dict[str, float]] = {}
     if cache.exists():
         try:
             stored = json.loads(cache.read_text(encoding="utf-8"))
-            if stored.get("signature") == signature and "stretch" in stored:
-                return {"p1": float(stored["stretch"]["p1"]), "p99": float(stored["stretch"]["p99"])}
+            if stored.get("signature") == signature:
+                entries = {str(k): dict(v) for k, v in (stored.get("bands") or {}).items()}
+                if "stretch" in stored and "" not in entries:
+                    entries[""] = dict(stored["stretch"])
+                if key in entries:
+                    return {
+                        "p1": float(entries[key]["p1"]),
+                        "p99": float(entries[key]["p99"]),
+                    }
         except (OSError, ValueError, KeyError, TypeError) as exc:
             LOGGER.warning("unreadable stretch cache %s: %s", cache, exc)
-    low, high = data.stack_stretch(dataset, key=str(identifier))
+    plane = dataset
+    if key:
+        index = band_index(dataset, key)
+        plane = dataset.isel(band=index) if index is not None else dataset
+    low, high = data.stack_stretch(plane, key=f"{identifier}::{key}")
     stretch = {"p1": float(low), "p99": float(high)}
+    entries[key] = stretch
+    payload: dict[str, Any] = {"signature": signature, "bands": entries}
+    if "" in entries:
+        payload["stretch"] = entries[""]
     try:
-        cache.write_text(json.dumps({"signature": signature, "stretch": stretch}), encoding="utf-8")
+        cache.write_text(json.dumps(payload), encoding="utf-8")
     except OSError as exc:
         LOGGER.warning("cannot write %s: %s", cache, exc)
     return stretch
+
+
+def stretch_for_meta(
+    mirror: str | Path | None, identifier: str, dataset: xr.Dataset, path: Path
+) -> dict[str, Any]:
+    """``{p1, p99}`` for a band-less stack, ``{band: {p1, p99}}`` for a banded one."""
+    names = band_names(dataset)
+    if not names:
+        return stretch_of(mirror, identifier, dataset, path)
+    return {name: stretch_of(mirror, identifier, dataset, path, name) for name in names}
 
 
 def per_time_records(dataset: xr.Dataset) -> list[dict[str, Any]]:
@@ -301,7 +388,9 @@ def listing(mirror: str | Path | None = None) -> list[dict[str, Any]]:
             {
                 "id": identifier,
                 "region": str(dataset.attrs.get("region", Path(path).parent.name)),
+                "instrument": instrument_of(dataset),
                 "band": _scalar(dataset.attrs.get("band")),
+                "bands": band_names(dataset) or [str(dataset.attrs.get("band", ""))],
                 "level": level,
                 "label": level_label(level),
                 "path": str(path),
@@ -383,11 +472,14 @@ class MovieRequest(BaseModel):
 
 class BuildRequest(BaseModel):
     region: str
-    band: str
+    band: str = ""
     level: str = "frame"
     orbits: list[int] | None = None
     selection_id: str | None = None
     max_emission: float | None = None
+    instrument: str = "JIRAM"
+    bands: list[str] | None = None
+    quality_min: str = "A"
 
     @field_validator("level")
     @classmethod
@@ -401,6 +493,19 @@ class BuildRequest(BaseModel):
         if text not in LEVEL_LABELS:
             raise ValueError(f"level must be one of {', '.join(LEVEL_ORDER)}")
         return text
+
+    @model_validator(mode="after")
+    def _band_or_bands(self) -> "BuildRequest":
+        """A JIRAM build names one band; a JunoCam build names a band list.
+
+        Rejected here rather than in the job, for the same reason the level is:
+        a 422 on the request beats a failure eight minutes into a reprojection.
+        """
+        if str(self.instrument).strip().lower() == "junocam":
+            return self
+        if not str(self.band).strip():
+            raise ValueError("band is required for a JIRAM build")
+        return self
 
 
 class ExportRequest(BaseModel):
@@ -436,10 +541,24 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
         orbits: list[int] | None,
         selection_id: str | None,
         max_emission: float | None,
+        instrument: str = "JIRAM",
+        bands: list[str] | None = None,
+        quality_min: str = "A",
     ) -> dict[str, Any]:
         from .. import stacks as stacks_module
         from .selections import load_one
 
+        if str(instrument).lower() == "junocam":
+            return _build_junocam(
+                progress,
+                root=root,
+                region=region,
+                orbits=orbits,
+                bands=bands,
+                quality_min=quality_min,
+                max_emission=max_emission,
+                selection_id=selection_id,
+            )
         progress(0.02, "selecting frames")
         selected = stacks_module.select_frames(
             root,
@@ -503,6 +622,49 @@ def register_jobs(manager: Any, mirror: str | Path | None) -> None:
     manager.register("goflow_export", export)
 
 
+def _build_junocam(
+    progress: Callable[..., None],
+    *,
+    root: Path,
+    region: str,
+    orbits: list[int] | None,
+    bands: list[str] | None,
+    quality_min: str,
+    max_emission: float | None,
+    selection_id: str | None,
+) -> dict[str, Any]:
+    """The JunoCam arm of the build job: same shape, other instrument."""
+    from ..junocam import stacks as junocam_stacks
+    from ..stacks import write_stack
+    from .selections import load_one
+
+    names = [str(name).upper() for name in (bands or list(RGB_BANDS))]
+    progress(0.02, "selecting images")
+    selected = junocam_stacks.select_images(
+        root,
+        region,
+        orbits,
+        quality_min=quality_min,
+        bands=names,
+        **({} if max_emission is None else {"max_emission": float(max_emission)}),
+    )
+    if selection_id:
+        wanted = set(load_one(root, selection_id).get("product_ids", []))
+        selected = selected.loc[selected["product_id"].astype(str).isin(wanted)]
+    if selected.empty:
+        raise ValueError("no JunoCam image of that region, band set and orbit set survives the cuts")
+    progress(0.1, f"reprojecting {len(selected)} image(s)")
+    # jobs=1: build_stack spawns its own ``spawn`` pool above one, and a
+    # spawned pool inside a server worker thread would re-import the app.
+    dataset = junocam_stacks.build_stack(root, region, selected, names, jobs=1)
+    token = "all" if not orbits else ",".join(str(int(value)) for value in sorted(set(orbits)))
+    target = junocam_stacks.stack_output_path(root, region, names, token, "frame")
+    progress(0.92, f"writing {target.name}")
+    write_stack(dataset, target)
+    progress(1.0, "done")
+    return {"stack_id": stack_id(target), "path": str(target)}
+
+
 # ---------------------------------------------------------------------------
 # routes
 # ---------------------------------------------------------------------------
@@ -522,6 +684,9 @@ def post_build(request: Request, body: BuildRequest) -> dict[str, str]:
             "orbits": body.orbits,
             "selection_id": body.selection_id,
             "max_emission": body.max_emission,
+            "instrument": body.instrument,
+            "bands": body.bands,
+            "quality_min": body.quality_min,
         },
     )
     return {"job_id": record["id"]}
@@ -542,7 +707,9 @@ def get_meta(request: Request, identifier: str) -> dict[str, Any]:
     return {
         "id": identifier,
         "region": str(dataset.attrs.get("region", Path(path).parent.name)),
+        "instrument": instrument_of(dataset),
         "band": _scalar(dataset.attrs.get("band")),
+        "bands": band_names(dataset),
         "level": _scalar(dataset.attrs.get("level")),
         "km_per_px": _scalar(dataset.attrs.get("km_per_px")),
         "x_km": [float(x_km.min()), float(x_km.max())],
@@ -550,7 +717,7 @@ def get_meta(request: Request, identifier: str) -> dict[str, Any]:
         "shape": [int(dataset.sizes.get("y", 0)), int(dataset.sizes.get("x", 0))],
         "times": [pd.Timestamp(value).isoformat() for value in times],
         "per_time": per_time_records(dataset),
-        "stretch": stretch_of(mirror, identifier, dataset, path),
+        "stretch": stretch_for_meta(mirror, identifier, dataset, path),
         "graticule": graticule_geojson(dataset, f"stack::{identifier}"),
         "attrs": attrs_of(dataset),
     }
@@ -558,11 +725,75 @@ def get_meta(request: Request, identifier: str) -> dict[str, Any]:
 
 @router.get("/{identifier:path}/frame/{index}/emission.png")
 def get_emission_png(
-    request: Request, identifier: str, index: int, max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000)
+    request: Request,
+    identifier: str,
+    index: int,
+    band: str | None = None,
+    max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
 ) -> Response:
     dataset = data.open_stack(resolve(request.app.state.mirror, identifier))
-    plane, valid = _plane(dataset, "emission", index)
+    plane, valid = _plane(dataset, "emission", index, band)
     payload, stride, shape = images.emission_png(plane, valid, max_px=max_px)
+    return _png_response(dataset, payload, stride, shape)
+
+
+@router.get("/{identifier:path}/frame/{index}/rgb.png")
+def get_rgb_png(
+    request: Request,
+    identifier: str,
+    index: int,
+    vmin_r: float | None = None,
+    vmax_r: float | None = None,
+    vmin_g: float | None = None,
+    vmax_g: float | None = None,
+    vmin_b: float | None = None,
+    vmax_b: float | None = None,
+    max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
+) -> Response:
+    """One time step of a multi-band stack as a colour composite.
+
+    Each channel is stretched on its own limits, defaulting to that band's
+    entry in ``meta.stretch``: the three JunoCam colour strips differ in
+    throughput by tens of per cent and share a stretch only at the cost of a
+    tint that is the camera's, not the planet's.
+    """
+    mirror = request.app.state.mirror
+    path = resolve(mirror, identifier)
+    dataset = data.open_stack(path)
+    names = band_names(dataset)
+    if not names:
+        raise HTTPException(status_code=404, detail=f"{identifier} has no band dimension")
+    upper = [name.upper() for name in names]
+    channels = (
+        list(RGB_BANDS)
+        if all(name in upper for name in RGB_BANDS)
+        else [names[position] for position in range(min(3, len(names)))]
+    )
+    limits = (
+        (vmin_r, vmax_r),
+        (vmin_g, vmax_g),
+        (vmin_b, vmax_b),
+    )
+    planes: list[np.ndarray] = []
+    stretched: list[np.ndarray] = []
+    mask: np.ndarray | None = None
+    stride = 1
+    for position, name in enumerate(channels):
+        plane, valid = _plane(dataset, "image", index, name)
+        if not planes:
+            stride = images.stride_for(plane.shape, max_px)
+        sub = np.asarray(plane)[::stride, ::stride]
+        stretch = stretch_of(mirror, identifier, dataset, path, name)
+        low = stretch["p1"] if limits[position][0] is None else float(limits[position][0])
+        high = stretch["p99"] if limits[position][1] is None else float(limits[position][1])
+        grey, finite = images.stretch_to_uint8(sub, low, high)
+        if valid is not None:
+            finite = finite & np.asarray(valid, dtype=bool)[::stride, ::stride]
+        mask = finite if mask is None else (mask | finite)
+        planes.append(sub)
+        stretched.append(grey)
+    payload = _rgba_png(stretched, mask)
+    shape = (int(stretched[0].shape[0]), int(stretched[0].shape[1]))
     return _png_response(dataset, payload, stride, shape)
 
 
@@ -571,6 +802,7 @@ def get_frame_png(
     request: Request,
     identifier: str,
     index: int,
+    band: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
@@ -578,8 +810,8 @@ def get_frame_png(
     mirror = request.app.state.mirror
     path = resolve(mirror, identifier)
     dataset = data.open_stack(path)
-    stretch = stretch_of(mirror, identifier, dataset, path)
-    plane, valid = _plane(dataset, "image", index)
+    stretch = stretch_of(mirror, identifier, dataset, path, band if band_names(dataset) else None)
+    plane, valid = _plane(dataset, "image", index, band)
     payload, stride, shape = images.plane_png(
         plane,
         valid,
@@ -635,20 +867,45 @@ def post_export(request: Request, identifier: str, body: ExportRequest) -> dict[
 # ---------------------------------------------------------------------------
 # helpers the routes share
 # ---------------------------------------------------------------------------
-def _plane(dataset: xr.Dataset, name: str, index: int) -> tuple[np.ndarray, np.ndarray | None]:
-    """One time step of ``name`` and its validity mask."""
+def _plane(
+    dataset: xr.Dataset, name: str, index: int, band: str | None = None
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """One time step of ``name``, in one band, and its validity mask.
+
+    ``valid`` has no band axis even where the image does -- it says the map
+    pixel was painted at all -- so it is selected on time alone.
+    """
     if name not in dataset:
         raise HTTPException(status_code=404, detail=f"the stack has no {name!r} variable")
     steps = int(dataset.sizes.get("time", 1))
     if not 0 <= int(index) < steps:
         raise HTTPException(status_code=404, detail=f"time index {index} outside 0..{steps - 1}")
+    position = band_index(dataset, band)
     variable = dataset[name]
     plane = variable.isel(time=int(index)) if "time" in variable.dims else variable
+    if position is not None and "band" in plane.dims:
+        plane = plane.isel(band=position)
     valid = None
     if "valid" in dataset:
         mask = dataset["valid"]
-        valid = np.asarray((mask.isel(time=int(index)) if "time" in mask.dims else mask).values, dtype=bool)
+        if "time" in mask.dims:
+            mask = mask.isel(time=int(index))
+        if position is not None and "band" in mask.dims:
+            mask = mask.isel(band=position)
+        valid = np.asarray(mask.values, dtype=bool)
     return np.asarray(plane.values), valid
+
+
+def _rgba_png(channels: list[np.ndarray], mask: np.ndarray | None) -> bytes:
+    """Three stretched 8-bit planes plus a validity mask as one RGBA PNG."""
+    import imageio.v3 as iio
+
+    rows, cols = channels[0].shape
+    rgba = np.zeros((rows, cols, 4), dtype=np.uint8)
+    for position in range(3):
+        rgba[..., position] = channels[min(position, len(channels) - 1)]
+    rgba[..., 3] = 255 if mask is None else np.where(mask, 255, 0).astype(np.uint8)
+    return bytes(iio.imwrite("<bytes>", rgba, extension=".png"))
 
 
 def _png_response(dataset: xr.Dataset, payload: bytes, stride: int, shape: tuple[int, int]) -> Response:

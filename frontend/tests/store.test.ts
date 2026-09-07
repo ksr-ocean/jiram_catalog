@@ -161,3 +161,23 @@ describe('saved selections', () => {
     expect(useStore.getState().selectionKeys.size).toBe(0);
   });
 });
+
+describe('the server summary beside the client filter', () => {
+  it('keeps a response only while the filters it was asked for still stand', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ n: 42, by_lat_band: [], by_orbit: [], by_month: [] })));
+    await useStore.getState().refreshSummary();
+    expect(useStore.getState().summary?.n).toBe(42);
+  });
+
+  it('drops the summary when the request fails, rather than showing a stale count', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ n: 42, by_lat_band: [], by_orbit: [], by_month: [] })));
+    await useStore.getState().refreshSummary();
+    expect(useStore.getState().summary).not.toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ detail: 'summary failed' }, 500)));
+    await useStore.getState().refreshSummary();
+    // A caption reading "server agrees: 42" under different filters would be
+    // exactly the disagreement this store exists to prevent.
+    expect(useStore.getState().summary).toBeNull();
+    expect(useStore.getState().toasts.at(-1)?.text).toContain('summary failed');
+  });
+});

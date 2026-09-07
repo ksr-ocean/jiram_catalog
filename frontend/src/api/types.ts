@@ -9,6 +9,8 @@ export interface AppConfig {
     strips: number;
     stacks: number;
     selections: number;
+    /** Amendment 2026-09-07; absent on a backend that predates it. */
+    junocam_images?: number;
   };
   has_trackability: boolean;
 }
@@ -41,6 +43,10 @@ export interface StackListing {
   region: string;
   band: string;
   level: string;
+  /** `JIRAM` or `JunoCam`; absent means JIRAM (the pre-amendment backend). */
+  instrument?: string;
+  /** Band names of a stack with a `band` dimension; absent or empty if none. */
+  bands?: string[] | null;
   /** The browser's name for `level` ("Accumulating sweep", ...). */
   label?: string;
   /** Ids of the stacks of the same region, band and orbits, by level. */
@@ -77,6 +83,18 @@ export interface PerTimeRecord {
   seq_n?: number | null;
 }
 
+/** The p1/p99 pair a stretch slider starts from. */
+export interface Stretch {
+  p1: number;
+  p99: number;
+}
+
+/**
+ * One pair for a single-band stack, one pair per band for a stack with a
+ * `band` dimension (the amendment's `meta.stretch[band]`).
+ */
+export type StretchField = Stretch | Record<string, Stretch>;
+
 export interface StackMeta {
   id: string;
   region: string;
@@ -88,8 +106,10 @@ export interface StackMeta {
   shape: [number, number];
   times: string[];
   per_time: PerTimeRecord[];
-  stretch: { p1: number; p99: number };
+  stretch: StretchField;
   graticule: GeoJsonCollection;
+  instrument?: string;
+  bands?: string[] | null;
   attrs?: Record<string, unknown>;
 }
 
@@ -98,9 +118,11 @@ export interface StripMeta {
   x_km: [number, number];
   y_km: [number, number];
   shape: [number, number];
-  stretch: { p1: number; p99: number };
+  stretch: StretchField;
   graticule: GeoJsonCollection;
   local_time_contours?: GeoJsonCollection;
+  instrument?: string;
+  bands?: string[] | null;
 }
 
 export interface StripStats {

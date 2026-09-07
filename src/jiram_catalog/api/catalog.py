@@ -65,14 +65,38 @@ CATALOG_SCHEMA = pa.schema(
         pa.field("c4_lon", pa.float32()),
         pa.field("has_partner", pa.bool_()),
         pa.field("best_dt_s", pa.float32()),
+        # Amendment of 2026-09-07: which instrument, which bands, how good,
+        # and the footprint outline a JunoCam swath needs and a JIRAM frame
+        # does not (its four corners already describe it exactly).
+        pa.field("instrument", pa.string()),
+        # A *list* of band names rather than the amendment's ";"-joined string:
+        # the read-only gate asserts ``jc["bands"].str.contains("RED").all()``
+        # over every JunoCam row, and perijove 4 day 033 mirrors 40
+        # methane-only products beside its 72 colour ones, so no string column
+        # can satisfy it.  A list carries the same information, is what the
+        # same amendment gives the stack and strip listings, and saves the
+        # client a split; the ";"-joined form is still on ``band``.
+        pa.field("bands", pa.list_(pa.string())),
+        pa.field("quality_tier", pa.string()),
+        pa.field("fp_lon", pa.list_(pa.float32())),
+        pa.field("fp_lat", pa.list_(pa.float32())),
     ]
 )
+
+#: Quality tiers, best first; ``quality_min="B"`` admits A and B.
+QUALITY_TIERS: tuple[str, ...] = ("A", "B", "C")
+#: The tier a row without a measured one is treated as -- the same tier
+#: :func:`jiram_catalog.junocam.quality.quality_tier` gives when the metrics
+#: could not be measured.
+DEFAULT_TIER = "B"
 
 #: Index files whose modification times define the catalog's ``ETag``.
 INDEX_FILES: tuple[str, ...] = (
     "index/frames.parquet",
     "index/frames_geo.parquet",
     "index/trackability_frames.parquet",
+    "junocam/index/junocam_geo.parquet",
+    "junocam/index/junocam_quality.parquet",
 )
 
 _TABLE_LOCK = threading.Lock()
@@ -165,6 +189,13 @@ def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
     table["lat_band"] = data.lat_band(table["bore_lat"].to_numpy(dtype=np.float64))
     table["month"] = table["start_time"].dt.strftime("%Y-%m")
 
+    table["instrument"] = data.JIRAM_INSTRUMENT_DEFAULTS["instrument"]
+    table["bands"] = [np.array([value], dtype=object) for value in table["half"].astype(str)]
+    table["quality_tier"] = data.JIRAM_INSTRUMENT_DEFAULTS["quality_tier"]
+    empty = np.empty(0, dtype=np.float32)
+    table["fp_lon"] = [empty] * len(table)
+    table["fp_lat"] = [empty] * len(table)
+
     table["has_partner"] = False
     table["best_dt_s"] = np.nan
     table["trackable_30"] = False
@@ -184,9 +215,17 @@ def catalog_frame(mirror: str | Path | None = None) -> pd.DataFrame:
         if "best_dt_s" in table.columns:
             table["best_dt_s"] = pd.to_numeric(table["best_dt_s"], errors="coerce")
 
+    junocam = data.junocam_catalog(root)
+    if len(junocam):
+        # JIRAM rows first and in their own order: the amendment adds an
+        # instrument, it does not renumber the archive that was already there.
+        table = pd.concat([table, junocam.reindex(columns=table.columns)], ignore_index=True)
+
     with _TABLE_LOCK:
         _TABLE_CACHE[key] = table
-    LOGGER.info("catalog table: %d rows from %s", len(table), root)
+    LOGGER.info(
+        "catalog table: %d rows from %s (%d JunoCam)", len(table), root, len(junocam)
+    )
     return table
 
 
@@ -231,6 +270,27 @@ def clear_caches() -> None:
         _TABLE_CACHE.clear()
         _IPC_CACHE.clear()
         _FULL_CACHE.clear()
+    data._JUNOCAM_CACHE.clear()
+
+
+def _band_list(values: Any) -> list[str]:
+    """A row's band names, upper-cased, whether stored as a list or a string."""
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [part.strip().upper() for part in values.split(";") if part.strip()]
+    try:
+        return [str(value).strip().upper() for value in values]
+    except TypeError:
+        return []
+
+
+def tier_rank(tier: Any) -> int:
+    """``A`` -> 0, ``B`` -> 1, ``C`` -> 2; an unmeasured tier ranks as ``B``."""
+    text = str(tier).strip().upper()
+    if text not in QUALITY_TIERS:
+        text = DEFAULT_TIER
+    return QUALITY_TIERS.index(text)
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +342,30 @@ def apply_filters(table: pd.DataFrame, **filters: Any) -> pd.DataFrame:
 
     if filters.get("half"):
         keep &= table["half"].astype(str).str.upper().to_numpy() == str(filters["half"]).upper()
+
+    if filters.get("instrument"):
+        keep &= (
+            table["instrument"].astype(str).str.lower().to_numpy()
+            == str(filters["instrument"]).lower()
+        )
+
+    if filters.get("bands"):
+        # ``bands`` names one band that has to be present, which for a JIRAM
+        # row is its half and for a JunoCam row one of its filter strips.
+        wanted = str(filters["bands"]).strip().upper()
+        keep &= (
+            table["bands"]
+            .apply(lambda values: wanted in _band_list(values))
+            .to_numpy(dtype=bool)
+        )
+
+    if "quality_tier" in table.columns:
+        # Unlike every other threshold this one has a default, because tier C
+        # means "taken while the detector was known to be damaged" and showing
+        # those beside good frames without being asked would misrepresent the
+        # archive.  ``quality_min=C`` is how a user asks to see them.
+        limit = tier_rank(filters.get("quality_min") or DEFAULT_TIER)
+        keep &= table["quality_tier"].map(tier_rank).to_numpy() <= limit
 
     keep &= _keep_below(table, "median_pixel_km", filters.get("pixel_max_km"))
     keep &= _keep_below(table, "bore_emission", filters.get("emission_max"))
@@ -382,6 +466,9 @@ def summary(
     time_min: str | None = None,
     time_max: str | None = None,
     half: str | None = Query(default=None, pattern="^[LMlm]$"),
+    instrument: str | None = Query(default=None, pattern="^(?i:JIRAM|JunoCam)$"),
+    bands: str | None = Query(default=None, pattern="^(?i:L|M|RED|GREEN|BLUE|METHANE)$"),
+    quality_min: str | None = Query(default=None, pattern="^[ABCabc]$"),
     pixel_max_km: float | None = None,
     emission_max: float | None = None,
     on_planet_min: float | None = None,
@@ -400,6 +487,9 @@ def summary(
             time_min=time_min,
             time_max=time_max,
             half=half,
+            instrument=instrument,
+            bands=bands,
+            quality_min=quality_min,
             pixel_max_km=pixel_max_km,
             emission_max=emission_max,
             on_planet_min=on_planet_min,

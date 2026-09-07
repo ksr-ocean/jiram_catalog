@@ -9,6 +9,12 @@
  * "Show in Strips" from the selection tray sets the orbit filter here, and
  * the filter row says so in words -- v1's "send to Strips" changed a hidden
  * filter and looked like it had done nothing.
+ *
+ * A JunoCam strip carries several bands in one file.  The band selector picks
+ * which one the viewer draws and which one the statistics panel computes for
+ * (`stats?band=`); the RGB composite is assembled in the browser from three
+ * `image.png?band=` requests, because the amendment gives strips a band
+ * parameter and no composite endpoint of their own.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DeckGL from '@deck.gl/react';
@@ -22,7 +28,14 @@ import { api } from '../api/client';
 import { fmt, fmtOrbits, fmtTime } from '../lib/format';
 import { downloadText } from '../lib/csv';
 import { LAT_BAND_NAMES, latBandLimits } from '../lib/latbands';
-import { DEFAULT_STRIP_FILTERS, filterStrips, type StripFilters, type StripRow } from '../lib/stripsTable';
+import {
+  DEFAULT_STRIP_FILTERS,
+  filterStrips,
+  stripBandOptions,
+  type StripFilters,
+  type StripRow,
+} from '../lib/stripsTable';
+import { hasRgb, INSTRUMENTS, resolveStretch } from '../lib/bands';
 import { categoricalColor, rgbCss } from '../lib/colorScale';
 import { graticule } from '../lib/projection';
 import { COLOR_MAPS, type ColorMapName } from '../lib/lut';
@@ -37,6 +50,7 @@ export function StripsView({ active }: { active: boolean }) {
   const stripId = useStore((s) => s.stripId);
   const stripMeta = useStore((s) => s.stripMeta);
   const stripImage = useStore((s) => s.stripImage);
+  const stripImageComposite = useStore((s) => s.stripImageComposite);
   const stripStats = useStore((s) => s.stripStats);
   const openStrip = useStore((s) => s.openStrip);
   const orbitFilter = useStore((s) => s.stripOrbitFilter);
@@ -45,6 +59,11 @@ export function StripsView({ active }: { active: boolean }) {
   const setShowGraticule = useStore((s) => s.setShowGraticule);
   const statsVisible = useStore((s) => s.statsVisible);
   const setStatsVisible = useStore((s) => s.setStatsVisible);
+  const stripBands = useStore((s) => s.stripBands);
+  const stripBand = useStore((s) => s.stripBand);
+  const setStripBand = useStore((s) => s.setStripBand);
+  const stripComposite = useStore((s) => s.stripComposite);
+  const setStripComposite = useStore((s) => s.setStripComposite);
 
   const [filters, setFilters] = useState<StripFilters>(DEFAULT_STRIP_FILTERS);
   const [cmap, setCmap] = useState<ColorMapName>('gray');
@@ -56,6 +75,16 @@ export function StripsView({ active }: { active: boolean }) {
     () => filterStrips(strips, filters, latBandLimits(filters.latBand)),
     [strips, filters],
   );
+
+  const bandChoices = useMemo(
+    () => stripBandOptions(strips, filters.instrument),
+    [strips, filters.instrument],
+  );
+  const hasJunocamStrips = useMemo(
+    () => strips.some((row) => row.instrument.toUpperCase() === 'JUNOCAM'),
+    [strips],
+  );
+  const rgbReady = hasRgb(stripBands);
 
   const resolutionClasses = useMemo(
     () => [...new Set(strips.map((row) => row.resolution_class).filter(Boolean))].sort(),
@@ -124,16 +153,42 @@ export function StripsView({ active }: { active: boolean }) {
             ))}
           </select>
         </div>
+        {hasJunocamStrips && (
+          <div className={styles.group}>
+            <label htmlFor="s-instrument">instrument</label>
+            <select
+              id="s-instrument"
+              data-testid="strip-instrument"
+              value={filters.instrument}
+              onChange={(event) => {
+                const instrument = event.target.value as StripFilters['instrument'];
+                const keep = stripBandOptions(strips, instrument).includes(filters.band);
+                setFilters({ ...filters, instrument, band: keep ? filters.band : 'all' });
+              }}
+            >
+              <option value="all">both</option>
+              {INSTRUMENTS.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className={styles.group}>
           <label htmlFor="s-band">band</label>
           <select
             id="s-band"
+            data-testid="strip-band-filter"
             value={filters.band}
-            onChange={(event) => setFilters({ ...filters, band: event.target.value as 'all' | 'L' | 'M' })}
+            onChange={(event) => setFilters({ ...filters, band: event.target.value })}
           >
             <option value="all">all</option>
-            <option value="L">L</option>
-            <option value="M">M</option>
+            {bandChoices.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
         </div>
         <div className={styles.group}>
@@ -189,6 +244,7 @@ export function StripsView({ active }: { active: boolean }) {
               <tr>
                 <th>strip_id</th>
                 <th>orbit</th>
+                <th>instrument</th>
                 <th>band</th>
                 <th>start</th>
                 <th>lat</th>
@@ -207,7 +263,8 @@ export function StripsView({ active }: { active: boolean }) {
                 >
                   <td>{row.strip_id}</td>
                   <td>{row.orbit}</td>
-                  <td>{row.band}</td>
+                  <td>{row.instrument}</td>
+                  <td>{row.bands.length > 1 ? row.bands.join(';') : row.band}</td>
                   <td>{fmtTime(row.time_start_ms)}</td>
                   <td>{fmt(row.center_lat, 1)}</td>
                   <td>{fmt(row.km_per_px, 1)}</td>
@@ -226,12 +283,40 @@ export function StripsView({ active }: { active: boolean }) {
           <div className={styles.toolbar}>
             <b data-testid="current-strip">{stripId}</b>
             <div className={styles.sep} />
+            {stripBands.length > 0 && (
+              <>
+                <label htmlFor="strip-band">band</label>
+                <select
+                  id="strip-band"
+                  data-testid="strip-band-select"
+                  value={stripComposite ? '__rgb' : stripBand ?? ''}
+                  onChange={(event) => {
+                    if (event.target.value === '__rgb') {
+                      setStripComposite(true);
+                      return;
+                    }
+                    if (stripComposite) setStripComposite(false);
+                    setStripBand(event.target.value);
+                  }}
+                >
+                  {stripBands.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                  {rgbReady && <option value="__rgb">RGB composite</option>}
+                </select>
+                <div className={styles.sep} />
+              </>
+            )}
             <label htmlFor="strip-cmap">colour map</label>
             <select
               id="strip-cmap"
               data-testid="strip-cmap-select"
               value={cmap}
               onChange={(event) => setCmap(event.target.value as ColorMapName)}
+              disabled={stripComposite}
+              title={stripComposite ? 'the composite carries its own colour' : undefined}
             >
               {COLOR_MAPS.map((name) => (
                 <option key={name} value={name}>
@@ -239,7 +324,18 @@ export function StripsView({ active }: { active: boolean }) {
                 </option>
               ))}
             </select>
-            {stripMeta && <ColorBar cmap={cmap} vmin={stripMeta.stretch.p1} vmax={stripMeta.stretch.p99} />}
+            {stripMeta && !stripComposite && (
+              <ColorBar
+                cmap={cmap}
+                vmin={resolveStretch(stripMeta.stretch, stripBand).p1}
+                vmax={resolveStretch(stripMeta.stretch, stripBand).p99}
+              />
+            )}
+            {stripComposite && (
+              <span className={styles.muted} data-testid="strip-composite-note">
+                RGB composite of {stripBands.join(', ')}
+              </span>
+            )}
             <label>
               <input
                 type="checkbox"
@@ -275,6 +371,7 @@ export function StripsView({ active }: { active: boolean }) {
           <ImageView
             image={stripImage}
             cmap={cmap}
+            composite={stripImageComposite}
             graticule={stripMeta?.graticule ?? null}
             contours={showContours ? stripMeta?.local_time_contours ?? null : null}
             showGraticule={showGraticule}
@@ -287,7 +384,7 @@ export function StripsView({ active }: { active: boolean }) {
           {statsVisible && (
             <div className={styles.charts} data-testid="strip-stats">
               <div className={styles.card}>
-                <h3>isotropic spectrum</h3>
+                <h3>isotropic spectrum{stripBand ? ` (${stripBand})` : ''}</h3>
                 {active && stats && (
                   <Plot
                     testId="plot-isotropic"

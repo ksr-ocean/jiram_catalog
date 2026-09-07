@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from . import data, images
 from .arrow import ARROW_MEDIA_TYPE, generic_ipc
-from .stacks import DLAT, DLON, attrs_of, graticule_geojson, linestrings
+from .stacks import DLAT, DLON, attrs_of, band_names, graticule_geojson, linestrings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +65,26 @@ def local_time_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
         LOGGER.warning("no local-time contours for %s: %s", key, exc)
         return linestrings([])
     return linestrings(paths)
+
+
+def band_plane(dataset: xr.Dataset, band: str | None) -> tuple[xr.Dataset, str | None]:
+    """The strip reduced to one band, and the band's name.
+
+    A JIRAM strip has no band axis and comes back unchanged.  A JunoCam strip
+    does, and -- unlike a stack, where the contract makes ``band`` required --
+    a strip defaults to its first band, because a strip is one image and its
+    bands are one scene in three colours rather than three products.
+    """
+    names = band_names(dataset)
+    if not names:
+        return dataset, None
+    wanted = names[0] if band is None else str(band).strip().upper()
+    upper = [name.upper() for name in names]
+    if wanted.upper() not in upper:
+        raise HTTPException(
+            status_code=404, detail=f"unknown band {band!r}; the strip carries {names}"
+        )
+    return dataset.isel(band=upper.index(wanted.upper())), names[upper.index(wanted.upper())]
 
 
 def stretch_of(dataset: xr.Dataset, key: str) -> dict[str, float]:
@@ -121,13 +141,20 @@ def strip_meta(request: Request, strip_id: str) -> dict[str, Any]:
     x_km = np.asarray(dataset["x_km"].values, dtype=np.float64)
     y_km = np.asarray(dataset["y_km"].values, dtype=np.float64)
     key = f"strip::{strip_id}"
+    names = band_names(dataset)
     return {
         "id": strip_id,
         "attrs": attrs_of(dataset),
+        "instrument": str(dataset.attrs.get("instrument", "JIRAM")),
+        "bands": names,
         "x_km": [float(x_km.min()), float(x_km.max())],
         "y_km": [float(y_km.min()), float(y_km.max())],
         "shape": [int(dataset.sizes.get("y", 0)), int(dataset.sizes.get("x", 0))],
-        "stretch": stretch_of(dataset, key),
+        "stretch": (
+            {name: stretch_of(band_plane(dataset, name)[0], f"{key}::{name}") for name in names}
+            if names
+            else stretch_of(dataset, key)
+        ),
         "graticule": graticule_geojson(dataset, key),
         "local_time_contours": local_time_geojson(dataset, key),
     }
@@ -137,6 +164,7 @@ def strip_meta(request: Request, strip_id: str) -> dict[str, Any]:
 def strip_image(
     request: Request,
     strip_id: str,
+    band: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
@@ -144,7 +172,9 @@ def strip_image(
     dataset = open_strip(request.app.state.mirror, strip_id)
     if "image" not in dataset:
         raise HTTPException(status_code=404, detail=f"strip {strip_id} has no image")
-    stretch = stretch_of(dataset, f"strip::{strip_id}")
+    dataset, selected = band_plane(dataset, band)
+    key = f"strip::{strip_id}" + (f"::{selected}" if selected else "")
+    stretch = stretch_of(dataset, key)
     valid = np.asarray(dataset["valid"].values, dtype=bool) if "valid" in dataset else None
     payload, stride, shape = images.plane_png(
         np.asarray(dataset["image"].values),
@@ -160,11 +190,15 @@ def strip_image(
 
 
 @router.get("/api/strips/{strip_id}/stats")
-def strip_stats(request: Request, strip_id: str) -> dict[str, Any]:
-    """Spectra and structure functions, computed once and cached on disk."""
+def strip_stats(request: Request, strip_id: str, band: str | None = None) -> dict[str, Any]:
+    """Spectra and structure functions, computed once and cached on disk.
+
+    ``band`` picks one band of a multi-band strip and defaults to its first;
+    each band's statistics get their own cache file.
+    """
     mirror = request.app.state.mirror
     try:
-        statistics = data.strip_stats(mirror, str(strip_id))
+        statistics = data.strip_stats(mirror, str(strip_id), band)
     except (ValueError, KeyError, FileNotFoundError, OSError) as exc:
         raise HTTPException(status_code=404, detail=f"unknown strip: {strip_id}") from exc
     return statistics_payload(statistics)

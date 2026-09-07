@@ -21,7 +21,10 @@ import type {
   StripMeta,
   StripStats,
 } from '../api/types';
-import { columnsFromIPC, EMPTY_COLUMNS, type CatalogColumns } from '../lib/catalogTable';
+import { bandsByInstrument, columnsFromIPC, EMPTY_COLUMNS, type CatalogColumns } from '../lib/catalogTable';
+import { bandForChannel, hasRgb, resolveStretch, splitBands, uniqueBands } from '../lib/bands';
+import { computeFootprints, EMPTY_FOOTPRINTS, type FootprintSet } from '../lib/footprints';
+import { composePayloads } from '../lib/rgb';
 import { DEFAULT_FILTERS, filterIndices, filtersToParams, type CatalogFilters } from '../lib/filters';
 import { Lru } from '../lib/lru';
 import type { ColorMapName } from '../lib/lut';
@@ -30,7 +33,7 @@ import { loadPersisted, savePersisted } from './persist';
 import { parseStrips, type StripRow } from '../lib/stripsTable';
 
 export type TabName = 'catalog' | 'poles' | 'strips';
-export type ColorBy = 'orbit' | 'year' | 'pixel' | 'emission';
+export type ColorBy = 'orbit' | 'year' | 'pixel' | 'emission' | 'instrument';
 
 export interface Toast {
   id: number;
@@ -49,6 +52,8 @@ export interface SelectionStats {
   latMin: number;
   latMax: number;
   bands: string[];
+  /** How many of the selected rows came from each instrument. */
+  byInstrument: Record<string, number>;
 }
 
 interface State {
@@ -64,6 +69,10 @@ interface State {
   viewMode: ViewMode;
   colorBy: ColorBy;
   positions: Float32Array;
+  /** JunoCam outlines for the filtered rows, in the current projection. */
+  footprints: FootprintSet;
+  /** Which band names each instrument has, for the band filter's options. */
+  bandsByInstrument: Record<string, string[]>;
   summary: CatalogSummary | null;
   hovered: number | null;
   detail: FrameDetail | null;
@@ -82,18 +91,38 @@ interface State {
   cmap: ColorMapName;
   vmin: number;
   vmax: number;
+  /** The bands of the open stack; empty when it has no `band` dimension. */
+  stackBands: string[];
+  band: string | null;
+  /** True while the viewer is showing the server's RGB composite. */
+  composite: boolean;
+  /** One stretch pair for all three channels, or one pair per band. */
+  linkBands: boolean;
+  bandStretch: Record<string, [number, number]>;
   showGraticule: boolean;
   emissionAlpha: number;
   frameImage: ImagePayload | null;
   emissionImage: ImagePayload | null;
   frameLoaded: boolean;
+  /**
+   * Whether the image on screen is a composite, as opposed to whether the
+   * viewer is in composite mode.  The two differ while a request is in
+   * flight, and drawing a single-band frame as though it were three bands
+   * would flash it grey; this is the flag the viewer draws by.
+   */
+  frameComposite: boolean;
 
   strips: StripRow[];
   stripId: string | null;
   stripMeta: StripMeta | null;
   stripImage: ImagePayload | null;
+  /** As `frameComposite`, for the strip viewer. */
+  stripImageComposite: boolean;
   stripStats: StripStats | null;
   stripOrbitFilter: number[] | null;
+  stripBands: string[];
+  stripBand: string | null;
+  stripComposite: boolean;
   statsVisible: boolean;
 
   jobs: JobRecord[];
@@ -136,12 +165,19 @@ interface Actions {
   setFps(fps: number): void;
   setCmap(cmap: ColorMapName): void;
   setStretch(vmin: number, vmax: number): void;
+  setBand(band: string): void;
+  setComposite(composite: boolean): void;
+  setLinkBands(linked: boolean): void;
+  setBandStretch(band: string, vmin: number, vmax: number): void;
   setShowGraticule(show: boolean): void;
   setEmissionAlpha(alpha: number): void;
   loadFrame(t: number): Promise<void>;
 
   loadStrips(): Promise<void>;
   openStrip(id: string): Promise<void>;
+  setStripBand(band: string): void;
+  setStripComposite(composite: boolean): void;
+  loadStripImage(): Promise<void>;
   setStripOrbitFilter(orbits: number[] | null): void;
   setStatsVisible(visible: boolean): void;
 
@@ -165,6 +201,7 @@ const frameCache = new Lru<string, ImagePayload>(20, (value) => value.bitmap.clo
 export function selectionStats(columns: CatalogColumns, keyIndex: Map<string, number>, keys: Set<string>): SelectionStats {
   const orbits = new Set<number>();
   const bands = new Set<string>();
+  const byInstrument: Record<string, number> = {};
   let latMin = Infinity;
   let latMax = -Infinity;
   for (const key of keys) {
@@ -172,7 +209,10 @@ export function selectionStats(columns: CatalogColumns, keyIndex: Map<string, nu
     if (i === undefined) continue;
     const orbit = columns.orbit[i];
     if (Number.isFinite(orbit)) orbits.add(orbit);
-    if (columns.half[i]) bands.add(columns.half[i]);
+    // The band of a JIRAM row is its half; a JunoCam row carries several.
+    for (const band of splitBands(columns.bands[i] || columns.half[i])) bands.add(band);
+    const instrument = columns.instrument[i] || 'JIRAM';
+    byInstrument[instrument] = (byInstrument[instrument] ?? 0) + 1;
     const lat = columns.boreLat[i];
     if (Number.isFinite(lat)) {
       if (lat < latMin) latMin = lat;
@@ -185,7 +225,31 @@ export function selectionStats(columns: CatalogColumns, keyIndex: Map<string, nu
     latMin: Number.isFinite(latMin) ? latMin : NaN,
     latMax: Number.isFinite(latMax) ? latMax : NaN,
     bands: [...bands].sort(),
+    byInstrument,
   };
+}
+
+/**
+ * The stretch pairs an RGB request sends.
+ *
+ * Linked, the one pair on the toolbar goes to all three channels, which is
+ * what a first look at a composite wants; unlinked, each band keeps its own
+ * pair so the colour balance can be set deliberately.
+ */
+export function compositeStretch(state: {
+  stackBands: string[];
+  linkBands: boolean;
+  bandStretch: Record<string, [number, number]>;
+  vmin: number;
+  vmax: number;
+}): { r: [number, number]; g: [number, number]; b: [number, number] } {
+  const pair = (channel: 'r' | 'g' | 'b'): [number, number] => {
+    if (state.linkBands) return [state.vmin, state.vmax];
+    const band = bandForChannel(state.stackBands, channel);
+    const stretch = band ? state.bandStretch[band] : undefined;
+    return stretch ?? [state.vmin, state.vmax];
+  };
+  return { r: pair('r'), g: pair('g'), b: pair('b') };
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -201,6 +265,8 @@ export const useStore = create<Store>((set, get) => ({
   viewMode: 'cyl',
   colorBy: 'orbit',
   positions: new Float32Array(0),
+  footprints: EMPTY_FOOTPRINTS,
+  bandsByInstrument: {},
   summary: null,
   hovered: null,
   detail: null,
@@ -219,18 +285,28 @@ export const useStore = create<Store>((set, get) => ({
   cmap: 'gray',
   vmin: 0,
   vmax: 1,
+  stackBands: [],
+  band: null,
+  composite: false,
+  linkBands: true,
+  bandStretch: {},
   showGraticule: true,
   emissionAlpha: 0,
   frameImage: null,
   emissionImage: null,
   frameLoaded: false,
+  frameComposite: false,
 
   strips: [],
   stripId: null,
   stripMeta: null,
   stripImage: null,
+  stripImageComposite: false,
   stripStats: null,
   stripOrbitFilter: null,
+  stripBands: [],
+  stripBand: null,
+  stripComposite: false,
   statsVisible: persistedUi.statsVisible,
 
   jobs: [],
@@ -272,11 +348,14 @@ export const useStore = create<Store>((set, get) => ({
       const keyIndex = new Map<string, number>();
       for (let i = 0; i < columns.n; i++) keyIndex.set(frameKey(columns.productId[i], columns.half[i]), i);
       const { filters, viewMode } = get();
+      const filtered = filterIndices(columns, filters);
       set({
         columns,
         keyIndex,
-        filtered: filterIndices(columns, filters),
+        filtered,
         positions: projectColumns(columns.boreLat, columns.boreLonEast, viewMode),
+        footprints: computeFootprints(columns, filtered, viewMode),
+        bandsByInstrument: bandsByInstrument(columns),
       });
     });
   },
@@ -284,7 +363,14 @@ export const useStore = create<Store>((set, get) => ({
   setFilters(patch) {
     const filters = { ...get().filters, ...patch };
     savePersisted('filters', filters);
-    set({ filters, filtered: filterIndices(get().columns, filters), page: 0 });
+    const { columns, viewMode } = get();
+    const filtered = filterIndices(columns, filters);
+    set({
+      filters,
+      filtered,
+      footprints: computeFootprints(columns, filtered, viewMode),
+      page: 0,
+    });
     void get().refreshSummary();
   },
 
@@ -293,8 +379,12 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setViewMode(mode) {
-    const { columns } = get();
-    set({ viewMode: mode, positions: projectColumns(columns.boreLat, columns.boreLonEast, mode) });
+    const { columns, filtered } = get();
+    set({
+      viewMode: mode,
+      positions: projectColumns(columns.boreLat, columns.boreLonEast, mode),
+      footprints: computeFootprints(columns, filtered, mode),
+    });
   },
 
   setColorBy: (colorBy) => set({ colorBy }),
@@ -310,12 +400,25 @@ export const useStore = create<Store>((set, get) => ({
   closeDetail: () => set({ detail: null }),
   setPage: (page) => set({ page }),
 
+  /**
+   * The server's count for the current filters.
+   *
+   * Two things here are about the same property, viz. that the map and the
+   * charts can never quietly disagree.  A failed request drops the summary
+   * rather than leaving the previous filters' count in the caption, since a
+   * stale "server agrees" is worse than no number at all; and a response is
+   * only kept when the filters have not moved on since it was asked for, so
+   * two quick filter changes cannot leave the earlier answer on screen.
+   */
   async refreshSummary() {
     const params = filtersToParams(get().filters);
-    await get().run('summary', async () => {
-      const summary = await api.summary(params);
-      set({ summary });
-    });
+    const summary = await get().run('summary', () => api.summary(params));
+    if (summary === undefined) {
+      set({ summary: null });
+      return;
+    }
+    const current = filtersToParams(get().filters);
+    if (JSON.stringify(current) === JSON.stringify(params)) set({ summary });
   },
 
   addToSelection(indices) {
@@ -429,15 +532,31 @@ export const useStore = create<Store>((set, get) => ({
   async openStack(id) {
     await get().run('stack', async () => {
       const meta = await api.stackMeta(id);
+      // A stack with a `band` dimension opens on its first band and in single
+      // band mode: a composite is a choice, not a default, because it needs
+      // three requests and hides the colour maps.
+      const bands = uniqueBands(meta.bands);
+      const band = bands.length > 0 ? bands[0] : null;
+      const stretch = resolveStretch(meta.stretch, band);
+      const bandStretch: Record<string, [number, number]> = {};
+      for (const name of bands) {
+        const pair = resolveStretch(meta.stretch, name);
+        bandStretch[name] = [pair.p1, pair.p99];
+      }
       set({
         stackId: id,
         stackMeta: meta,
         t: 0,
-        vmin: meta.stretch.p1,
-        vmax: meta.stretch.p99,
+        vmin: stretch.p1,
+        vmax: stretch.p99,
+        stackBands: bands,
+        band,
+        composite: false,
+        bandStretch,
         frameImage: null,
         emissionImage: null,
         frameLoaded: false,
+        frameComposite: false,
         playing: false,
       });
       frameCache.clear();
@@ -465,33 +584,77 @@ export const useStore = create<Store>((set, get) => ({
   setCmap: (cmap) => set({ cmap }),
 
   setStretch(vmin, vmax) {
-    set({ vmin, vmax });
+    const { band } = get();
+    const bandStretch = band ? { ...get().bandStretch, [band]: [vmin, vmax] as [number, number] } : get().bandStretch;
+    set({ vmin, vmax, bandStretch });
     frameCache.clear();
     void get().loadFrame(get().t);
+  },
+
+  setBand(band) {
+    const { stackMeta } = get();
+    const pair = get().bandStretch[band] ?? (() => {
+      const stretch = resolveStretch(stackMeta?.stretch, band);
+      return [stretch.p1, stretch.p99] as [number, number];
+    })();
+    set({ band, vmin: pair[0], vmax: pair[1] });
+    frameCache.clear();
+    void get().loadFrame(get().t);
+  },
+
+  setComposite(composite) {
+    set({ composite });
+    frameCache.clear();
+    void get().loadFrame(get().t);
+  },
+
+  setLinkBands(linkBands) {
+    set({ linkBands });
+    if (get().composite) {
+      frameCache.clear();
+      void get().loadFrame(get().t);
+    }
+  },
+
+  setBandStretch(band, vmin, vmax) {
+    set({ bandStretch: { ...get().bandStretch, [band]: [vmin, vmax] } });
+    if (get().composite) {
+      frameCache.clear();
+      void get().loadFrame(get().t);
+    }
   },
 
   setShowGraticule: (showGraticule) => set({ showGraticule }),
   setEmissionAlpha: (emissionAlpha) => set({ emissionAlpha }),
 
   async loadFrame(t) {
-    const { stackId, vmin, vmax } = get();
+    const state = get();
+    const { stackId, vmin, vmax, band, composite } = state;
     if (!stackId) return;
-    const target = api.stackFrameUrl(stackId, t, vmin, vmax);
+    // The composite is one request per time step, not three: the contract's
+    // `rgb.png` reads the three bands out of the same file server-side.
+    const frameUrl = (step: number): string =>
+      composite
+        ? api.stackRgbUrl(stackId, step, compositeStretch(state))
+        : api.stackFrameUrl(stackId, step, vmin, vmax, 1600, band);
+    const target = frameUrl(t);
     const cached = frameCache.get(target);
     if (cached) {
-      if (get().t === t) set({ frameImage: cached, frameLoaded: true });
+      if (get().t === t) set({ frameImage: cached, frameLoaded: true, frameComposite: composite });
       return;
     }
     await get().run('frame', async () => {
       const payload = await fetchImage(target);
       frameCache.set(target, payload);
-      if (get().t === t && get().stackId === stackId) set({ frameImage: payload, frameLoaded: true });
+      if (get().t === t && get().stackId === stackId) {
+        set({ frameImage: payload, frameLoaded: true, frameComposite: composite });
+      }
       // Prefetch the next two frames so playback does not stutter.
       const meta = get().stackMeta;
       if (meta) {
         for (const ahead of [1, 2]) {
           const next = (t + ahead) % meta.times.length;
-          const nextUrl = api.stackFrameUrl(stackId, next, vmin, vmax);
+          const nextUrl = frameUrl(next);
           if (!frameCache.has(nextUrl)) {
             void fetchImage(nextUrl).then((image) => frameCache.set(nextUrl, image)).catch(() => undefined);
           }
@@ -513,14 +676,75 @@ export const useStore = create<Store>((set, get) => ({
   async openStrip(id) {
     await get().run('strip', async () => {
       const meta = await api.stripMeta(id);
-      set({ stripId: id, stripMeta: meta, stripImage: null, stripStats: null });
-      const image = await fetchImage(api.stripImageUrl(id, meta.stretch.p1, meta.stretch.p99));
-      if (get().stripId === id) set({ stripImage: image });
+      const bands = uniqueBands(meta.bands);
+      set({
+        stripId: id,
+        stripMeta: meta,
+        stripImage: null,
+        stripImageComposite: false,
+        stripStats: null,
+        stripBands: bands,
+        stripBand: bands.length > 0 ? bands[0] : null,
+        stripComposite: false,
+      });
+      await get().loadStripImage();
     });
     void get().run('strip stats', async () => {
-      const stats = await api.stripStats(id);
+      const stats = await api.stripStats(id, get().stripBand);
       if (get().stripId === id) set({ stripStats: stats });
     });
+  },
+
+  /**
+   * The strip image, single band or composed here.
+   *
+   * The amendment gives a strip `image.png?band=` and no composite endpoint,
+   * so an RGB strip is three requests combined in the browser -- the same
+   * picture the stack viewer gets from the server, by the only route the
+   * contract offers.
+   */
+  async loadStripImage() {
+    const { stripId, stripMeta, stripBand, stripComposite, stripBands } = get();
+    if (!stripId || !stripMeta) return;
+    await get().run('strip image', async () => {
+      if (stripComposite && hasRgb(stripBands)) {
+        const channels = await Promise.all(
+          (['r', 'g', 'b'] as const).map((channel) => {
+            const name = bandForChannel(stripBands, channel);
+            const stretch = resolveStretch(stripMeta.stretch, name);
+            return fetchImage(api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, name));
+          }),
+        );
+        const composed = composePayloads(channels[0], channels[1], channels[2]);
+        if (get().stripId !== stripId) return;
+        if (composed) {
+          set({ stripImage: composed, stripImageComposite: true });
+          return;
+        }
+        get().pushToast('error', 'the three band images differ in size; showing one band');
+        set({ stripComposite: false, stripImage: channels[0], stripImageComposite: false });
+        return;
+      }
+      const stretch = resolveStretch(stripMeta.stretch, stripBand);
+      const image = await fetchImage(api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, stripBand));
+      if (get().stripId === stripId) set({ stripImage: image, stripImageComposite: false });
+    });
+  },
+
+  setStripBand(band) {
+    set({ stripBand: band });
+    void get().loadStripImage();
+    const id = get().stripId;
+    if (!id) return;
+    void get().run('strip stats', async () => {
+      const stats = await api.stripStats(id, band);
+      if (get().stripId === id && get().stripBand === band) set({ stripStats: stats });
+    });
+  },
+
+  setStripComposite(stripComposite) {
+    set({ stripComposite });
+    void get().loadStripImage();
   },
 
   setStripOrbitFilter: (stripOrbitFilter) => set({ stripOrbitFilter }),

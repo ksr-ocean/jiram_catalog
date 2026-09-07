@@ -18,7 +18,16 @@ export function DebugState() {
   const t = useStore((s) => s.t);
   const cmap = useStore((s) => s.cmap);
   const statsVisible = useStore((s) => s.statsVisible);
+  const instrumentFilter = useStore((s) => s.filters.instrument);
+  const band = useStore((s) => s.band);
+  const composite = useStore((s) => s.composite);
+  const nFootprints = useStore((s) => s.footprints.n);
+  const stripBand = useStore((s) => s.stripBand);
+  const stripComposite = useStore((s) => s.stripComposite);
 
+  // `band` and `composite` are the Poles viewer's, which is what the
+  // amendment's tests name; the strips viewer has its own pair beside them
+  // rather than sharing one field whose meaning would depend on the open tab.
   const state = {
     n_points: columns.n,
     n_filtered: filtered.length,
@@ -29,6 +38,12 @@ export function DebugState() {
     t,
     cmap,
     stats_visible: statsVisible,
+    instrument_filter: instrumentFilter,
+    band,
+    composite,
+    n_footprints: nFootprints,
+    strip_band: stripBand,
+    strip_composite: stripComposite,
   };
   return (
     <pre id="debug-state" style={{ display: 'none' }}>

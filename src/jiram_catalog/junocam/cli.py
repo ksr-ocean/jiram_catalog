@@ -1,13 +1,19 @@
-"""``jiram-catalog junocam <sub>``: manifest, mirror, index, quality.
+"""``jiram-catalog junocam <sub>``: manifest, mirror, index, quality, products.
 
-The JunoCam layer owns one subcommand group with four sub-subcommands, in the
-order they are meant to be run:
+The JunoCam layer owns one subcommand group whose sub-subcommands are listed
+in the order they are meant to be run -- each one reads what the previous one
+wrote:
 
     junocam manifest [--volumes 1-35] [--refresh]
     junocam mirror --orbits SPEC [--level RDR|EDR|both] [--kinds labels,data]
                    [--doy DDD,...] [--jobs N]
     junocam index --orbits SPEC [--jobs N]
     junocam quality --orbits SPEC [--jobs N]
+    junocam geo --orbits SPEC [--jobs N]
+    junocam region-stack --region R --orbits SPEC [--bands RED,GREEN,BLUE]
+                         [--quality-min A] [--jobs N]
+    junocam strips --orbits SPEC [--bands RED,GREEN,BLUE] [--quality-min A]
+                   [--jobs N]
 
 It is registered on the main parser with :func:`add_subparser`, as the agent
 harness requires of any module that owns a subcommand, and the same parser is
@@ -19,8 +25,10 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import Any
 
+from .camera import BAND_IDS
 from .index import build_index, default_jobs, index_summary
 from .mirror import LEVEL_CHOICES, mirror_files, mirror_result_table
 from .pds import FIRST_VOLUME, LAST_VOLUME, build_manifest, manifest_summary
@@ -71,6 +79,17 @@ def parse_volumes(specification: str) -> list[int] | None:
     return parse_int_spec(
         specification, low=FIRST_VOLUME, high=LAST_VOLUME, label="--volumes"
     )
+
+
+def parse_bands(specification: str) -> list[str]:
+    """``red,green,blue`` -> ``["RED", "GREEN", "BLUE"]``, order preserved."""
+    names = [value.strip().upper() for value in str(specification).split(",") if value.strip()]
+    if not names:
+        raise ValueError("--bands must name at least one filter")
+    unknown = [name for name in names if name not in BAND_IDS]
+    if unknown:
+        raise ValueError(f"unknown band(s) {unknown}; known: {sorted(BAND_IDS)}")
+    return list(dict.fromkeys(names))
 
 
 def parse_kinds(specification: str) -> list[str]:
@@ -135,6 +154,43 @@ def _add_subcommands(subparsers: Any) -> None:
     quality.add_argument("--orbits", required=True, metavar="SPEC")
     quality.add_argument("--jobs", type=int, default=default_jobs())
 
+    geo = subparsers.add_parser(
+        "geo", help="place every mirrored RDR image: footprint, scale, lighting"
+    )
+    _add_common(geo)
+    geo.add_argument("--orbits", required=True, metavar="SPEC")
+    geo.add_argument("--jobs", type=int, default=default_jobs())
+
+    stack = subparsers.add_parser(
+        "region-stack", help="reproject images onto a named region as a band stack"
+    )
+    _add_common(stack)
+    stack.add_argument("--region", required=True, help="name in configs/regions.yaml")
+    stack.add_argument("--orbits", required=True, metavar="SPEC")
+    stack.add_argument("--bands", default="RED,GREEN,BLUE")
+    stack.add_argument("--quality-min", default="A", choices=["A", "B", "C"])
+    stack.add_argument("--max-emission", type=float, default=80.0)
+    stack.add_argument(
+        "--max-pixel-ratio",
+        type=float,
+        default=None,
+        help="drop images whose ground sample exceeds this multiple of the map's",
+    )
+    stack.add_argument("--jobs", type=int, default=default_jobs())
+    stack.add_argument("--out", help="output NetCDF (default: the standard name)")
+    stack.add_argument("--no-crop", action="store_true", help="keep the whole canvas")
+    stack.add_argument("--margin-px", type=int, default=16)
+    stack.add_argument("--config", help="region registry (default: configs/regions.yaml)")
+
+    strips = subparsers.add_parser(
+        "strips", help="one band strip per image, on its own local grid"
+    )
+    _add_common(strips)
+    strips.add_argument("--orbits", required=True, metavar="SPEC")
+    strips.add_argument("--bands", default="RED,GREEN,BLUE")
+    strips.add_argument("--quality-min", default="A", choices=["A", "B", "C"])
+    strips.add_argument("--jobs", type=int, default=default_jobs())
+
 
 def add_subparser(subparsers: Any) -> None:
     """Register the ``junocam`` group on the main parser's subparser action."""
@@ -187,6 +243,63 @@ def run(args: argparse.Namespace) -> int:
         table = build_quality(mirror, orbits, args.jobs)
         selected = table if orbits is None else table.loc[table["orbit"].isin(orbits)]
         print(quality_summary(selected))
+        return 0
+    if command == "geo":
+        from .geo import build_geo, geo_summary
+
+        orbits = parse_orbits(args.orbits)
+        table = build_geo(mirror, orbits, args.jobs)
+        selected = table if orbits is None else table.loc[table["orbit"].isin(orbits)]
+        print(geo_summary(selected))
+        return 0
+    if command == "region-stack":
+        from .stacks import build_stack, select_images, stack_output_path, stack_summary
+        from ..stacks import write_stack
+
+        orbits = parse_orbits(args.orbits)
+        bands = parse_bands(args.bands)
+        images = select_images(
+            mirror,
+            args.region,
+            orbits,
+            quality_min=args.quality_min,
+            max_emission=args.max_emission,
+            bands=bands,
+            config=args.config,
+            **({} if args.max_pixel_ratio is None else {"max_pixel_ratio": args.max_pixel_ratio}),
+        )
+        print(f"selected images: {len(images)}")
+        if images.empty:
+            raise ValueError(
+                f"no JunoCam image of orbits {args.orbits} overlaps region {args.region}"
+            )
+        dataset = build_stack(
+            mirror,
+            args.region,
+            images,
+            bands,
+            crop=not args.no_crop,
+            margin_px=args.margin_px,
+            jobs=args.jobs,
+            config=args.config,
+        )
+        target = (
+            Path(args.out)
+            if args.out
+            else stack_output_path(mirror, args.region, bands, args.orbits, "frame")
+        )
+        write_stack(dataset, target)
+        print(stack_summary(dataset, target))
+        return 0
+    if command == "strips":
+        from .strips import build_library, library_summary
+
+        orbits = parse_orbits(args.orbits)
+        bands = parse_bands(args.bands)
+        table = build_library(
+            mirror, orbits, bands, quality_min=args.quality_min, jobs=args.jobs
+        )
+        print(library_summary(table, bands))
         return 0
     raise ValueError(f"unknown junocam subcommand: {command}")
 

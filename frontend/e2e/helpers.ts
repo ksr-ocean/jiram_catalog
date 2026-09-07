@@ -10,6 +10,31 @@ export interface DebugState {
   t: number;
   cmap: string;
   stats_visible: boolean;
+  /** Amendment 2026-09-07. */
+  instrument_filter: string;
+  band: string | null;
+  composite: boolean;
+  n_footprints: number;
+  strip_band: string | null;
+  strip_composite: boolean;
+}
+
+/**
+ * How many JunoCam images the backend has indexed.
+ *
+ * Zero on a mirror that has not run `junocam geo` yet, and on any backend
+ * from before the amendment; every JunoCam test skips on it rather than
+ * failing, so this suite stays green either way.
+ */
+export async function junocamCount(page: Page): Promise<number> {
+  try {
+    const response = await page.request.get('/api/config');
+    if (!response.ok()) return 0;
+    const config = (await response.json()) as { counts?: { junocam_images?: number } };
+    return config.counts?.junocam_images ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 /** The app's own state, read from the hidden `#debug-state` element. */
@@ -60,4 +85,53 @@ export async function sampleFrameCanvas(page: Page): Promise<[number, number, nu
     }
     return null;
   });
+}
+
+/**
+ * A summary of the colour-mapped frame canvas.
+ *
+ * A single pixel is too weak a signature: a dark pixel of a grey-mapped band
+ * and the same pixel of a composite can agree by accident, and the first
+ * version of the composite test failed on exactly that.  `signature` is a
+ * hash over every seventh visible pixel, which two different pictures do not
+ * collide on, and `nonGray` counts pixels whose channels differ, which the
+ * grey lookup table cannot produce at all.
+ */
+export async function frameCanvasStats(
+  page: Page,
+): Promise<{ visible: number; nonGray: number; signature: number } | null> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('[data-testid="frame-canvas"][data-loaded="true"]');
+    if (!canvas) return null;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return null;
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let visible = 0;
+    let nonGray = 0;
+    let signature = 0;
+    for (let p = 0; p < data.length; p += 28) {
+      if (data[p + 3] === 0) continue;
+      visible += 1;
+      const r = data[p];
+      const g = data[p + 1];
+      const b = data[p + 2];
+      if (Math.abs(r - g) > 8 || Math.abs(g - b) > 8) nonGray += 1;
+      signature = (signature * 31 + r * 7 + g * 13 + b * 17) % 1000000007;
+    }
+    return { visible, nonGray, signature };
+  });
+}
+
+/**
+ * The two counts in the catalog table's caption: the client's and the
+ * server's, for the same filters.
+ *
+ * The server's arrives on its own round trip, so a test that reads the
+ * caption the instant a filter changes reads the previous answer; poll this
+ * until the two agree rather than asserting once and hoping.
+ */
+export async function captionCounts(page: Page): Promise<[number, number] | null> {
+  const caption = (await page.locator('[data-testid="table-caption"]').textContent()) ?? '';
+  const numbers = (caption.replace(/,/g, '').match(/\d+/g) ?? []).map(Number);
+  return numbers.length >= 2 ? [numbers[0], numbers[1]] : null;
 }

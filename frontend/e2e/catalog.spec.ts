@@ -1,12 +1,17 @@
 import { expect, test } from '@playwright/test';
-import { centreOf, debugState, openApp, waitForState } from './helpers';
+import { captionCounts, centreOf, debugState, openApp, waitForState } from './helpers';
 
 test.describe('catalog view', () => {
   test('draws the whole on-planet catalog', async ({ page }) => {
     await openApp(page);
     const state = await debugState(page);
     expect(state.n_points).toBeGreaterThanOrEqual(40_000);
-    expect(state.n_filtered).toBe(state.n_points);
+    // Everything passes the default filters except a JunoCam image of tier C,
+    // which the contract hides unless it is asked for; on a mirror with no
+    // JunoCam rows at all the two counts are still equal.
+    expect(state.n_filtered).toBeLessThanOrEqual(state.n_points);
+    expect(state.n_filtered).toBeGreaterThanOrEqual(40_000);
+    expect(state.instrument_filter).toBe('all');
     expect(state.view).toBe('cyl');
     await expect(page.locator('[data-testid="catalog-map"] canvas')).toBeVisible();
     await expect(page.locator('[data-testid="config-meta"]')).toContainText('frames on planet');
@@ -19,14 +24,15 @@ test.describe('catalog view', () => {
     const after = await waitForState(page, (s) => s.n_filtered < before);
     expect(after.n_filtered).toBeLessThan(before);
     expect(after.n_filtered).toBeGreaterThan(0);
-    // The caption carries the server's own count for the same filters.
+    // The caption carries the server's own count for the same filters, which
+    // arrives on its own round trip, so it is polled rather than read once.
     await expect(page.locator('[data-testid="table-caption"]')).toContainText('server agrees', {
       timeout: 60_000,
     });
-    const caption = (await page.locator('[data-testid="table-caption"]').textContent()) ?? '';
-    const numbers = caption.replace(/,/g, '').match(/\d+/g) ?? [];
-    expect(Number(numbers[0])).toBe(after.n_filtered);
-    expect(Number(numbers[1])).toBe(after.n_filtered);
+    await expect
+      .poll(async () => (await captionCounts(page))?.[1], { timeout: 60_000, intervals: [400] })
+      .toBe(after.n_filtered);
+    expect((await captionCounts(page))?.[0]).toBe(after.n_filtered);
   });
 
   test('hovering a dense area shows a tooltip with a product id', async ({ page }, testInfo) => {

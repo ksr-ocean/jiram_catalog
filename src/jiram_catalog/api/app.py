@@ -57,13 +57,16 @@ def health() -> dict[str, bool]:
 def config(request: Request) -> dict[str, Any]:
     """What this server is pointed at, and how much of it there is.
 
-    The counts are the four numbers a user needs before deciding the
-    server is pointed at the right mirror; each is cheap because the
-    tables behind them are the loaders' cached ones.
+    The counts are the numbers a user needs before deciding the server is
+    pointed at the right mirror; each is cheap because the tables behind them
+    are the loaders' cached ones.  ``frames_on_planet`` counts every catalog
+    row, JunoCam included; ``junocam_images`` says how many of them are
+    JunoCam swaths.
     """
     mirror = request.app.state.mirror
     counts = {
         "frames_on_planet": _count(lambda: len(catalog.catalog_frame(mirror))),
+        "junocam_images": _count(lambda: data.junocam_count(mirror)),
         "strips": _count(lambda: len(data.strips_table(mirror))),
         "stacks": _count(lambda: len(stacks.stack_index(mirror))),
         "selections": _count(lambda: len(selections.load_all(mirror))),

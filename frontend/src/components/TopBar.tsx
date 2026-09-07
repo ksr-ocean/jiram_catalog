@@ -17,6 +17,11 @@ export function TopBar() {
           <>
             <span title="archive mirror root">mirror: {config.mirror}</span>
             <span>{config.counts.frames_on_planet.toLocaleString()} frames on planet</span>
+            {config.counts.junocam_images ? (
+              <span data-testid="config-junocam">
+                {config.counts.junocam_images.toLocaleString()} JunoCam images
+              </span>
+            ) : null}
             <span>{config.counts.stacks} stacks</span>
             <span>{config.counts.strips} strips</span>
             <span>{config.counts.selections} selections</span>

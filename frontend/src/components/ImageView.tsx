@@ -47,6 +47,11 @@ export interface ImageViewProps {
   graticule?: GeoJsonCollection | null;
   contours?: GeoJsonCollection | null;
   showGraticule?: boolean;
+  /**
+   * True when `image.gray` already holds colour (an RGB composite), so the
+   * colour map must not be applied on top of it.
+   */
+  composite?: boolean;
   height?: number;
   /** Take the container's free space as well, never less than `height`. */
   grow?: boolean;
@@ -63,6 +68,7 @@ export function ImageView({
   graticule = null,
   contours = null,
   showGraticule = true,
+  composite = false,
   height = 460,
   grow = false,
   testId = 'image-view',
@@ -100,12 +106,15 @@ export function ImageView({
     canvas.height = image.height;
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) return;
-    const mapped = flipRows(applyLut(image.gray, cmap), image.width, image.height);
+    // A composite is already three bands of colour; a single band is one
+    // number per pixel and the colour map is what makes it visible.
+    const mapped = flipRows(composite ? image.gray : applyLut(image.gray, cmap), image.width, image.height);
     const frame = context.createImageData(image.width, image.height);
     frame.data.set(mapped);
     context.putImageData(frame, 0, 0);
     canvas.dataset.loaded = 'true';
-    canvas.dataset.cmap = cmap;
+    canvas.dataset.cmap = composite ? 'rgb' : cmap;
+    canvas.dataset.composite = composite ? 'true' : 'false';
     void createImageBitmap(canvas).then((next) => {
       if (cancelled) {
         next.close();
@@ -119,7 +128,7 @@ export function ImageView({
     return () => {
       cancelled = true;
     };
-  }, [image, cmap]);
+  }, [image, cmap, composite]);
 
   // The emission overlay is a second bitmap on the same bounds.
   useEffect(() => {

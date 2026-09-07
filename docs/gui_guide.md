@@ -88,7 +88,7 @@ regardless of which tab you are looking at.
 
 | control | does |
 | --- | --- |
-| frames / orbits / latitude / band halves | a live summary of the working selection: frame count, the orbit numbers as compressed ranges (e.g. `4-11, 14, 16-17`), the min-to-max boresight latitude span, and which detector halves are present |
+| frames / orbits / latitude / bands / instruments | a live summary of the working selection: frame count, the orbit numbers as compressed ranges (e.g. `4-11, 14, 16-17`), the min-to-max boresight latitude span, which bands are present (detector halves for JIRAM rows, filter names for JunoCam ones), and how many rows came from each instrument |
 | all `N` filtered | replaces the working selection with every row the Catalog's current filters pass |
 | clear | empties the working selection |
 | name | a text field for the selection's name, used when you save it |
@@ -98,9 +98,13 @@ regardless of which tab you are looking at.
 | saved selections list | every selection saved on this mirror (by anyone), each with **load** (replaces the working selection with the saved one) and **del** (deletes it) |
 
 The **Build stack...** dialog asks for a region (the four names in
-`configs/regions.yaml` plus any region that already has a stack), band
-(`M` or `L`), level (`sequence` or `frame`), and a maximum emission
-angle (default 80 deg). Submitting it saves the selection first, then
+`configs/regions.yaml` plus any region that already has a stack), an
+instrument, a band or set of bands, a level, a minimum quality tier
+(`A only` by default), and a maximum emission angle (default 80 deg).
+The instrument decides the shape of the rest: a JIRAM build takes one
+band (`M` or `L`) and any of the three levels, while a JunoCam build
+takes a set of filters (RED, GREEN and BLUE by default) and only the
+`frame` level, since a JunoCam image is already a whole swath. Submitting it saves the selection first, then
 posts `/api/stacks/build` with that selection's id, so the job is
 restricted to exactly those frames; the new file lands under
 `<mirror>/regions/<region>/` and the stack list on the Poles tab
@@ -121,7 +125,14 @@ thing, and only the second survives switching browsers or machines.
 excluded because `on_planet_frac` is zero or the geometry engine could
 not fix the frame at all -- as boresight points on a map, drawn as GPU
 point primitives rather than rasterised, which is what makes hovering
-and picking work at full point count. Below the map, three coverage
+and picking work at full point count. A JunoCam image is not a point: it
+is a swath tens of degrees across, so it is drawn as its footprint
+outline, stroked and faintly filled, in both the cylindrical and the
+polar views. An outline that crosses 0/360 is drawn as two polygons, one
+against each edge of the map, and an outline that goes right round a
+pole is closed over the top or bottom edge; hover and click work on an
+outline exactly as they do on a point, and the count beside the map
+toolbar says how many of the drawn rows are footprints. Below the map, three coverage
 charts (frames per latitude band, per orbit, per month) come from
 `/api/catalog/summary` computed by the server with the same filter
 parameters the map applies on the client, so the two cannot disagree
@@ -134,7 +145,10 @@ table of the filtered rows with checkboxes into the selection tray.
 | control | does |
 | --- | --- |
 | orbit | inclusive numeric range of orbit directories to include (default 1 to 99, effectively all) |
-| band half | `all`, `L`, or `M` -- which detector half's frames to keep |
+| instrument | `both`, `JIRAM`, or `JunoCam` (shown only when the mirror has JunoCam images indexed) |
+| band | a band the row must carry: `L` or `M` for JIRAM, `RED`, `GREEN`, `BLUE` or `METHANE` for JunoCam; the options follow the instrument choice, and choosing an instrument that lacks the current band clears it |
+| quality | `A only`, `A + B` (the default) or `all`: JunoCam images are graded, and tier `C` is hidden unless it is asked for (shown only when the mirror has JunoCam images) |
+| band half | `all`, `L`, or `M` -- which detector half's frames to keep; a JunoCam row has no half and is dropped by either choice |
 | pixel <= km | drop frames whose median pixel size exceeds this (blank = no limit) |
 | emission <= deg | drop frames whose boresight emission angle exceeds this (blank = no limit) |
 | on-planet >= | drop frames whose on-planet pixel fraction is below this (blank = no limit) |
@@ -158,10 +172,10 @@ filters).
 | tool: pan / box / lasso | pan drags the view and scrolls to zoom; box and lasso drag a rectangle or a free-form outline that adds the enclosed points to the selection on release |
 | replace instead of add | when checked, a box or lasso selection replaces the working selection instead of adding to it |
 | view: cyl / N / S | longitude-latitude, or azimuthal-equidistant polar centred on the north or south pole (`rho = 90 - abs(lat)`) |
-| colour by | orbit, year, pixel size (km), or emission (deg) -- the first two are categorical, the last two a viridis ramp, with a legend in the corner |
+| colour by | orbit, year, pixel size (km), emission (deg), or instrument -- orbit, year and instrument are categorical, pixel size and emission a viridis ramp, with a legend in the corner |
 | zoom to data | fits the view to the extent of whatever currently passes the filters |
 | reset view | fits the view to the fixed limits of the current projection (the whole globe in `cyl`, the whole cap in `N`/`S`) |
-| the map | hover for a tooltip (product id, time, orbit, sequence, pixel size, emission); click a point to open its frame detail card |
+| the map | hover for a tooltip (product id, instrument and quality tier, time, orbit, sequence, pixel size, emission); click a point or a footprint to open its frame detail card |
 
 **Table toolbar and table:**
 
@@ -173,6 +187,7 @@ filters).
 | download CSV | downloads every filtered row (not just the current page, and independent of what is selected) as `jiram_catalog_filtered.csv`, a browser download |
 | row checkbox | adds or removes that one row from the working selection |
 | product id link | opens the frame's detail card: every column of `frames_with_geo` for that product, plus an "add to selection" button for whichever detector halves it has |
+| instrument, bands, quality_tier columns | which camera the row came from, the bands it carries (`;`-joined for JunoCam), and its quality tier; all three are in the CSV as well |
 
 **Typical workflow.**
 1. Narrow the filter toolbar until the coverage charts show the subset
@@ -229,7 +244,11 @@ three are three files that differ only in their `level`:
 | Accumulating sweep | `<BAND>_orbits<token>_cumulative.nc` | that same sweep filling in frame by frame, emptied again at the next sequence |
 | Instrument frames | `<BAND>_orbits<token>_frame.nc` | one raw JIRAM frame, in the order the imager recorded them |
 
-The three buttons above the player switch between them. Because the
+The three buttons above the player switch between them, except on a
+JunoCam stack: a JunoCam image is already the whole swath rather than
+one frame of a sweep, so `frame` is the only level such a stack comes
+in and the selector shows only that button rather than offering to
+build files that cannot exist. Because the
 three are separate files, a mode is only a click away when the mirror
 holds it; when it does not, the selector says so and offers **Build
 this view**, which starts the same background job the tray's "Build
@@ -266,14 +285,16 @@ two modes meet at the end of each sweep.
 | play / pause, < / > | step through time; playback speed is the `speed` field, keyboard left/right also step it while this tab is focused |
 | time | the slider and its `t/N` label, plus `sweep k, frame i of n` on a cumulative stack |
 | speed | frames per second while playing (1-30) |
-| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis` -- a 256-entry lookup table applied to pixels already in the browser, so changing it never needs a new request from the server |
+| band | on a stack with a band dimension (a JunoCam stack, for instance), which band to display, plus `RGB composite` when RED, GREEN and BLUE are all present |
+| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis` -- a 256-entry lookup table applied to pixels already in the browser, so changing it never needs a new request from the server; disabled while the RGB composite is on screen, which carries its own colour |
+| link bands | shown in the composite: on by default, so the one vmin/vmax pair on the toolbar drives all three channels; unchecking it puts a pair per band on screen for a deliberate colour balance |
 | graticule | overlays parallels every 2 deg and meridians every 30 deg, from the stack's own coordinate arrays (on by default) |
 | emission overlay | a 0-1 opacity slider blending in the per-pixel emission-angle PNG (always drawn with an inferno ramp), fetched only once you raise this above zero |
 | vmin / vmax | the display stretch's numeric limits; editing either refetches the frame at the new stretch, debounced by 350 ms so you can type without a flood of requests |
 | reset stretch | puts vmin/vmax back to the stack's own 1st/99th percentile |
 | the image itself | drag to pan, scroll to zoom (aspect ratio locked by construction, so it cannot distort); hovering shows an x/y (km) readout |
-| frame metadata | time, product id, sequence id, orbit, frame count, emission, km/px, and the served x/y range for the current step, from the stack's own per-time coordinates |
-| build dialog level | the tray's "Build stack..." names the same three modes |
+| frame metadata | time, product id, sequence id, orbit, frame count, emission, instrument, band, km/px, and the served x/y range for the current step, from the stack's own per-time coordinates |
+| build dialog level | the tray's "Build stack..." names the same three modes, and its instrument, bands and quality controls decide which they are: a JIRAM build takes one band (`M` or `L`) and all three levels, a JunoCam build takes a set of filters (RED, GREEN and BLUE by default) and only `frame`, and the quality control names the worst tier the job may use (`A only` by default) |
 
 **Movie panel:**
 
@@ -298,7 +319,9 @@ written next to its stack, `<mirror>/regions/<region>/<stem>.mp4`.
 by default. "Build stack..." (in the selection tray) writes
 `<mirror>/regions/<region>/<BAND>_orbits<token>_<level>.nc`, where
 `<token>` is the orbit list the job ran on, or `all` when it was built
-from a tray selection rather than an explicit orbit range.
+from a tray selection rather than an explicit orbit range. A JunoCam
+build writes `junocam_<bands>_orbits<token>_frame.nc` in the same
+directory.
 
 **What to do when a stack is slow to open.** A frame-level stack (every
 contributing frame kept, not composited per sequence) can be 2 GB; the
@@ -322,7 +345,9 @@ small map of strip centres coloured by year, a viewer for whichever
 strip you open, and that strip's statistics. Unlike Poles, Strips has no
 time axis -- each strip is one independent look, reprojected onto its
 own tangent-plane grid (`docs/architecture.md`, "The two regimes, side
-by side"). Nothing is opened automatically; the table and centres map
+by side"). A JunoCam swath is one strip too, holding all of its filters
+in one file, which is why the table has an instrument column and the
+viewer a band selector. Nothing is opened automatically; the table and centres map
 are there from the first load, and clicking a row or a point opens a
 strip. The statistics are three Plotly figures over a server round trip
 and start **hidden** behind a "Show statistics" toggle -- opening a
@@ -335,7 +360,8 @@ for itself (640 px tall instead of 380).
 | control | does |
 | --- | --- |
 | latitude band | one of the seven trackability-table bands, or `all`; a strip is kept when its own latitude span overlaps the band, not just its centre |
-| band | `all`, `L`, or `M` |
+| instrument | `both`, `JIRAM`, or `JunoCam` (shown only when the library holds JunoCam strips) |
+| band | a band the strip must carry, from whatever the loaded strips have (`L`, `M`, `RED`, `GREEN`, `BLUE`, `METHANE`), or `all`; a JunoCam strip carries several at once and matches on any of them |
 | resolution class | whichever resolution-class labels are present in this library's strips, or `all` |
 | valid frac >= | threshold on the strip's own valid-pixel fraction (default 0, i.e. no filter) |
 | dayside only | keep only strips with a nonzero dayside fraction |
@@ -348,13 +374,14 @@ for itself (640 px tall instead of 380).
 | --- | --- |
 | library table row / a point on the centres map | click either to open that strip |
 | current strip | the open strip's id |
-| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis`, same LUT mechanism as Poles |
+| band | on a multi-band (JunoCam) strip, which band the viewer draws and the statistics are computed for, plus `RGB composite` when RED, GREEN and BLUE are all present; the composite is assembled in the browser from the three band images |
+| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis`, same LUT mechanism as Poles; disabled while the RGB composite is on screen |
 | graticule | parallels every 2 deg, meridians every 30 deg |
 | local-time contours | dashed contours every 2 h from the strip's own local-time field |
 | the image itself | drag to pan, scroll to zoom, hover for an x/y (km) readout |
 | Show statistics / Hide statistics | toggles the three plot panels below the image; starts on "Show statistics" (hidden) every time you open the app fresh, and the choice persists in `localStorage` after that |
 | Download stats (JSON) | downloads the current strip's statistics payload as `<strip_id>_stats.json`, a browser download (disabled until the statistics have loaded, independent of whether the panel is shown) |
-| isotropic spectrum | `E(k)` on log-log axes, annotated with the wavelength range it spans |
+| isotropic spectrum | `E(k)` on log-log axes, annotated with the wavelength range it spans; its heading names the band it was computed for on a multi-band strip |
 | 1-D spectra (x, y) | the along-track and cross-track power spectra |
 | structure functions | `S2` (log-log) and the signed `S3` (linear, secondary axis) |
 
@@ -377,6 +404,7 @@ that writes a file); the library table itself is the way to read many
 strips' metadata at once.
 
 **What to do when a strip has no statistics yet.** `/api/strips/{id}/stats`
+(with `?band=` on a multi-band strip)
 checks an on-disk cache first (`<mirror>/gui_cache/stats_<strip_id>.nc`,
 the same file `stats2d.strip_statistics` writes); if a strip has never
 been opened before, the server computes it on that request, which takes

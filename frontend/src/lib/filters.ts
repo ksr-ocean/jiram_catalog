@@ -9,10 +9,14 @@
  * map instead of vanishing the moment a slider moves.  There are two
  * exceptions, both of which drop rows with a missing value: `on_planet_min`,
  * and the latitude bounds -- a frame whose boresight misses the planet has no
- * latitude to be inside a band.  A latitude bound is applied only when it
+ * latitude to be inside a band.  The three filters the amendment of
+ * 2026-09-07 added -- instrument, band, quality tier -- follow the same rule:
+ * they are equality or membership tests on a value the row either has or does
+ * not, and a row with no tier at all is kept.  A latitude bound is applied only when it
  * differs from the default, which is exactly when `filtersToParams` sends it,
  * so the map's count and the server's summary see the same rule.
  */
+import { bandsInclude, qualityPasses, type Instrument, type QualityTier } from './bands';
 import type { CatalogColumns } from './catalogTable';
 
 export interface CatalogFilters {
@@ -21,6 +25,12 @@ export interface CatalogFilters {
   timeMin: number | null;
   timeMax: number | null;
   half: 'all' | 'L' | 'M';
+  /** Amendment 2026-09-07: which instrument's rows to draw. */
+  instrument: 'all' | Instrument;
+  /** A band name the row must carry (`M`, `RED`, ...), or nothing. */
+  band: string | null;
+  /** The worst quality tier still shown; the contract's default is `B`. */
+  qualityMin: QualityTier;
   pixelMaxKm: number | null;
   emissionMax: number | null;
   onPlanetMin: number | null;
@@ -36,6 +46,11 @@ export const DEFAULT_FILTERS: CatalogFilters = {
   timeMin: null,
   timeMax: null,
   half: 'all',
+  instrument: 'all',
+  band: null,
+  // `B` rather than `C`: the contract hides tier C unless it is asked for, so
+  // the map and the server's summary start out counting the same rows.
+  qualityMin: 'B',
   pixelMaxKm: null,
   emissionMax: null,
   onPlanetMin: null,
@@ -58,6 +73,8 @@ export function filterIndices(columns: CatalogColumns, filters: CatalogFilters):
   const keep = new Uint32Array(n);
   let count = 0;
   const wantHalf = filters.half === 'all' ? null : filters.half;
+  const wantInstrument = filters.instrument === 'all' ? null : filters.instrument.toUpperCase();
+  const wantBand = filters.band ? filters.band : null;
   for (let i = 0; i < n; i++) {
     const orbit = columns.orbit[i];
     if (Number.isFinite(orbit) && (orbit < filters.orbitMin || orbit > filters.orbitMax)) continue;
@@ -67,6 +84,9 @@ export function filterIndices(columns: CatalogColumns, filters: CatalogFilters):
       if (filters.timeMax !== null && t > filters.timeMax) continue;
     }
     if (wantHalf !== null && columns.half[i].toUpperCase() !== wantHalf) continue;
+    if (wantInstrument !== null && columns.instrument[i].toUpperCase() !== wantInstrument) continue;
+    if (wantBand !== null && !bandsInclude(columns.bands[i], wantBand)) continue;
+    if (!qualityPasses(columns.qualityTier[i], filters.qualityMin)) continue;
     const pixel = columns.medianPixelKm[i];
     if (filters.pixelMaxKm !== null && Number.isFinite(pixel) && pixel > filters.pixelMaxKm) continue;
     const emission = columns.boreEmission[i];
@@ -91,6 +111,9 @@ export function filtersToParams(filters: CatalogFilters): Record<string, string>
   if (filters.timeMin !== null) params.time_min = new Date(filters.timeMin).toISOString();
   if (filters.timeMax !== null) params.time_max = new Date(filters.timeMax).toISOString();
   if (filters.half !== 'all') params.half = filters.half;
+  if (filters.instrument !== 'all') params.instrument = filters.instrument;
+  if (filters.band) params.bands = filters.band;
+  if (filters.qualityMin !== DEFAULT_FILTERS.qualityMin) params.quality_min = filters.qualityMin;
   if (filters.pixelMaxKm !== null) params.pixel_max_km = String(filters.pixelMaxKm);
   if (filters.emissionMax !== null) params.emission_max = String(filters.emissionMax);
   if (filters.onPlanetMin !== null) params.on_planet_min = String(filters.onPlanetMin);

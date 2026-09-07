@@ -754,18 +754,29 @@ def stack_output_path(
 
 
 def write_stack(dataset: xr.Dataset, path: str | Path) -> Path:
-    """Write a stack as NetCDF4, deflated, one chunk per time step."""
+    """Write a stack as NetCDF4, deflated, one chunk per map plane.
+
+    A JIRAM stack is ``(time, y, x)`` and the chunk is one time step.  A
+    JunoCam stack adds a ``band`` axis, so the chunk is one time step of one
+    band -- which is the plane the viewer asks for -- and every variable is
+    deflated rather than only the three a band-less stack carries, because the
+    per-band overlap count is then as large as the image.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    height, width = dataset.sizes["y"], dataset.sizes["x"]
+    banded = "band" in dataset.dims
+    names = tuple(dataset.data_vars) if banded else STACK_VARIABLES
     encoding: dict[str, dict[str, Any]] = {}
-    for name in STACK_VARIABLES:
-        if name not in dataset:
+    for name in names:
+        if name not in dataset or dataset[name].dims[-2:] != ("y", "x"):
             continue
         encoding[name] = {
             "zlib": True,
             "complevel": COMPRESSION_LEVEL,
-            "chunksizes": (1, height, width),
+            "chunksizes": tuple(
+                dataset.sizes[dimension] if dimension in ("y", "x") else 1
+                for dimension in dataset[name].dims
+            ),
         }
         if dataset[name].dtype.kind == "f":
             encoding[name].update({"dtype": "float32", "_FillValue": np.float32(np.nan)})
@@ -776,8 +787,17 @@ def write_stack(dataset: xr.Dataset, path: str | Path) -> Path:
 
 
 def read_stack(path: str | Path) -> xr.Dataset:
-    """Open a stack written by :func:`write_stack` (lazily; it may be large)."""
-    return xr.open_dataset(path, engine="netcdf4")
+    """Open a stack written by :func:`write_stack` (lazily; it may be large).
+
+    A ``band`` dimension, when the file has one, comes back as a coordinate of
+    band names, so a caller selects a band by name rather than by position.
+    """
+    dataset = xr.open_dataset(path, engine="netcdf4")
+    if "band" in dataset.coords and dataset["band"].dtype.kind in "OSU":
+        dataset = dataset.assign_coords(
+            band=np.asarray(dataset["band"].values, dtype=object).astype(str)
+        )
+    return dataset
 
 
 def valid_fraction(dataset: xr.Dataset) -> float:

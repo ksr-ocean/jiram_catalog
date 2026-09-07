@@ -12,7 +12,18 @@ import { Modal } from './Modal';
 import { api } from '../api/client';
 import { fmtOrbits, fmtRange } from '../lib/format';
 import { selectionStats, useStore } from '../store/store';
-import { LEVEL_LABELS, STACK_LEVELS } from '../lib/stackModes';
+import { LEVEL_LABELS } from '../lib/stackModes';
+import { availableLevels } from '../lib/stackModes';
+import {
+  INSTRUMENTS,
+  JIRAM_BANDS,
+  JUNOCAM_BANDS,
+  QUALITY_LABELS,
+  QUALITY_TIERS,
+  RGB_BANDS,
+  type Instrument,
+  type QualityTier,
+} from '../lib/bands';
 
 /** The four names in `configs/regions.yaml`, plus whatever stacks exist. */
 const REGISTRY_REGIONS = ['north_pole_paper', 'north_pole', 'south_pole', 'neb_15n'];
@@ -66,8 +77,19 @@ export function SelectionTray() {
         <b>{fmtRange(stats.latMin, stats.latMax)}</b>
       </div>
       <div className={styles.trayStat}>
-        <span>band halves</span>
+        <span>bands</span>
         <b>{stats.bands.length ? stats.bands.join(', ') : '--'}</b>
+      </div>
+      <div className={styles.trayStat} data-testid="selection-by-instrument">
+        <span>instruments</span>
+        <b>
+          {Object.keys(stats.byInstrument).length === 0
+            ? '--'
+            : Object.entries(stats.byInstrument)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([name, n]) => `${name} ${n.toLocaleString()}`)
+                .join(', ')}
+        </b>
       </div>
 
       <div className={styles.row}>
@@ -132,7 +154,7 @@ export function SelectionTray() {
         <BuildStackDialog
           regions={regions}
           onClose={() => setBuildOpen(false)}
-          onSubmit={async (region, band, level, maxEmission) => {
+          onSubmit={async ({ region, band, level, maxEmission, instrument, bands, qualityMin }) => {
             const record = await saveSelection();
             if (!record) return;
             try {
@@ -142,6 +164,9 @@ export function SelectionTray() {
                 level,
                 selection_id: record.id,
                 max_emission: maxEmission,
+                instrument,
+                ...(instrument === 'JunoCam' ? { bands } : {}),
+                quality_min: qualityMin,
               });
               pushToast('info', `stack build started (job ${job_id})`);
               watchJob(job_id, (job) => {
@@ -159,6 +184,24 @@ export function SelectionTray() {
   );
 }
 
+interface BuildRequest {
+  region: string;
+  band: string;
+  level: string;
+  maxEmission: number;
+  instrument: Instrument;
+  bands: string[];
+  qualityMin: QualityTier;
+}
+
+/**
+ * The build dialog, for both instruments.
+ *
+ * The contract's build endpoint takes `band` for a JIRAM stack and a list of
+ * `bands` for a JunoCam one, and the two instruments do not offer the same
+ * levels, so choosing the instrument rewrites the rest of the form rather
+ * than leaving controls on screen that the job would ignore.
+ */
 function BuildStackDialog({
   regions,
   onClose,
@@ -166,12 +209,17 @@ function BuildStackDialog({
 }: {
   regions: string[];
   onClose: () => void;
-  onSubmit: (region: string, band: string, level: string, maxEmission: number) => Promise<void>;
+  onSubmit: (request: BuildRequest) => Promise<void>;
 }) {
   const [region, setRegion] = useState(regions[0] ?? 'north_pole_paper');
   const [band, setBand] = useState('M');
   const [level, setLevel] = useState('sequence');
   const [maxEmission, setMaxEmission] = useState(80);
+  const [instrument, setInstrument] = useState<Instrument>('JIRAM');
+  const [bands, setBands] = useState<string[]>([...RGB_BANDS]);
+  const [qualityMin, setQualityMin] = useState<QualityTier>('A');
+  const levels = availableLevels(instrument);
+  const junocam = instrument === 'JunoCam';
 
   return (
     <Modal title="Build a stack from the selection" onClose={onClose}>
@@ -189,16 +237,78 @@ function BuildStackDialog({
         </select>
       </div>
       <div className={styles.row}>
-        <label htmlFor="build-band">band</label>
-        <select id="build-band" value={band} onChange={(event) => setBand(event.target.value)}>
-          <option value="M">M</option>
-          <option value="L">L</option>
+        <label htmlFor="build-instrument">instrument</label>
+        <select
+          id="build-instrument"
+          data-testid="build-instrument"
+          value={instrument}
+          onChange={(event) => {
+            const next = event.target.value as Instrument;
+            setInstrument(next);
+            // JunoCam has only the one level, so a level it cannot build is
+            // not left selected behind the scenes.
+            if (!availableLevels(next).includes(level as (typeof levels)[number])) setLevel('frame');
+          }}
+        >
+          {INSTRUMENTS.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
         </select>
         <label htmlFor="build-level">level</label>
-        <select id="build-level" value={level} onChange={(event) => setLevel(event.target.value)}>
-          {STACK_LEVELS.map((name) => (
+        <select id="build-level" data-testid="build-level" value={level} onChange={(event) => setLevel(event.target.value)}>
+          {levels.map((name) => (
             <option key={name} value={name}>
               {LEVEL_LABELS[name]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {junocam ? (
+        <div className={styles.row} data-testid="build-bands">
+          <span>bands</span>
+          {JUNOCAM_BANDS.map((name) => (
+            <label key={name}>
+              <input
+                type="checkbox"
+                data-testid={`build-band-${name}`}
+                checked={bands.includes(name)}
+                onChange={(event) =>
+                  setBands((previous) =>
+                    event.target.checked
+                      ? [...JUNOCAM_BANDS].filter((one) => one === name || previous.includes(one))
+                      : previous.filter((one) => one !== name),
+                  )
+                }
+              />
+              {name}
+            </label>
+          ))}
+        </div>
+      ) : (
+        <div className={styles.row}>
+          <label htmlFor="build-band">band</label>
+          <select id="build-band" value={band} onChange={(event) => setBand(event.target.value)}>
+            {JIRAM_BANDS.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className={styles.row}>
+        <label htmlFor="build-quality">quality at least</label>
+        <select
+          id="build-quality"
+          data-testid="build-quality"
+          value={qualityMin}
+          onChange={(event) => setQualityMin(event.target.value as QualityTier)}
+        >
+          {QUALITY_TIERS.map((tier) => (
+            <option key={tier} value={tier}>
+              {QUALITY_LABELS[tier]}
             </option>
           ))}
         </select>
@@ -215,7 +325,13 @@ function BuildStackDialog({
         />
       </div>
       <div className={styles.row} style={{ marginTop: 10 }}>
-        <button data-testid="submit-build" onClick={() => void onSubmit(region, band, level, maxEmission)}>
+        <button
+          data-testid="submit-build"
+          disabled={junocam && bands.length === 0}
+          onClick={() =>
+            void onSubmit({ region, band, level, maxEmission, instrument, bands, qualityMin })
+          }
+        >
           Start build
         </button>
         <button onClick={onClose}>Cancel</button>

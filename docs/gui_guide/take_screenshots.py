@@ -16,14 +16,16 @@ tray, then deleted again at the end so reruns do not accumulate them).
 
 Unlike GUI v1, every state this script waits on is read from the app's
 own hidden ``#debug-state`` element (``{n_points, n_filtered,
-selection_n, view, stack_id, t, cmap}``, `docs/gui_v2_notes.md`) rather
-than guessed from a fixed sleep or scraped from on-screen text -- v2 was
-built with that element specifically so a test (or this script) has a
-number to poll instead of a screenshot to eyeball. Every interaction
-below is one Playwright can drive headlessly and is also exercised by
-`frontend/e2e/*.spec.ts` against a live backend; none had to be
-described in words instead of captured, unlike GUI v1's second-strip
-click.
+selection_n, view, stack_id, level, t, cmap, stats_visible}``,
+`docs/gui_v2_notes.md`) rather than guessed from a fixed sleep or
+scraped from on-screen text -- v2 was built with that element
+specifically so a test (or this script) has a number to poll instead of
+a screenshot to eyeball; ``level`` and ``stats_visible`` are what this
+script polls for the Poles mode selector and the Strips statistics
+toggle. Every interaction below is one Playwright can drive headlessly
+and is also exercised by `frontend/e2e/*.spec.ts` against a live
+backend; none had to be described in words instead of captured, unlike
+GUI v1's second-strip click.
 """
 
 from __future__ import annotations
@@ -254,6 +256,14 @@ def shot_catalog_workflow(browser, url: str) -> None:
 
 
 def shot_poles(browser, url: str, stack_id: str) -> None:
+    """Open the paper region's stack and its two named siblings.
+
+    ``stack_id`` is always the sequence-level ("Region snapshots") stack
+    (see ``pick_movie_stack``), so this one session can show all three
+    mode-selector states without reopening the tab: snapshots first (12),
+    the stepped/magma/cumulative shots next (09, 10, 13), then back to
+    snapshots for the movie (11), which is rendered only for that sibling.
+    """
     page = browser.new_page(viewport=VIEWPORT)
     open_app(page, url)
     page.locator('[data-testid="tab-poles"]').click()
@@ -265,6 +275,15 @@ def shot_poles(browser, url: str, stack_id: str) -> None:
     page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
         state="attached", timeout=90_000
     )
+
+    # 12. The mode selector with "Region snapshots" active -- the sibling
+    # this script always opens first, per pick_movie_stack.
+    state = wait_for_state(page, lambda s: s.get("level") is not None, timeout=30.0)
+    if state.get("level") != "sequence":
+        print(f"warning: expected to open a 'sequence' stack, debug-state says {state.get('level')!r}")
+    page.locator('[data-testid="mode-bar"]').scroll_into_view_if_needed()
+    page.wait_for_timeout(500)
+    save(page, "12_poles_mode_snapshots.png")
 
     # 9. Step to a non-zero time with the graticule on (it defaults on).
     slider = page.locator('[data-testid="time-slider"]')
@@ -282,6 +301,31 @@ def shot_poles(browser, url: str, stack_id: str) -> None:
     )
     page.wait_for_timeout(500)
     save(page, "10_poles_colormap_magma.png")
+
+    # 13. Switch to "Accumulating sweep" (the cumulative sibling this
+    # mirror carries for the paper region) and step mid-sweep so the
+    # "sweep k, frame i of n" readout has something to say.
+    cumulative_option = select.locator('option[value$="_cumulative"]')
+    if cumulative_option.count() > 0:
+        page.locator('[data-testid="mode-cumulative"]').click()
+        wait_for_state(page, lambda s: s.get("level") == "cumulative", timeout=60.0)
+        page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
+            state="attached", timeout=90_000
+        )
+        slider.fill("5")
+        wait_for_state(page, lambda s: s.get("t") == 5, timeout=30.0)
+        page.wait_for_timeout(800)
+        page.locator('[data-testid="time-readout"]').scroll_into_view_if_needed()
+        save(page, "13_poles_mode_cumulative_sweep.png")
+
+        # Back to "Region snapshots" -- the sibling with the rendered movie.
+        page.locator('[data-testid="mode-sequence"]').click()
+        wait_for_state(page, lambda s: s.get("stack_id") == stack_id and s.get("level") == "sequence", timeout=60.0)
+        page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
+            state="attached", timeout=90_000
+        )
+    else:
+        print("warning: no cumulative sibling for this stack; skipping screenshot 13")
 
     # 11. The movie player: this stack has a rendered movie, so the native
     # <video> element is present without starting any render job. Play it
@@ -311,12 +355,23 @@ def shot_strips(browser, url: str) -> None:
     page.locator('[data-testid="current-strip"]').wait_for(state="visible", timeout=90_000)
     page.locator('[data-testid="strip-image"] canvas').first.wait_for(state="visible", timeout=120_000)
 
-    # 12. The statistics panel: three Plotly figures for the opened strip.
+    # 14. The statistics start hidden behind "Show statistics" (a fresh
+    # session's localStorage has no stats_visible yet, so it defaults to
+    # false); the image viewer has the panel's space in the meantime.
+    wait_for_state(page, lambda s: s.get("stats_visible") is False, timeout=15.0)
+    page.wait_for_timeout(800)
+    save(page, "14_strips_stats_hidden.png")
+
+    # 15. Toggling "Show statistics" fetches nothing new -- the stats were
+    # already requested when the strip opened -- it just draws the three
+    # Plotly figures and gives the image back its normal, smaller height.
+    page.locator('[data-testid="toggle-stats"]').click()
+    wait_for_state(page, lambda s: s.get("stats_visible") is True, timeout=15.0)
     page.locator('[data-testid="plot-isotropic"] .js-plotly-plot').wait_for(state="visible", timeout=180_000)
     page.locator('[data-testid="plot-structure"] .js-plotly-plot').wait_for(state="visible", timeout=30_000)
     page.locator('[data-testid="current-strip"]').scroll_into_view_if_needed()
     page.wait_for_timeout(1000)
-    save(page, "12_strips_statistics.png")
+    save(page, "15_strips_stats_shown.png")
     page.close()
 
 
@@ -339,11 +394,22 @@ def cleanup_demo_selection(base_url: str) -> None:
 
 
 def pick_movie_stack(base_url: str) -> str:
-    """The id of a stack with a rendered movie, or the first stack otherwise."""
+    """The paper region's sequence stack, or any stack with a rendered movie.
+
+    The paper region (`north_pole_paper/M_orbits4_*`) is the one this
+    repository's own gates build, so preferring it -- the same choice
+    `frontend/e2e/poles.spec.ts`'s `chooseStack` makes -- gives a
+    deterministic session where the cumulative and frame siblings are also
+    known to exist, which screenshots 12 and 13 need.
+    """
     with urllib.request.urlopen(f"{base_url}api/stacks", timeout=30) as response:
         stacks = json.load(response)
     if not stacks:
         raise RuntimeError("no stacks under <mirror>/regions/ -- nothing for the Poles tab to show")
+    by_id = {str(s["id"]): s for s in stacks}
+    preferred = "north_pole_paper/M_orbits4_sequence"
+    if preferred in by_id and by_id[preferred].get("has_movie"):
+        return preferred
     with_movie = [s for s in stacks if s.get("has_movie")]
     chosen = with_movie[0] if with_movie else stacks[0]
     if not with_movie:

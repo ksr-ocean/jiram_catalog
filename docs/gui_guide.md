@@ -38,9 +38,10 @@ software implementation of WebGL 2, which deck.gl accepts and which
 does perform GPU picking correctly (`docs/gui_v2_notes.md`). Every
 interaction shown below -- filtering, the polar toggle, hovering,
 box-selecting, saving a selection to the tray, stepping the time slider,
-changing the colour map, and opening a strip's statistics -- was driven
-headlessly by the screenshot script exactly as captured, and the same
-interactions are asserted on by the automated end-to-end suite
+switching the Poles mode selector, changing the colour map, and
+toggling a strip's statistics panel open -- was driven headlessly by
+the screenshot script exactly as captured, and the same interactions
+are asserted on by the automated end-to-end suite
 (`frontend/e2e/*.spec.ts`) against a live backend. None of it had to be
 described in words instead of shown.
 
@@ -243,6 +244,10 @@ and how much of it has been painted so far. The last step of every
 sweep is exactly that sweep's snapshot in the sequence stack, so the
 two modes meet at the end of each sweep.
 
+![The three-button mode selector with "Region snapshots" active -- the stack list, the badge, and the one-sentence blurb under each button all agree](gui_guide/12_poles_mode_snapshots.png)
+
+![The same stack family switched to "Accumulating sweep" and stepped mid-sweep -- the time label reads "time 6/294 -- sweep 1, frame 6 of 12"](gui_guide/13_poles_mode_cumulative_sweep.png)
+
 **Toolbar and hints:**
 
 | control | does |
@@ -319,7 +324,11 @@ time axis -- each strip is one independent look, reprojected onto its
 own tangent-plane grid (`docs/architecture.md`, "The two regimes, side
 by side"). Nothing is opened automatically; the table and centres map
 are there from the first load, and clicking a row or a point opens a
-strip.
+strip. The statistics are three Plotly figures over a server round trip
+and start **hidden** behind a "Show statistics" toggle -- opening a
+strip requests them in the background regardless, but they are not
+drawn until you ask, and until then the image viewer keeps their space
+for itself (640 px tall instead of 380).
 
 **Filter toolbar:**
 
@@ -343,7 +352,8 @@ strip.
 | graticule | parallels every 2 deg, meridians every 30 deg |
 | local-time contours | dashed contours every 2 h from the strip's own local-time field |
 | the image itself | drag to pan, scroll to zoom, hover for an x/y (km) readout |
-| Download stats (JSON) | downloads the current strip's statistics payload as `<strip_id>_stats.json`, a browser download (disabled until the statistics have loaded) |
+| Show statistics / Hide statistics | toggles the three plot panels below the image; starts on "Show statistics" (hidden) every time you open the app fresh, and the choice persists in `localStorage` after that |
+| Download stats (JSON) | downloads the current strip's statistics payload as `<strip_id>_stats.json`, a browser download (disabled until the statistics have loaded, independent of whether the panel is shown) |
 | isotropic spectrum | `E(k)` on log-log axes, annotated with the wavelength range it spans |
 | 1-D spectra (x, y) | the along-track and cross-track power spectra |
 | structure functions | `S2` (log-log) and the signed `S3` (linear, secondary axis) |
@@ -352,10 +362,13 @@ strip.
 1. Filter the library table down to the strips you want, or arrive here
    from the tray's "Show in Strips".
 2. Click a row or a point on the centres map to open a strip.
-3. Read the image and its statistics; download the stats JSON if you
-   need them outside the browser.
+3. Read the image; click "Show statistics" when you want the three
+   plots, which gives up some of the image's height in exchange.
+4. Download the stats JSON if you need the numbers outside the browser.
 
-![The default gray-colour-map view of an opened strip, with graticule, local-time contours, and its three statistics plots](gui_guide/12_strips_statistics.png)
+![A strip open with statistics hidden (the default): the image gets the space, and "Show statistics" is the only way in](gui_guide/14_strips_stats_hidden.png)
+
+![The same strip with "Show statistics" clicked: the panel appears, the image shrinks back to its normal height, and the button now reads "Hide statistics"](gui_guide/15_strips_stats_shown.png)
 
 **What the exports produce and where they land.** "Download stats
 (JSON)" is a browser download. There is no bulk CSV export of the
@@ -367,11 +380,16 @@ strips' metadata at once.
 checks an on-disk cache first (`<mirror>/gui_cache/stats_<strip_id>.nc`,
 the same file `stats2d.strip_statistics` writes); if a strip has never
 been opened before, the server computes it on that request, which takes
-a few seconds. The three plot panels are simply absent until the
-request returns -- like every other network call here, it runs through
-the loading/error machinery rather than freezing the page, so the rest
-of the tab stays usable while you wait. Every later visit to that strip,
-including after a server restart, is instant.
+a few seconds. That request fires the moment you open the strip, not
+when you click "Show statistics" -- the toggle only decides whether the
+three plot panels are drawn, not whether the numbers behind them are
+fetched, so a strip you have had open for a few seconds usually shows
+its plots the instant you ask for them. If they are still not there,
+the request is simply still in flight -- like every other network call
+here, it runs through the loading/error machinery rather than freezing
+the page, so the rest of the tab stays usable while you wait. Every
+later visit to that strip, including after a server restart, is
+instant.
 
 ## The two regimes, and how the tabs map to them
 
@@ -457,6 +475,21 @@ mirror itself, visible to anyone pointed at the same mirror, and is the
 way to hand a selection to a collaborator or to yourself on another
 machine.
 
+**Which band should I look at -- L or M?** They are not interchangeable
+views of the same thing. The L-band channel (3.455 um) is tuned to H3+
+auroral emission, not reflected or thermal sunlight, so away from the
+poles it is essentially dark; an L-band frame or strip over the disk
+shows little but detector line-to-line residuals rather than any real
+atmospheric structure (`docs/architecture.md`, "The instrument, in one
+paragraph"; `docs/reports/lm_half_order.md` measures the L half's
+bright fraction below 0.05 outside the aurora). The M-band channel
+(4.780 um) sees thermal emission from several bar depth through gaps in
+the ammonia cloud deck, day and night, so it is M that actually shows
+cloud structure -- which is why every region stack and every "Build
+stack..." example in this guide defaults to band `M`
+(`north_pole_paper/M_orbits4_*`). Filter to `L` when you specifically
+want the aurora; for cloud dynamics, use `M`.
+
 **What changed from the previous version?** State and rendering now
 live in the browser rather than the server: colour map changes are an
 instant redraw (no request that can silently fail to arrive), hovering
@@ -471,9 +504,10 @@ uses that carried over.
 
 **Which interactions could this guide not verify visually?** None, this
 time -- every screenshot above, including the box-select, the polar
-toggle, the hover tooltip, saving a selection, stepping the time slider
-and changing the colour map, opening a strip, and reading its
-statistics, was driven headlessly by
+toggle, the hover tooltip, saving a selection, stepping the time
+slider, switching the Poles mode selector between "Region snapshots"
+and "Accumulating sweep", changing the colour map, opening a strip, and
+toggling its statistics panel open and shut, was driven headlessly by
 `docs/gui_guide/take_screenshots.py` and is also exercised by the
 automated end-to-end suite. The one caveat in this guide is the
 short-window map-squeeze behaviour described above, which is a real

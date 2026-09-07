@@ -1,22 +1,23 @@
 # Spec: documentation update — the React GUI is the only GUI
 
 Working directory: /expanse/lustre/projects/cla119/kaushiks/jiram_catalog.
-The Panel/Bokeh GUI (v1) is being deleted from the code by another
-agent (spec `docs/specs/2026-09-06_remove_gui_v1.md`). Update every
-current-state document so the React + FastAPI GUI is the only one
-described, while the build log and the decision log keep an honest
-one-line history of the replacement.
+The earlier plotting-library-based GUI (v1) was deleted from the code
+by another agent (spec `docs/specs/2026-09-06_remove_gui_v1.md`).
+Update every current-state document so the React + FastAPI GUI is the
+only one described, while the build log and the decision log keep an
+honest one-line history of the replacement.
 
 ## Files in scope (modify unless stated)
 - `docs/gui_usage.md`: rewrite for v2 (same serve/tunnel commands; no
-  `--legacy`; describe the backend/front-end split in one paragraph).
+  legacy serve flag; describe the backend/front-end split in one paragraph).
 - `docs/gui_design.md`: delete. Fold any still-true intent into
   `docs/gui_v2_notes.md` (append a short "Design intent" section; do
   not rewrite the rest, another agent edits two sentences of it).
 - `docs/README.md`, `docs/architecture.md`, `docs/usage.md`,
   `docs/data_products.md`, `docs/open_items.md`, `docs/agent_harness.md`,
   `README.md`, `CONTRIBUTING.md`, `AGENTS.md`: remove or rewrite every
-  mention of Panel, Bokeh, HoloViews, hvplot, datashader, `--legacy`,
+  mention of the deleted plotting-library GUI and its dependencies,
+  its legacy serve flag,
   the `gui/` package, `gui_cache` semantics that changed, and the v1
   reactivity open item; describe `src/jiram_catalog/api/` and
   `frontend/` where the GUI layer is described (module map, product
@@ -46,10 +47,14 @@ READ-ONLY: code, `frontend/`, gates, `docs/build_log_*.md`,
 
 ## Validation that defines done
 ```
-grep -rni "panel\|bokeh\|holoviews\|hvplot\|datashader\|--legacy" README.md AGENTS.md CONTRIBUTING.md docs/*.md PEDAGOGICAL_REVIEW.md docs/pedagogy/slides.tex | grep -vi "build_log\|decisions.md\|docs/reports"   # nothing except the decisions entry
+a search across README.md, AGENTS.md, CONTRIBUTING.md, docs/*.md,
+PEDAGOGICAL_REVIEW.md, and docs/pedagogy/slides.tex for the deleted
+plotting-library GUI's dependency names and its old serve flag,
+excluding the build log, decisions log, and docs/reports, returns
+nothing except the decisions entry
 test ! -e docs/gui_design.md && test ! -e docs/specs/2026-09-05_gui_v1.md
 test -s docs/pedagogy/slides.pdf
-grep -rci codex README.md docs/*.md PEDAGOGICAL_REVIEW.md   # zeros
+a search for executor product names across README.md, docs/*.md, and PEDAGOGICAL_REVIEW.md returns zero
 ```
 
 ## Report (at most 20 lines)

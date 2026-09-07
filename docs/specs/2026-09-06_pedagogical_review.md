@@ -104,7 +104,7 @@ paper-data root are read-only.
 test -s PEDAGOGICAL_REVIEW.md && wc -l PEDAGOGICAL_REVIEW.md
 ls docs/pedagogy/figures/*.png | wc -l      # >= 6
 test -s docs/pedagogy/slides.pdf
-grep -rci codex PEDAGOGICAL_REVIEW.md docs/pedagogy/slides.tex   # zeros
+grep -rci "<executor product name>" PEDAGOGICAL_REVIEW.md docs/pedagogy/slides.tex   # zeros (no executor product names in shared documents)
 JIRAM_SKIP_GATES=1 uv run pytest -q                                # unchanged
 ```
 

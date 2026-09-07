@@ -2188,9 +2188,10 @@ report what the last run produced.
   outright when the value is missing, because a frame whose boresight
   misses the planet has no latitude to be inside a band. `src/lib/
   filters.ts` applies it client-side for the map; the summary endpoint
-  in `src/jiram_catalog/api/catalog.py` applies "the same missing-value
-  rule as GUI v1" (its own docstring's words) server-side for the
-  coverage charts, so the two counts cannot disagree.
+  in `src/jiram_catalog/api/catalog.py` applies the same rule
+  server-side for the coverage charts — a threshold drops a row only
+  when its value is known and fails it — so the two counts cannot
+  disagree.
 - All three views stay mounted at all times; only the active tab is
   hidden. Unmounting a view is what made the first version's tabs stop
   repainting when a user returned to them, so v2's rule is that nothing
@@ -2401,9 +2402,15 @@ a published wind field within a stated, honestly-measured tolerance;
 `test_gate_strips.py` — that the strip library's chunking and grids
 are mutually consistent with the frame geometry that built them;
 `test_gate_trackability.py` — that repeat-view detection recovers the
-paper's own known revisit cadence; `test_gate_gui.py` — that the whole
-GUI stack builds, renders, and serves against real, full-scale data,
-not just synthetic fixtures.
+paper's own known revisit cadence; `test_gate_api.py` — that the
+FastAPI backend's catalog, stack, strip, and selection endpoints agree
+with the Arrow catalog and the NetCDF stacks against real, full-scale
+data; `test_gate_frontend.py` — that the built front-end bundle and
+the backend it talks to reproduce the same behaviour end to end in a
+real, GPU-less browser, not just synthetic fixtures; `test_gate_
+cumulative.py` — that cumulative sweep stacks agree with the frame-
+and sequence-level stacks at every point the three are required to
+coincide.
 
 **The two gates that were wrong, and how that was found.** Both cases
 share a shape worth naming explicitly: the *code* under test was not

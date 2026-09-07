@@ -1,13 +1,15 @@
 # Spec: GUI v2 backend (FastAPI service over the existing modules)
 
+Updated 2026-09-06 after the earlier GUI was removed: helper locations now refer to the api package.
+
 Working directory: /expanse/lustre/projects/cla119/kaushiks/jiram_catalog
 (`uv` project; `fastapi`, `uvicorn[standard]`, `httpx` (dev) are
 installed; `pyarrow`, `xarray`, `matplotlib`, `imageio` present).
 Read first: `docs/specs/2026-09-06_api_contract.md` (the contract; it
-is normative), `src/jiram_catalog/gui/data.py` (loaders and caches to
-reuse: `catalog_table`, `strips_table`, `trackability_table`,
-`open_stack`, `open_strip`, `strip_stats`, `apply_filters`),
-`gui/views_poles.py` (graticule helper to reuse), `stacks.py`,
+is normative), `src/jiram_catalog/api/data.py` (loaders, caches, and
+the graticule helper: `catalog_table`, `strips_table`,
+`trackability_table`, `open_stack`, `open_strip`, `strip_stats`,
+`apply_filters`), `stacks.py`,
 `export_goflow.py`, `movie.py`, `strips.py`, `stats2d.py`,
 `config.py`, `gui_cmd.py`, `cli.py`.
 
@@ -17,8 +19,9 @@ reuse: `catalog_table`, `strips_table`, `trackability_table`,
   `stacks.py`, `strips.py`, `jobs.py`, `images.py` (PNG encoding),
   `arrow.py` (DataFrame -> Arrow IPC bytes)   (create)
 - `src/jiram_catalog/gui_cmd.py` (modify: `gui` now serves the v2 app
-  with uvicorn on `--port`/`--address`; `--legacy` serves the Panel v1;
-  keep `--no-browser`; add `--reload` for development)
+  with uvicorn on `--port`/`--address`; a legacy flag temporarily kept
+  serving the old Panel-based v1 app during the transition (since
+  removed); keep `--no-browser`; add `--reload` for development)
 - `src/jiram_catalog/webapp/__init__.py` and `webapp/dist/.gitkeep` (create; the front end build lands in `dist/` from another task)
 - `tests/test_api_offline.py` (create)
 READ-ONLY: everything else, including `cli.py`, `pyproject.toml`,
@@ -43,7 +46,7 @@ building the front end under `frontend/`; do not touch it.
 - Stretch defaults: `p1`/`p99` percentiles over a strided subsample of
   up to 4 time steps and 2e6 values, computed once per stack and cached
   in the meta cache (`<mirror>/gui_cache/meta_<id>.json`).
-- Graticule: reuse GUI v1's helper; output GeoJSON in km coordinates.
+- Graticule: reuse `api/data.py`'s helper; output GeoJSON in km coordinates.
 - Range support for the movie: implement explicitly (parse `Range`,
   return 206 with `Content-Range`, `Accept-Ranges: bytes`) rather than
   relying on `FileResponse`.
@@ -55,7 +58,7 @@ building the front end under `frontend/`; do not touch it.
 Build a tmp mirror with a synthetic `frames.parquet`/`frames_geo.parquet`
 (20 rows), a synthetic 2-step stack NetCDF and a synthetic strip and
 `strips.parquet` (use the same synthetic builders as
-`tests/test_gui_offline.py` where possible); then: `/api/config`,
+`tests/test_api_offline.py` where possible); then: `/api/config`,
 `frames.arrow` parses with pyarrow and has the contract's columns and
 types; `summary` filters behave (each filter once); selection create
 /list/get/delete round trip; `/api/stacks` lists the synthetic stack;

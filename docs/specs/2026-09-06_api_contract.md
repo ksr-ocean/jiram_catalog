@@ -31,7 +31,8 @@ needed (same origin); the backend serves the built front end at `/`.
   for `on_planet_min` and for `lat_min`/`lat_max` (a frame whose
   boresight misses the planet has no latitude and never matches a
   latitude filter; REVISED 2026-09-06); other thresholds keep rows
-  whose value is missing (the same rule as GUI v1). The seven latitude bands are those
+  whose value is missing (a threshold excludes a row only when its value is
+  known and fails it). The seven latitude bands are those
   of the trackability report.
 - `GET /api/catalog/frame/{product_id}` -> full row of `frames_with_geo` for that product (all columns, JSON, NaN as null), plus `halves: ["L","M"]` present.
 
@@ -55,7 +56,7 @@ needed (same origin); the backend serves the built front end at `/`.
 - `GET /api/strips.arrow` -> Arrow IPC of `strips.parquet` (all columns; datetimes as int64 ms with suffix `_ms`).
 - `GET /api/strips/{strip_id}/meta` -> attrs, `x_km`/`y_km` ranges, shape, `stretch`, `graticule` (as for stacks), `local_time_contours` (GeoJSON, every 2 h).
 - `GET /api/strips/{strip_id}/image.png?vmin=&vmax=&max_px=` -> as the stack frame.
-- `GET /api/strips/{strip_id}/stats` -> `{k, E, k_x, P_x, k_y, P_y, r_m, S2, S3, attrs}` from `stats2d.strip_statistics`, cached under `<mirror>/gui_cache/stats_<strip_id>.nc` (reuse `gui.data.strip_stats`).
+- `GET /api/strips/{strip_id}/stats` -> `{k, E, k_x, P_x, k_y, P_y, r_m, S2, S3, attrs}` from `stats2d.strip_statistics`, cached under `<mirror>/gui_cache/stats_<strip_id>.nc` (reuse `api.data.strip_stats`).
 
 ## Jobs (thread pool, in-process)
 - `GET /api/jobs` -> `[{id, kind, status: queued|running|done|failed, progress: 0-1, message, started, finished, result}]`

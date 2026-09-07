@@ -96,9 +96,11 @@ at any date -- see `docs/decisions.md`). This tool:
    the strip library.
 5. **Serves the browser-based catalog** above (a React + deck.gl front
    end over a FastAPI backend, `docs/gui_v2_notes.md`): Catalog (every
-   frame, filterable and selectable), Poles (stack viewer, movies,
-   exports), Strips (the strip library, its statistics), with a
-   selection tray that carries a selection between them.
+   frame, filterable and selectable), Poles (a stack viewer with three
+   switchable modes -- region snapshots, the accumulating sweep, and
+   raw instrument frames -- plus movies and exports), Strips (the strip
+   library, its statistics), with a selection tray that carries a
+   selection between them.
 
 Every claim above is checked against a published result: the geometry
 engine, the reprojection, and the map grid it uses were all validated

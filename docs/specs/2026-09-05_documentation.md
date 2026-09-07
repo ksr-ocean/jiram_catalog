@@ -59,7 +59,7 @@ lines; use tables for schemas; link between documents with relative
 paths.
 
 ## Validation that defines done
-- `grep -rci codex README.md docs/*.md` prints only zeros.
+- a case-insensitive grep for any executor product name over `README.md docs/*.md` prints only zeros.
 - Every subcommand in `uv run jiram-catalog --help` appears in
   `docs/usage.md`.
 - Every column name in `docs/data_products.md` for `frames_geo.parquet`,

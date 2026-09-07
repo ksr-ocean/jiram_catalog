@@ -95,6 +95,20 @@ export interface Stretch {
  */
 export type StretchField = Stretch | Record<string, Stretch>;
 
+/**
+ * The photometry amendment of 2026-09-07: a banded (JunoCam) product sends
+ * one per-band map per illumination normalisation, keyed by the norm's name.
+ * A band-less JIRAM product still sends the one pair it always did, so both
+ * shapes arrive here and `stretchFor` in `lib/bands` is what tells them apart.
+ */
+export type StretchByNorm = Record<string, StretchField>;
+
+/** `none`, `lambert`, `minnaert[:k]`, `flat[:sigma]`. */
+export type NormName = 'none' | 'lambert' | 'minnaert' | 'flat';
+
+/** The PNG mapping the server applies between the stretch and the eight bits. */
+export type StretchMode = 'linear' | 'asinh';
+
 export interface StackMeta {
   id: string;
   region: string;
@@ -106,7 +120,10 @@ export interface StackMeta {
   shape: [number, number];
   times: string[];
   per_time: PerTimeRecord[];
-  stretch: StretchField;
+  stretch: StretchField | StretchByNorm;
+  /** Amendment 2026-09-07; absent on a backend that predates it. */
+  norm_default?: string;
+  norm_options?: string[];
   graticule: GeoJsonCollection;
   instrument?: string;
   bands?: string[] | null;
@@ -118,7 +135,10 @@ export interface StripMeta {
   x_km: [number, number];
   y_km: [number, number];
   shape: [number, number];
-  stretch: StretchField;
+  stretch: StretchField | StretchByNorm;
+  /** Amendment 2026-09-07; absent on a backend that predates it. */
+  norm_default?: string;
+  norm_options?: string[];
   graticule: GeoJsonCollection;
   local_time_contours?: GeoJsonCollection;
   instrument?: string;

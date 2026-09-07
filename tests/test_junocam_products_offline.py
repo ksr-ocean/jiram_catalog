@@ -23,12 +23,15 @@ from jiram_catalog.junocam.geo import (
 )
 from jiram_catalog.junocam.stacks import (
     MAX_PIXEL_RATIO,
+    NIGHT_INCIDENCE_DEG,
     _outline_box,
+    night_masked_valid,
     outline_overlap,
     stack_output_path,
     tier_rank,
     window_grid,
 )
+from jiram_catalog.junocam.strips import MAX_PIXEL_KM
 from jiram_catalog.regions import RegionGrid
 from jiram_catalog.stacks import read_stack, write_stack
 from jiram_catalog.stats2d import select_band, strip_statistics
@@ -197,6 +200,52 @@ def test_stack_output_path_names_the_bands_and_the_orbits(tmp_path):
 def test_the_pixel_ratio_cut_is_a_documented_constant():
     """It is the one cut the JunoCam selector makes that the JIRAM one does not."""
     assert 1.0 < MAX_PIXEL_RATIO < 100.0
+
+
+# ---------------------------------------------------------------------------
+# the 2026-09-07 photometry amendment: night masking and the scale cutoffs
+# ---------------------------------------------------------------------------
+def test_the_two_scale_cutoffs_keep_the_products_maps_rather_than_postcards():
+    """A stack may upsample a little; the strip library wants close swaths.
+
+    Both numbers are what the amendment measured against: at twenty-five the
+    orbit-4 polar stack was built out of whole-disk views at 578 km a pixel,
+    and at no cut at all the median strip of the same pass was a 200 km
+    picture of Jupiter rather than a map of anything on it.
+    """
+    assert MAX_PIXEL_RATIO <= 3.0
+    assert MAX_PIXEL_KM <= 30.0
+
+
+def test_night_masked_valid_needs_one_band_that_is_both_painted_and_lit():
+    """Painted is not enough, one lit band is, and NaN illumination is not lit."""
+    image = np.array(
+        [
+            [[1.0, 2.0, 3.0, 4.0, np.nan]],
+            [[1.0, 2.0, 3.0, np.nan, np.nan]],
+        ]
+    )
+    incidence = np.array(
+        [
+            [[10.0, 100.0, np.nan, 10.0, 10.0]],
+            [[100.0, 100.0, 20.0, 10.0, 10.0]],
+        ]
+    )
+    valid = night_masked_valid(image, incidence)
+    #   lit in band 0 | night in both | band 0's angle is NaN, band 1's is lit
+    #                 | painted and lit in band 0 only | painted in neither
+    assert valid.tolist() == [[True, False, True, True, False]]
+    assert valid.shape == image.shape[1:]
+    # The angle is a parameter, and the default is the module's constant.
+    assert not night_masked_valid(image, incidence, night_deg=5.0).any()
+    assert NIGHT_INCIDENCE_DEG == 88.0
+
+
+def test_night_masked_valid_rejects_a_pixel_the_terminator_has_passed():
+    """Eighty-eight degrees, not ninety: the last two degrees are not a signal."""
+    image = np.ones((1, 1, 3))
+    incidence = np.array([[[87.0, 88.5, 89.5]]])
+    assert night_masked_valid(image, incidence).tolist() == [[True, False, False]]
 
 
 # ---------------------------------------------------------------------------

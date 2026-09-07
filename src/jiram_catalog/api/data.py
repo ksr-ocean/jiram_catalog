@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from ..geo import frames_with_geo
 from ..stacks import read_stack
 from ..stats2d import strip_statistics
 from ..strips import load_index, read_strip
+from . import images
 
 #: Latitude band edges and names, degrees; the same seven bands the
 #: trackability table uses (half-open ``[lo, hi)`` except the last).
@@ -365,7 +368,10 @@ def open_strip(mirror: str | Path | None, strip: str) -> xr.Dataset:
 
 
 def strip_stats(
-    mirror: str | Path | None, strip: str, band: str | None = None
+    mirror: str | Path | None,
+    strip: str,
+    band: str | None = None,
+    norm: str | None = None,
 ) -> xr.Dataset:
     """Statistics of one strip, computed once and cached on disk.
 
@@ -375,9 +381,22 @@ def strip_stats(
     spectrum per band and therefore one cache file per band, named
     ``stats_<strip_id>__<band>.nc``; the band-less name stays what it was, so
     every JIRAM cache already on disk is still found.
+
+    The illumination normalisation joins the name the same way, and for the
+    same reason: a Lambert-corrected spectrum and a raw one are two different
+    measurements of the strip, not two spellings of one.  ``none`` adds no
+    token, which is what keeps the JIRAM caches that predate the norm valid.
     """
     root = mirror_root(mirror)
+    dataset = open_strip(root, strip)
+    resolved = (
+        strip_norm_default(dataset)
+        if norm is None or not str(norm).strip()
+        else str(norm).strip()
+    )
     suffix = "" if band is None else f"__{str(band).upper()}"
+    if resolved.lower() != "none":
+        suffix += "__" + re.sub(r"[^A-Za-z0-9.-]+", "_", resolved.lower())
     key = f"{root}::{strip}{suffix}"
     cached = _STATS_CACHE.get(key)
     if cached is not None:
@@ -391,12 +410,126 @@ def strip_stats(
             return statistics
         except Exception as exc:
             LOGGER.warning("unreadable statistics cache %s: %s", path, exc)
-    statistics = strip_statistics(open_strip(root, strip), band=band)
+    statistics = strip_statistics(dataset, band=band, norm=resolved)
     temporary = path.with_suffix(".nc.tmp")
     statistics.to_netcdf(temporary, engine="netcdf4")
     os.replace(temporary, path)
     _STATS_CACHE[key] = statistics
     return statistics
+
+
+# ---------------------------------------------------------------------------
+# illumination normalisation
+# ---------------------------------------------------------------------------
+def instrument_norm_default(instrument: str) -> str:
+    """``lambert`` for a reflected-light instrument, ``none`` for a thermal one.
+
+    JunoCam measures sunlight and JIRAM measures Jupiter's own heat, so a
+    cosine correction is the right default for the one and meaningless for
+    the other; nothing about a JIRAM night-side frame is dimmer for being
+    unlit.
+    """
+    return "lambert" if str(instrument).strip().lower() == "junocam" else "none"
+
+
+def strip_norm_default(dataset: xr.Dataset) -> str:
+    """The normalisation a product asks to be read with.
+
+    The attribute the builder wrote wins; a file that predates it -- every
+    JIRAM strip, and any JunoCam strip built before the amendment -- falls
+    back to its instrument's default.
+    """
+    stored = dataset.attrs.get("norm_default")
+    if stored:
+        return str(stored)
+    return instrument_norm_default(str(dataset.attrs.get("instrument", "JIRAM")))
+
+
+def normalised_stretch(
+    dataset: xr.Dataset,
+    *,
+    key: str,
+    norms: Sequence[str] = ("none",),
+    percentiles: tuple[float, float] = (1.0, 99.0),
+    max_steps: int = 4,
+    max_samples: int = 2_000_000,
+) -> dict[str, tuple[float, float]]:
+    """Display limits of one band, after normalisation, over valid pixels only.
+
+    The same strided subsample :func:`stack_stretch` takes -- a few time
+    steps, a couple of million values -- with two differences that are the
+    whole point of the amendment.  The percentiles are taken over the
+    ``valid`` mask rather than over every finite number, so the NaN-padded
+    canvas around a swath cannot vote; and they are taken *after* the
+    illumination model, so the limits belong to the picture the viewer will
+    actually be shown.  On the orbit-4 polar stack the difference is a band
+    median of 6-181 DN against 99th percentiles of 1,100-2,800 -- a stretch
+    that saturates the dayside completely.
+
+    ``dataset`` is already reduced to one band where it has a band axis.
+    Every norm asked for is answered from the *same* strided read, keyed by
+    its canonical label: a stack plane is 37 MB of deflated NetCDF and reading
+    it four times to divide it four ways would make the metadata request the
+    slowest thing in the application.
+    """
+    parsed = [images.parse_norm(value) for value in norms]
+    labels = [images.norm_label(name, parameter) for name, parameter in parsed]
+    low_p, high_p = (float(value) for value in percentiles)
+    identities = {label: (f"{key}::{label}", low_p, high_p) for label in labels}
+    limits = {
+        label: _STRETCH_CACHE[identities[label]]
+        for label in labels
+        if identities[label] in _STRETCH_CACHE
+    }
+    wanted = [pair for pair, label in zip(parsed, labels) if label not in limits]
+    if not wanted:
+        return limits
+
+    steps = int(dataset.sizes.get("time", 1))
+    indices = np.unique(np.linspace(0, steps - 1, min(max_steps, steps)).astype(int))
+    per_step = max(1, max_samples // max(len(indices), 1))
+    samples: dict[str, list[np.ndarray]] = {
+        images.norm_label(*pair): [] for pair in wanted
+    }
+    for index in indices:
+
+        def plane(variable: str) -> np.ndarray | None:
+            if variable not in dataset:
+                return None
+            array = dataset[variable]
+            if "time" in array.dims:
+                array = array.isel(time=int(index))
+            return np.asarray(array.values)
+
+        image = plane("image")
+        if image is None:
+            continue
+        stride = max(1, int(np.ceil(np.sqrt(image.size / per_step))))
+        cut = (slice(None, None, stride), slice(None, None, stride))
+        image = image[cut]
+        valid = plane("valid")
+        valid = None if valid is None else np.asarray(valid, dtype=bool)[cut]
+        incidence = plane("incidence")
+        incidence = None if incidence is None else incidence[cut]
+        emission = plane("emission")
+        emission = None if emission is None else emission[cut]
+        for name, parameter in wanted:
+            values, mask = images.normalise_plane(
+                image,
+                incidence=incidence,
+                emission=emission,
+                valid=valid,
+                norm=name,
+                parameter=parameter,
+            )
+            pool = values[mask]
+            samples[images.norm_label(name, parameter)].append(pool[np.isfinite(pool)])
+    for label, pools in samples.items():
+        pool = np.concatenate(pools) if pools else np.empty(0)
+        found = images.percentiles_of(pool, np.ones(pool.shape, dtype=bool), low_p, high_p)
+        _STRETCH_CACHE[identities[label]] = found
+        limits[label] = found
+    return limits
 
 
 def stack_stretch(

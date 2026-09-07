@@ -681,7 +681,11 @@ def select_band(ds: xr.Dataset, band: str | None = None) -> tuple[xr.Dataset, st
 
 
 def strip_statistics(
-    ds: xr.Dataset, band: str | None = None, *, max_lag_px: int = 64
+    ds: xr.Dataset,
+    band: str | None = None,
+    *,
+    norm: str | None = None,
+    max_lag_px: int = 64,
 ) -> xr.Dataset:
     """The standard statistics of one strip, as a small Dataset.
 
@@ -694,9 +698,50 @@ def strip_statistics(
     ``band`` selects one band of a multi-band (JunoCam) strip and is ignored
     by a strip that has only one; the band that was used is recorded in the
     result's ``band`` attribute either way.
+
+    ``norm`` divides an illumination model out of the image before anything is
+    transformed, and defaults to the strip's own ``norm_default`` attribute --
+    ``lambert`` for JunoCam, ``none`` for JIRAM, which has none of it.  It
+    matters more here than on screen: limb darkening is a smooth ramp across
+    the whole swath, so it is a large-amplitude, low-wavenumber signal that
+    sits under every decade of the spectrum below it and steepens the slope
+    that would otherwise be measured.  The model that was used is recorded in
+    the result's ``norm`` attribute, and the mask it leaves behind -- the night
+    side is not a measurement -- is the mask the transforms see.
     """
+    from .api.images import normalise_plane, parse_norm
+
+    requested = norm if norm is not None and str(norm).strip() else ds.attrs.get(
+        "norm_default", "none"
+    )
+    # ``norm_name``, not ``name``: the attribute copy below runs a ``for name
+    # in STRIP_ATTRS`` loop, and a norm called ``valid_frac`` is a bug that
+    # would show up only in the recorded metadata.
+    norm_name, parameter = parse_norm(requested)
     ds, selected = select_band(ds, band)
     image, valid, dx_m = _strip_arrays(ds)
+    if norm_name != "none":
+        # ``none`` short-circuits rather than round-tripping through an
+        # identity: the JIRAM spectra in the library were computed on exactly
+        # these arrays, and a normalisation that does nothing must also change
+        # nothing about the numbers.
+        normalised, valid = normalise_plane(
+            image,
+            incidence=(
+                np.asarray(ds["incidence"].values, dtype=np.float64)
+                if "incidence" in ds
+                else None
+            ),
+            emission=(
+                np.asarray(ds["emission"].values, dtype=np.float64)
+                if "emission" in ds
+                else None
+            ),
+            valid=valid,
+            norm=norm_name,
+            parameter=parameter,
+        )
+        image = np.where(valid, normalised, 0.0)
     spec = power_spectrum_2d(image, valid, dx_m=dx_m)
     shells = isotropic_spectrum(spec)
     along_x = spectrum_1d(image, valid, dx_m=dx_m, axis=1)
@@ -733,6 +778,7 @@ def strip_statistics(
     if selected is not None:
         out.attrs["band"] = str(selected)
     out.attrs.update(
+        norm=norm_name if not np.isfinite(parameter) else f"{norm_name}:{parameter:g}",
         conventions=CONVENTIONS_VERSION,
         dx_m=dx_m,
         dk=shells["dk"],

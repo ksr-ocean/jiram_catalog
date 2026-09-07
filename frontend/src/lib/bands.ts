@@ -9,7 +9,7 @@
  * scans the string for a whole token rather than splitting it, so a filter
  * pass over the whole catalog allocates nothing.
  */
-import type { StretchField, Stretch } from '../api/types';
+import type { NormName, Stretch, StretchByNorm, StretchField } from '../api/types';
 
 export type Instrument = 'JIRAM' | 'JunoCam';
 
@@ -127,6 +127,94 @@ export function hasRgb(bands: readonly string[] | null | undefined): boolean {
 export function bandForChannel(bands: readonly string[], channel: RgbChannel): string | null {
   const want = { r: 'RED', g: 'GREEN', b: 'BLUE' }[channel];
   return bands.find((name) => name.toUpperCase() === want) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// illumination normalisation (the photometry amendment of 2026-09-07)
+// ---------------------------------------------------------------------------
+/** Every normalisation the API answers to, in the order the selector shows. */
+export const NORM_NAMES: NormName[] = ['none', 'lambert', 'minnaert', 'flat'];
+
+/** How each one reads in the toolbar. */
+export const NORM_LABELS: Record<NormName, string> = {
+  none: 'None',
+  lambert: 'Lambert',
+  minnaert: 'Minnaert',
+  flat: 'Flatten',
+};
+
+/** One line of why, shown as the selector's tooltip. */
+export const NORM_BLURBS: Record<NormName, string> = {
+  none: 'raw radiance; what the instrument recorded',
+  lambert: 'divide by cos(i): the diffuse-surface correction, no parameters',
+  minnaert: 'divide by cos(i)^k cos(e)^(k-1): k near 0.7 fits a cloud deck',
+  flat: 'divide by the image own Gaussian low-pass: removes any smooth gradient',
+};
+
+/** Minnaert's exponent and the flattener's width: the ranges the API accepts. */
+export const MINNAERT_K_RANGE: [number, number] = [0.3, 1.2];
+export const DEFAULT_MINNAERT_K = 0.7;
+export const FLAT_SIGMA_RANGE: [number, number] = [8, 256];
+export const DEFAULT_FLAT_SIGMA = 32;
+
+/** The wire spelling of a norm and its parameter: `minnaert:0.7`, `flat:32`. */
+export function normLabel(name: string, k: number, sigma: number): string {
+  if (name === 'minnaert') return `minnaert:${k}`;
+  if (name === 'flat') return `flat:${sigma}`;
+  return name;
+}
+
+/** The bare name of a wire spelling: `minnaert:0.7` -> `minnaert`. */
+export function normName(label: string | null | undefined): NormName {
+  const head = String(label ?? 'none').split(':')[0].trim().toLowerCase();
+  return (NORM_NAMES as string[]).includes(head) ? (head as NormName) : 'none';
+}
+
+/** True when `stretch` is keyed by norm name rather than by band or by `p1`. */
+export function isByNormStretch(
+  stretch: StretchField | StretchByNorm | null | undefined,
+): stretch is StretchByNorm {
+  if (!stretch || 'p1' in stretch) return false;
+  const values = Object.values(stretch as Record<string, unknown>);
+  if (values.length === 0) return false;
+  // A per-band map holds `{p1, p99}`; a per-norm map holds another map.
+  return values.every((value) => !!value && typeof value === 'object' && !('p1' in (value as object)));
+}
+
+/**
+ * The per-band stretch map for one normalisation.
+ *
+ * A backend from before the amendment sends one map with no norm level at
+ * all, and its numbers are the unnormalised ones; an unknown norm falls back
+ * to whatever the product's default was, which is what the server itself
+ * would have used.
+ */
+export function stretchForNorm(
+  stretch: StretchField | StretchByNorm | null | undefined,
+  norm: string | null | undefined,
+): StretchField | null {
+  if (!stretch) return null;
+  if (!isByNormStretch(stretch)) return stretch;
+  const entries = Object.entries(stretch);
+  const wanted = String(norm ?? 'none');
+  // Exact spelling first, then the same model at whatever parameter the
+  // metadata carries -- `minnaert:0.8` starts from `minnaert:0.7`'s limits,
+  // which is a far better guess than the raw image's -- and only then the
+  // first entry, which is always `none`.
+  const hit =
+    entries.find(([name]) => name === wanted) ??
+    entries.find(([name]) => normName(name) === normName(wanted)) ??
+    entries[0];
+  return hit ? hit[1] : null;
+}
+
+/** The `{p1, p99}` one band starts at, under one normalisation. */
+export function stretchFor(
+  stretch: StretchField | StretchByNorm | null | undefined,
+  norm: string | null | undefined,
+  band?: string | null,
+): Stretch {
+  return resolveStretch(stretchForNorm(stretch, norm), band);
 }
 
 /** True when `stretch` is the amendment's per-band map rather than one pair. */

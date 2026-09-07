@@ -189,6 +189,7 @@ def _add_subcommands(subparsers: Any) -> None:
     strips.add_argument("--orbits", required=True, metavar="SPEC")
     strips.add_argument("--bands", default="RED,GREEN,BLUE")
     strips.add_argument("--quality-min", default="A", choices=["A", "B", "C"])
+    strips.add_argument("--max-pixel-km", type=float, default=30.0, help="skip images coarser than this ground sample (km/px)")
     strips.add_argument("--jobs", type=int, default=default_jobs())
 
 
@@ -297,7 +298,8 @@ def run(args: argparse.Namespace) -> int:
         orbits = parse_orbits(args.orbits)
         bands = parse_bands(args.bands)
         table = build_library(
-            mirror, orbits, bands, quality_min=args.quality_min, jobs=args.jobs
+            mirror, orbits, bands, quality_min=args.quality_min, jobs=args.jobs,
+            max_pixel_km=args.max_pixel_km,
         )
         print(library_summary(table, bands))
         return 0

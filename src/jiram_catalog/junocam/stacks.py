@@ -50,8 +50,10 @@ from .reproject import reproject_image
 LOGGER = logging.getLogger(__name__)
 
 __all__ = [
+    "NIGHT_INCIDENCE_DEG",
     "QUALITY_TIERS",
     "build_stack",
+    "night_masked_valid",
     "select_images",
     "stack_output_path",
     "stack_summary",
@@ -69,11 +71,29 @@ QUALITY_TIERS: tuple[str, ...] = ("A", "B", "C")
 #: hundreds of output cells.  The JIRAM builder needs no such rule because a
 #: JIRAM orbit's frames sit within a factor of a few of each other; a JunoCam
 #: perijove pass sweeps a factor of fifty in two hours, from a whole-disk view
-#: at 578 km per pixel to a close-up at 11.  Twenty-five is generous -- most
-#: mapping pipelines refuse to upsample by more than a factor of a few -- and
-#: on the 15 km paper grid it is the point at which perijove 4's colour
+#: at 578 km per pixel to a close-up at 11.
+#:
+#: Twenty-five, the first value, was far too generous: at 15 km a map pixel it
+#: admitted every whole-disk view of the pass, each of which paints the entire
+#: canvas out of a handful of its own pixels and drags the stack's percentile
+#: stretch towards the limb-darkened disk.  Three is the rule the mapping
+#: literature actually keeps -- do not upsample by more than a small factor --
+#: and on the 15 km paper grid it is the point at which perijove 4's colour
 #: sequence stops being a picture of the whole planet.
-MAX_PIXEL_RATIO = 25.0
+MAX_PIXEL_RATIO = 3.0
+
+#: Solar incidence at which a JunoCam map pixel stops being a measurement.
+#:
+#: JunoCam is a visible-light camera: past the terminator it records the
+#: read-noise floor, not the planet.  Those pixels are painted all the same --
+#: the swath crosses the night side and the reprojection has no opinion about
+#: illumination -- and the first orbit-4 polar stack marked the whole 3000 x
+#: 3200 canvas valid at most time steps because of it, which put a night-side
+#: median of 6 DN into the same percentile stretch as a 2,800 DN dayside.
+#: Eighty-eight degrees rather than ninety: the last two degrees before the
+#: terminator are grazing illumination whose ``1/cos(i)`` correction is already
+#: a factor of thirty, and nothing there survives being displayed anyway.
+NIGHT_INCIDENCE_DEG = 88.0
 
 #: Probe points of the canvas used when no outline vertex lands on it: a
 #: footprint larger than the region has every vertex outside and would
@@ -212,6 +232,28 @@ def select_images(
     return selected.sort_values(["start_time", "product_id"], kind="stable", ignore_index=True)
 
 
+def night_masked_valid(
+    image: np.ndarray, incidence: np.ndarray, *, night_deg: float = NIGHT_INCIDENCE_DEG
+) -> np.ndarray:
+    """Which map cells of one ``(band, y, x)`` block are a daylight measurement.
+
+    A cell counts when *some* band both painted it and saw it lit: the three
+    colour strips cross the terminator a second or so apart, and a cell that
+    RED caught in sunlight is a measurement whatever GREEN made of it later.
+    The mask has no band axis for the same reason ``valid`` never had one.
+
+    A NaN incidence is not daylight.  Near the limb the bilinear sample of the
+    illumination reaches framelet pixels that see sky, whose geometry is NaN
+    while their DN is perfectly finite; treating "unknown" as "lit" would let
+    exactly the ring of pixels with the least trustworthy geometry through.
+    """
+    values = np.asarray(image)
+    sun = np.asarray(incidence)
+    with np.errstate(invalid="ignore"):
+        lit = np.isfinite(values) & np.isfinite(sun) & (sun < float(night_deg))
+    return np.asarray(lit.any(axis=0))
+
+
 # --------------------------------------------------------------------------
 # geometry of the output canvas
 # --------------------------------------------------------------------------
@@ -329,6 +371,14 @@ def _reproject_task(task: _Task) -> dict[str, Any]:
     angles, _ = reproject_image(
         np.asarray(geometry.emission, dtype=np.float64), geometry, grid, task.bands
     )
+    # The solar incidence rides along on the same inverse mapping as the
+    # radiance, so a map cell's illumination is the illumination of the very
+    # framelet pixels that were averaged into it rather than of the image's
+    # boresight; that is what makes the night mask and the Lambert correction
+    # per pixel rather than per image.
+    sun, _ = reproject_image(
+        np.asarray(geometry.incidence, dtype=np.float64), geometry, grid, task.bands
+    )
     dt_refined = float(geometry.dt_refined_s)
     del geometry
 
@@ -353,6 +403,7 @@ def _reproject_task(task: _Task) -> dict[str, Any]:
         box=box,
         image=np.ascontiguousarray(values[cut]),
         emission=np.ascontiguousarray(angles[cut].astype(np.float32)),
+        incidence=np.ascontiguousarray(sun[cut].astype(np.float32)),
         counts=np.ascontiguousarray(counts[cut]),
     )
     return result
@@ -427,6 +478,7 @@ def build_stack(
     shape = (count, len(names), height, width)
     image = np.full(shape, np.nan, dtype=np.float32)
     emission = np.full(shape, np.nan, dtype=np.float32)
+    incidence = np.full(shape, np.nan, dtype=np.float32)
     overlaps = np.zeros(shape, dtype=np.uint8)
     valid = np.zeros((count, height, width), dtype=bool)
     dt_refined = np.full(count, np.nan, dtype=np.float64)
@@ -455,8 +507,11 @@ def build_stack(
             cut = (position, slice(None), slice(top, bottom), slice(left, right))
             image[cut] = result["image"]
             emission[cut] = result["emission"]
+            incidence[cut] = result["incidence"]
             overlaps[cut] = result["counts"]
-            valid[position, top:bottom, left:right] = np.isfinite(result["image"]).any(axis=0)
+            valid[position, top:bottom, left:right] = night_masked_valid(
+                result["image"], result["incidence"]
+            )
             painted_boxes[position] = box
         if done % 10 == 0 or done == count:
             LOGGER.info("reprojected %d/%d image(s)", done, count)
@@ -471,6 +526,7 @@ def build_stack(
             cut3 = (slice(None), slice(inner[0], inner[1]), slice(inner[2], inner[3]))
             image = np.ascontiguousarray(image[cut4])
             emission = np.ascontiguousarray(emission[cut4])
+            incidence = np.ascontiguousarray(incidence[cut4])
             overlaps = np.ascontiguousarray(overlaps[cut4])
             valid = np.ascontiguousarray(valid[cut3])
             window = (
@@ -479,8 +535,17 @@ def build_stack(
                 window[2] + inner[2],
                 window[2] + inner[3],
             )
+    # The night side is dropped only now, when the whole window is in hand:
+    # a worker sees one image's painted box and cannot know that another
+    # image lit the same cell.
+    np.copyto(image, np.float32("nan"), where=~valid[:, None, :, :])
+    LOGGER.info(
+        "valid after the %.0f deg night mask: %.4f of the window",
+        NIGHT_INCIDENCE_DEG,
+        float(valid.mean()),
+    )
     return _stack_dataset(
-        grid, window, selection, names, image, valid, emission, overlaps, dt_refined
+        grid, window, selection, names, image, valid, emission, incidence, overlaps, dt_refined
     )
 
 
@@ -492,6 +557,7 @@ def _stack_dataset(
     image: np.ndarray,
     valid: np.ndarray,
     emission: np.ndarray,
+    incidence: np.ndarray,
     overlaps: np.ndarray,
     dt_refined: np.ndarray,
 ) -> xr.Dataset:
@@ -526,6 +592,7 @@ def _stack_dataset(
             "image": (("time", "band", "y", "x"), image),
             "valid": (("time", "y", "x"), valid),
             "emission": (("time", "band", "y", "x"), emission),
+            "incidence": (("time", "band", "y", "x"), incidence),
             "n_frames": (("time", "band", "y", "x"), overlaps),
         },
         coords=coords,
@@ -537,6 +604,8 @@ def _stack_dataset(
             "band": ";".join(bands),
             "bands": ";".join(bands),
             "level": "frame",
+            "night_masked_deg": float(NIGHT_INCIDENCE_DEG),
+            "norm_default": "lambert",
             "row0": int(top),
             "col0": int(left),
             "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -545,7 +614,10 @@ def _stack_dataset(
     )
     dataset["image"].attrs.update(long_name="reprojected radiance", units="DN")
     dataset["emission"].attrs.update(long_name="emission angle", units="degree")
-    dataset["valid"].attrs.update(long_name="map pixel painted in at least one band")
+    dataset["incidence"].attrs.update(long_name="solar incidence angle", units="degree")
+    dataset["valid"].attrs.update(
+        long_name="map pixel painted and sunlit in at least one band"
+    )
     dataset["n_frames"].attrs.update(long_name="framelets averaged into this cell")
     dataset["y_km"].attrs.update(units="km")
     dataset["x_km"].attrs.update(units="km")
@@ -588,7 +660,8 @@ def stack_summary(dataset: xr.Dataset, path: str | Path) -> str:
             f"  dims: time={dataset.sizes['time']} band={dataset.sizes['band']} "
             f"y={dataset.sizes['y']} x={dataset.sizes['x']}",
             f"  bands: {', '.join(str(v) for v in dataset['band'].values)}",
-            f"  valid pixels: {float(valid.mean()):.4f} of the canvas",
+            f"  valid pixels: {float(valid.mean()):.4f} of the canvas"
+            f" (night mask at {dataset.attrs.get('night_masked_deg', NIGHT_INCIDENCE_DEG):g} deg)",
             f"  limb-refined epochs: {int(np.isfinite(dt).sum())}/{dt.size}",
             f"  size on disk: {Path(path).stat().st_size / 1e9:.2f} GB",
         ]

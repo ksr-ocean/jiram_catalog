@@ -285,6 +285,52 @@ def test_spectrum_1d_peak_and_line_rejection():
 # --------------------------------------------------------------------------
 # 7. strip and population products
 # --------------------------------------------------------------------------
+def test_strip_statistics_normalises_before_it_transforms():
+    """The 2026-09-07 photometry amendment: ``norm`` divides the Sun out first.
+
+    A limb-darkened strip is the raw field times a smooth ramp, which is a
+    large-amplitude signal at the lowest wavenumbers the canvas holds; the
+    spectrum of the ramped field is therefore not the spectrum of the field.
+    Dividing by ``cos(i)`` puts it back, and the default comes from the
+    product's own ``norm_default`` attribute so a caller who says nothing
+    still gets the right answer for the instrument.
+    """
+    strip = synthetic_strip(21)
+    ny, nx = strip["image"].shape
+    # A terminator sweeping across the canvas: 20 deg on one side, 85 on the
+    # other, which is a factor of eleven in cos(i).
+    incidence = np.broadcast_to(np.linspace(20.0, 85.0, nx), (ny, nx)).astype("float32")
+    lit = np.cos(np.radians(incidence))
+    ramped = strip.assign(
+        image=(("y", "x"), (strip["image"].values * lit).astype("float32")),
+        incidence=(("y", "x"), incidence),
+    )
+
+    raw = strip_statistics(strip, max_lag_px=16)
+    darkened = strip_statistics(ramped, norm="none", max_lag_px=16)
+    corrected = strip_statistics(ramped, norm="lambert", max_lag_px=16)
+    assert raw.attrs["norm"] == "none" and corrected.attrs["norm"] == "lambert"
+
+    def closeness(other):
+        both = np.isfinite(raw["E"].values) & np.isfinite(other["E"].values)
+        both &= (raw["E"].values > 0) & (other["E"].values > 0)
+        return float(
+            np.abs(
+                np.log(other["E"].values[both]) - np.log(raw["E"].values[both])
+            ).mean()
+        )
+
+    # Undoing the ramp brings the spectrum back towards the unlit strip's.
+    assert closeness(corrected) < 0.5 * closeness(darkened)
+
+    # The attribute is the default, and an explicit argument overrides it.
+    ramped.attrs["norm_default"] = "lambert"
+    assert strip_statistics(ramped, max_lag_px=16).attrs["norm"] == "lambert"
+    assert strip_statistics(ramped, norm="none", max_lag_px=16).attrs["norm"] == "none"
+    with pytest.raises(ValueError):
+        strip_statistics(ramped, norm="chartreuse", max_lag_px=16)
+
+
 def test_strip_and_population_products():
     strips = [synthetic_strip(seed) for seed in (21, 22, 23)]
 

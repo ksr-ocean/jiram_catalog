@@ -35,7 +35,19 @@ import {
   type StripFilters,
   type StripRow,
 } from '../lib/stripsTable';
-import { hasRgb, INSTRUMENTS, resolveStretch } from '../lib/bands';
+import {
+  FLAT_SIGMA_RANGE,
+  hasRgb,
+  INSTRUMENTS,
+  MINNAERT_K_RANGE,
+  NORM_BLURBS,
+  NORM_LABELS,
+  NORM_NAMES,
+  normName,
+  stretchFor,
+} from '../lib/bands';
+import { currentStripNorm } from '../store/store';
+import type { NormName, StretchMode } from '../api/types';
 import { categoricalColor, rgbCss } from '../lib/colorScale';
 import { graticule } from '../lib/projection';
 import { COLOR_MAPS, type ColorMapName } from '../lib/lut';
@@ -64,6 +76,12 @@ export function StripsView({ active }: { active: boolean }) {
   const setStripBand = useStore((s) => s.setStripBand);
   const stripComposite = useStore((s) => s.stripComposite);
   const setStripComposite = useStore((s) => s.setStripComposite);
+  const stripNorm = useStore((s) => s.stripNorm);
+  const stripNormK = useStore((s) => s.stripNormK);
+  const stripNormSigma = useStore((s) => s.stripNormSigma);
+  const setStripNorm = useStore((s) => s.setStripNorm);
+  const stripStretchMode = useStore((s) => s.stripStretchMode);
+  const setStripStretchMode = useStore((s) => s.setStripStretchMode);
 
   const [filters, setFilters] = useState<StripFilters>(DEFAULT_STRIP_FILTERS);
   const [cmap, setCmap] = useState<ColorMapName>('gray');
@@ -85,6 +103,12 @@ export function StripsView({ active }: { active: boolean }) {
     [strips],
   );
   const rgbReady = hasRgb(stripBands);
+  const normLabel = currentStripNorm({ stripNorm, stripNormK, stripNormSigma });
+  const normChoices = useMemo(() => {
+    const offered = stripMeta?.norm_options?.map((name) => normName(name));
+    const known = NORM_NAMES.filter((name) => !offered || offered.includes(name));
+    return known.length > 0 ? known : (['none'] as NormName[]);
+  }, [stripMeta]);
 
   const resolutionClasses = useMemo(
     () => [...new Set(strips.map((row) => row.resolution_class).filter(Boolean))].sort(),
@@ -327,8 +351,8 @@ export function StripsView({ active }: { active: boolean }) {
             {stripMeta && !stripComposite && (
               <ColorBar
                 cmap={cmap}
-                vmin={resolveStretch(stripMeta.stretch, stripBand).p1}
-                vmax={resolveStretch(stripMeta.stretch, stripBand).p99}
+                vmin={stretchFor(stripMeta.stretch, normLabel, stripBand).p1}
+                vmax={stretchFor(stripMeta.stretch, normLabel, stripBand).p99}
               />
             )}
             {stripComposite && (
@@ -336,6 +360,59 @@ export function StripsView({ active }: { active: boolean }) {
                 RGB composite of {stripBands.join(', ')}
               </span>
             )}
+            <div className={styles.sep} />
+            <label htmlFor="strip-norm" title={NORM_BLURBS[stripNorm]}>
+              illumination
+            </label>
+            <select
+              id="strip-norm"
+              data-testid="strip-norm-select"
+              value={stripNorm}
+              title={NORM_BLURBS[stripNorm]}
+              onChange={(event) => setStripNorm(event.target.value as NormName)}
+            >
+              {normChoices.map((name) => (
+                <option key={name} value={name} title={NORM_BLURBS[name]}>
+                  {NORM_LABELS[name]}
+                </option>
+              ))}
+            </select>
+            {stripNorm === 'minnaert' && (
+              <input
+                aria-label="Minnaert k"
+                data-testid="strip-norm-k"
+                type="range"
+                min={MINNAERT_K_RANGE[0]}
+                max={MINNAERT_K_RANGE[1]}
+                step={0.05}
+                value={stripNormK}
+                style={{ width: 100 }}
+                onChange={(event) => setStripNorm('minnaert', Number(event.target.value))}
+              />
+            )}
+            {stripNorm === 'flat' && (
+              <input
+                aria-label="flatten sigma"
+                data-testid="strip-norm-sigma"
+                type="range"
+                min={FLAT_SIGMA_RANGE[0]}
+                max={FLAT_SIGMA_RANGE[1]}
+                step={8}
+                value={stripNormSigma}
+                style={{ width: 100 }}
+                onChange={(event) => setStripNorm('flat', undefined, Number(event.target.value))}
+              />
+            )}
+            <select
+              aria-label="stretch mapping"
+              data-testid="strip-stretch-mode"
+              value={stripStretchMode}
+              onChange={(event) => setStripStretchMode(event.target.value as StretchMode)}
+            >
+              <option value="linear">Linear</option>
+              <option value="asinh">Asinh</option>
+            </select>
+            <div className={styles.sep} />
             <label>
               <input
                 type="checkbox"
@@ -384,7 +461,10 @@ export function StripsView({ active }: { active: boolean }) {
           {statsVisible && (
             <div className={styles.charts} data-testid="strip-stats">
               <div className={styles.card}>
-                <h3>isotropic spectrum{stripBand ? ` (${stripBand})` : ''}</h3>
+                <h3>
+                  isotropic spectrum{stripBand ? ` (${stripBand})` : ''}
+                  {stripNorm === 'none' ? '' : `, ${NORM_LABELS[stripNorm]}`}
+                </h3>
                 {active && stats && (
                   <Plot
                     testId="plot-isotropic"

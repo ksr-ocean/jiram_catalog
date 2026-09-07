@@ -623,7 +623,9 @@ def test_strip_meta_and_image(client):
 
 def test_strip_stats_uses_the_contract_names(client, monkeypatch):
     monkeypatch.setattr(
-        api_data, "strip_stats", lambda mirror, strip, band=None: synthetic_stats()
+        api_data,
+        "strip_stats",
+        lambda mirror, strip, band=None, norm=None: synthetic_stats(),
     )
     payload = client.get(f"/api/strips/{STRIP_ID}/stats").json()
     assert len(payload["k"]) == len(payload["E"]) == 40
@@ -838,8 +840,17 @@ def test_banded_stack_listing_and_meta(banded_client):
     assert entry["instrument"] == "JunoCam" and entry["bands"] == BANDS
     meta = banded_client.get(f"/api/stacks/{entry['id']}/meta").json()
     assert meta["bands"] == BANDS
-    assert set(meta["stretch"]) == set(BANDS)
-    assert all({"p1", "p99"} <= set(value) for value in meta["stretch"].values())
+    # The 2026-09-07 photometry amendment: a banded product's stretch is one
+    # per-band map per normalisation, because dividing by cos(i) moves the
+    # histogram and the raw limits are the wrong limits for the corrected
+    # picture.  This fixture carries no incidence, so only the models that
+    # need none are on offer.
+    assert meta["norm_default"] == "lambert"
+    assert meta["norm_options"] == ["none", "flat"]
+    assert set(meta["stretch"]) == {"none", "flat"}
+    for per_band in meta["stretch"].values():
+        assert set(per_band) == set(BANDS)
+        assert all({"p1", "p99"} <= set(value) for value in per_band.values())
     assert meta["per_time"][0]["quality_tier"] == "A"
 
 
@@ -862,9 +873,88 @@ def test_banded_frame_png_needs_a_band_and_rgb_composites(banded_client):
     assert (picture[..., 3] == 0).any() and (picture[..., 3] == 255).any()
 
 
+def test_norm_changes_the_stack_png_and_rejects_a_bad_name(banded_client):
+    """The 2026-09-07 amendment: illumination normalisation on the wire.
+
+    The fixture carries no incidence, so ``lambert`` degrades to a no-op --
+    which is itself the contract, because the viewer asks for a JunoCam
+    product's default before it knows what the file holds -- while ``flat``
+    divides by a low-pass and cannot leave the picture alone.
+    """
+    import imageio.v3 as iio
+
+    def picture(**params):
+        response = banded_client.get(
+            f"/api/stacks/{BANDED_STACK_ID}/frame/0.png",
+            params={"band": "RED", "max_px": 32, **params},
+        )
+        assert response.status_code == 200, response.text
+        return iio.imread(io.BytesIO(response.content))[..., 0]
+
+    raw = picture(norm="none")
+    assert np.array_equal(picture(norm="lambert"), raw), "no incidence, no correction"
+    assert not np.array_equal(picture(norm="flat:4"), raw)
+    assert not np.array_equal(picture(norm="none", stretch="asinh"), raw)
+    for bad in ("purple", "lambert:2", "minnaert:9"):
+        assert (
+            banded_client.get(
+                f"/api/stacks/{BANDED_STACK_ID}/frame/0.png",
+                params={"band": "RED", "norm": bad},
+            ).status_code
+            == 400
+        ), bad
+    assert (
+        banded_client.get(
+            f"/api/stacks/{BANDED_STACK_ID}/frame/0/rgb.png", params={"norm": "flat:4"}
+        ).status_code
+        == 200
+    )
+
+
+def test_norm_reaches_the_strip_image_and_its_statistics(banded_client):
+    """A strip's norm travels to the image, to the statistics and to their cache."""
+    import imageio.v3 as iio
+
+    def picture(norm: str):
+        response = banded_client.get(
+            f"/api/strips/{BANDED_STRIP_ID}/image.png",
+            params={"band": "RED", "max_px": 32, "norm": norm},
+        )
+        assert response.status_code == 200, response.text
+        return iio.imread(io.BytesIO(response.content))[..., 0]
+
+    # This strip *does* carry incidence, and at a constant 70 degrees Lambert
+    # is one constant factor over the whole canvas -- which the per-norm
+    # stretch then divides straight back out, so the picture comes back the
+    # same to within the rounding of two eight-bit quantisations.
+    assert np.abs(
+        picture("lambert").astype(int) - picture("none").astype(int)
+    ).max() <= 2
+    assert not np.array_equal(picture("flat:4"), picture("none"))
+    assert (
+        banded_client.get(
+            f"/api/strips/{BANDED_STRIP_ID}/stats", params={"norm": "nonsense"}
+        ).status_code
+        == 400
+    )
+    raw = banded_client.get(
+        f"/api/strips/{BANDED_STRIP_ID}/stats", params={"band": "RED", "norm": "none"}
+    ).json()
+    flat = banded_client.get(
+        f"/api/strips/{BANDED_STRIP_ID}/stats", params={"band": "RED", "norm": "flat:4"}
+    ).json()
+    assert raw["attrs"]["norm"] == "none" and flat["attrs"]["norm"] == "flat:4"
+    assert not np.allclose(
+        np.asarray(raw["E"], dtype=float), np.asarray(flat["E"], dtype=float)
+    )
+
+
 def test_banded_strip_meta_image_and_stats(banded_client):
     meta = banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/meta").json()
-    assert meta["bands"] == BANDS and set(meta["stretch"]) == set(BANDS)
+    assert meta["bands"] == BANDS
+    assert meta["norm_default"] == "lambert"
+    assert set(meta["stretch"]) == set(meta["norm_options"])
+    assert all(set(per_band) == set(BANDS) for per_band in meta["stretch"].values())
     assert banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/image.png").status_code == 200
     assert (
         banded_client.get(f"/api/strips/{BANDED_STRIP_ID}/image.png", params={"band": "BLUE"}).status_code

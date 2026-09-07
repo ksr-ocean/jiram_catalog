@@ -93,9 +93,33 @@ export const api = {
 
   stacks: () => getJson<StackListing[]>('/api/stacks'),
   stackMeta: (id: string) => getJson<StackMeta>(`/api/stacks/${id}/meta`),
-  /** `band` is required by the contract once a stack has more than one. */
-  stackFrameUrl: (id: string, t: number, vmin?: number, vmax?: number, maxPx = 1600, band?: string | null) =>
-    url(`/api/stacks/${id}/frame/${t}.png`, { vmin, vmax, max_px: maxPx, band: band ?? undefined }),
+  /**
+   * `band` is required by the contract once a stack has more than one.
+   *
+   * `norm` and `stretch` are the photometry amendment's: the illumination
+   * model the server divides out before the stretch, and whether the eight
+   * bits are laid out linearly or through `asinh`.  Both are omitted when
+   * they are absent, so a request from a viewer that has not been told about
+   * them still means "the product's own default".
+   */
+  stackFrameUrl: (
+    id: string,
+    t: number,
+    vmin?: number,
+    vmax?: number,
+    maxPx = 1600,
+    band?: string | null,
+    norm?: string | null,
+    stretch?: string | null,
+  ) =>
+    url(`/api/stacks/${id}/frame/${t}.png`, {
+      vmin,
+      vmax,
+      max_px: maxPx,
+      band: band ?? undefined,
+      norm: norm ?? undefined,
+      stretch: stretch ?? undefined,
+    }),
   /**
    * The RGB composite of the amendment: one stretch pair per channel, so the
    * three bands can be balanced against each other rather than sharing a
@@ -106,6 +130,8 @@ export const api = {
     t: number,
     stretch: { r: [number, number]; g: [number, number]; b: [number, number] },
     maxPx = 1600,
+    norm?: string | null,
+    mode?: string | null,
   ) =>
     url(`/api/stacks/${id}/frame/${t}/rgb.png`, {
       vmin_r: stretch.r[0],
@@ -115,6 +141,8 @@ export const api = {
       vmin_b: stretch.b[0],
       vmax_b: stretch.b[1],
       max_px: maxPx,
+      norm: norm ?? undefined,
+      stretch: mode ?? undefined,
     }),
   stackEmissionUrl: (id: string, t: number, maxPx = 1600) =>
     url(`/api/stacks/${id}/frame/${t}/emission.png`, { max_px: maxPx }),
@@ -139,15 +167,29 @@ export const api = {
     return (await request('/api/strips.arrow')).arrayBuffer();
   },
   stripMeta: (id: string) => getJson<StripMeta>(`/api/strips/${encodeURIComponent(id)}/meta`),
-  stripImageUrl: (id: string, vmin?: number, vmax?: number, maxPx = 1600, band?: string | null) =>
+  stripImageUrl: (
+    id: string,
+    vmin?: number,
+    vmax?: number,
+    maxPx = 1600,
+    band?: string | null,
+    norm?: string | null,
+    stretch?: string | null,
+  ) =>
     url(`/api/strips/${encodeURIComponent(id)}/image.png`, {
       vmin,
       vmax,
       max_px: maxPx,
       band: band ?? undefined,
+      norm: norm ?? undefined,
+      stretch: stretch ?? undefined,
     }),
-  stripStats: (id: string, band?: string | null) =>
-    getJson<StripStats>(`/api/strips/${encodeURIComponent(id)}/stats`, { band: band ?? undefined }),
+  /** The statistics of one band under one illumination model; both travel. */
+  stripStats: (id: string, band?: string | null, norm?: string | null) =>
+    getJson<StripStats>(`/api/strips/${encodeURIComponent(id)}/stats`, {
+      band: band ?? undefined,
+      norm: norm ?? undefined,
+    }),
 
   jobs: () => getJson<JobRecord[]>('/api/jobs'),
   job: (id: string) => getJson<JobRecord>(`/api/jobs/${encodeURIComponent(id)}`),

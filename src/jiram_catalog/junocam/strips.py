@@ -59,11 +59,12 @@ from ..strips import (
 from .geometry import image_geometry
 from .images import read_image
 from .reproject import reproject_image
-from .stacks import TASK_COLUMNS, image_table
+from .stacks import NIGHT_INCIDENCE_DEG, TASK_COLUMNS, image_table, night_masked_valid
 
 LOGGER = logging.getLogger(__name__)
 
 __all__ = [
+    "MAX_PIXEL_KM",
     "build_library",
     "build_strip",
     "junocam_strip_path",
@@ -78,6 +79,19 @@ __all__ = [
 FRAME_STRIDE = 2
 LINE_STRIDE = 8
 SAMPLE_STRIDE = 8
+
+#: Coarsest ground sample, in kilometres a pixel, that earns a strip.
+#:
+#: The library exists to be measured -- spectra, structure functions, the
+#: turbulence a close swath resolves -- and a perijove pass spends most of its
+#: two hours far from the planet.  Of the 72 strips the first orbit-4 run
+#: wrote, the median ground sample was 200 km: whole-disk views, one strip
+#: apiece, each of them a picture of Jupiter rather than a map of anything on
+#: it.  Thirty kilometres keeps the approach and departure swaths that still
+#: resolve a vortex and drops the postcards; it is also a
+#: :data:`jiram_catalog.strips.RESOLUTION_CLASSES` entry, so the cut lands on
+#: a class boundary rather than between two.
+MAX_PIXEL_KM = 30.0
 
 
 def junocam_strip_path(mirror: str | Path | None, orbit: int, identifier: str) -> Path:
@@ -102,9 +116,22 @@ def select_images(
     bands: Sequence[str],
     *,
     quality_min: str = "A",
+    max_pixel_km: float | None = MAX_PIXEL_KM,
 ) -> pd.DataFrame:
-    """Every placed image of ``orbits`` that carries all of ``bands``."""
-    return image_table(mirror, orbits, quality_min=quality_min, bands=bands)
+    """Every placed image of ``orbits`` that carries all of ``bands``.
+
+    ``max_pixel_km`` drops the images whose own median ground sample is
+    coarser than the library is for; ``None`` keeps them all.  The cut is on
+    the image's measured scale rather than on the strip's quantised
+    :func:`~jiram_catalog.strips.resolution_class`, because the class is
+    chosen after the strip has been built and the point of the cut is not to
+    build it.
+    """
+    table = image_table(mirror, orbits, quality_min=quality_min, bands=bands)
+    if max_pixel_km is None:
+        return table
+    scale = pd.to_numeric(table["median_pixel_km"], errors="coerce")
+    return table.loc[scale <= float(max_pixel_km)]
 
 
 # --------------------------------------------------------------------------
@@ -179,9 +206,19 @@ def build_strip(
     epochs = np.asarray(geometry.et, dtype=np.float64)
     del geometry
 
-    valid = np.isfinite(picture).any(axis=0)
-    if not valid.any():
+    painted = np.isfinite(picture).any(axis=0)
+    if not painted.any():
         raise ValueError(f"{identifier}: no band painted a pixel of the canvas")
+    # The night side is painted like everything else and means nothing in a
+    # visible-light camera; see
+    # :data:`jiram_catalog.junocam.stacks.NIGHT_INCIDENCE_DEG`.
+    valid = night_masked_valid(picture, incidence)
+    if not valid.any():
+        raise ValueError(
+            f"{identifier}: no band painted a pixel lit to within "
+            f"{NIGHT_INCIDENCE_DEG:g} deg of the terminator"
+        )
+    picture = np.where(valid[None, :, :], picture, np.nan)
 
     middle = float(np.median(epochs))
     subsolar = _subsolar_lon_east(middle)
@@ -209,9 +246,15 @@ def build_strip(
     ).min(axis=0)
     best_incidence = best(incidence)
     best_emission = best(emission)
+    # Both summaries describe the *painted* swath rather than the masked one:
+    # ``dayside_frac`` would otherwise be 1.0 on every JunoCam strip by
+    # construction, and a column that always reads one tells the library
+    # nothing.
     with np.errstate(invalid="ignore"):
-        dayside_frac = float(np.mean(np.nan_to_num(best_incidence[valid], nan=180.0) < 90.0))
-        finite_emission = best_emission[valid]
+        dayside_frac = float(
+            np.mean(np.nan_to_num(best_incidence[painted], nan=180.0) < 90.0)
+        )
+        finite_emission = best_emission[painted]
         finite_emission = finite_emission[np.isfinite(finite_emission)]
         median_emission = (
             float(np.median(finite_emission)) if finite_emission.size else float("nan")
@@ -251,6 +294,11 @@ def build_strip(
             "center_lon_east": float(grid.center[1]),
             "km_per_px": float(km_per_px),
             "resolution_class": float(km_per_px),
+            "night_masked_deg": float(NIGHT_INCIDENCE_DEG),
+            # What the viewer and the statistics normalise by unless asked
+            # otherwise: limb darkening is the loudest thing in a JunoCam
+            # swath and it is not a property of Jupiter.
+            "norm_default": "lambert",
             "projection": json.dumps(grid.to_dict(), sort_keys=True),
             "valid_frac": float(valid.mean()),
             "dayside_frac": dayside_frac,
@@ -269,7 +317,9 @@ def build_strip(
         },
     )
     dataset["image"].attrs.update(long_name="mean reprojected radiance", units="DN")
-    dataset["valid"].attrs.update(long_name="painted in at least one band")
+    dataset["valid"].attrs.update(
+        long_name="painted and sunlit in at least one band"
+    )
     dataset["emission"].attrs.update(long_name="emission angle", units="degree")
     dataset["incidence"].attrs.update(long_name="incidence angle", units="degree")
     dataset["n_frames"].attrs.update(long_name="framelets averaged into this cell")
@@ -403,17 +453,34 @@ def build_library(
     quality_min: str = "A",
     refine: bool = True,
     jobs: int = 1,
+    max_pixel_km: float | None = MAX_PIXEL_KM,
 ) -> pd.DataFrame:
-    """Build one strip per image of ``orbits`` and rewrite the library index."""
+    """Build one strip per image of ``orbits`` and rewrite the library index.
+
+    Images coarser than ``max_pixel_km`` are skipped rather than built; how
+    many is carried back on the result table's ``skipped_coarse`` attribute
+    and printed by :func:`library_summary`.
+    """
     root = mirror_root(mirror)
     names = tuple(str(name).upper() for name in bands)
     migrate_index(root)
-    images = select_images(root, orbits, names, quality_min=quality_min)
-    selected = sorted({int(value) for value in images["orbit"]}) if orbits is None else sorted(
+    every = select_images(root, orbits, names, quality_min=quality_min, max_pixel_km=None)
+    images = select_images(
+        root, orbits, names, quality_min=quality_min, max_pixel_km=max_pixel_km
+    )
+    skipped = int(len(every) - len(images))
+    selected = sorted({int(value) for value in every["orbit"]}) if orbits is None else sorted(
         {int(value) for value in orbits}
     )
     if images.empty:
-        raise ValueError(f"no placed JunoCam image carries {', '.join(names)}")
+        raise ValueError(
+            f"no placed JunoCam image carries {', '.join(names)}"
+            + ("" if max_pixel_km is None else f" at {max_pixel_km:g} km/px or finer")
+        )
+    if skipped:
+        LOGGER.info(
+            "skipping %d image(s) coarser than %g km/px", skipped, float(max_pixel_km)
+        )
     LOGGER.info("building %d strip(s) in bands %s", len(images), ", ".join(names))
 
     columns = [name for name in (*TASK_COLUMNS, "median_pixel_km", "quality_tier") if name in images.columns]
@@ -437,6 +504,8 @@ def build_library(
         raise ValueError("no JunoCam strip could be built")
     update_index(root, rows, selected)
     table = pd.DataFrame.from_records(records)
+    table.attrs["skipped_coarse"] = skipped
+    table.attrs["max_pixel_km"] = max_pixel_km
     LOGGER.info("wrote %d strip(s) of %d image(s)", len(rows), len(tasks))
     return table
 
@@ -444,9 +513,13 @@ def build_library(
 def library_summary(table: pd.DataFrame, bands: Sequence[str]) -> str:
     """The ``junocam strips`` subcommand's report."""
     ok = table.loc[table["ok"].astype(bool)]
+    cutoff = table.attrs.get("max_pixel_km", MAX_PIXEL_KM)
     lines = [
         f"bands: {', '.join(str(name).upper() for name in bands)}",
         f"strips written: {len(ok)}   failed: {len(table) - len(ok)}",
+        f"images skipped as coarser than "
+        f"{'no cut' if cutoff is None else f'{float(cutoff):g} km/px'}: "
+        f"{int(table.attrs.get('skipped_coarse', 0))}",
     ]
     for error, count in table.loc[~table["ok"].astype(bool), "error"].value_counts().items():
         lines.append(f"  {count:4d}  {error}")

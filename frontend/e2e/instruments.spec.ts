@@ -183,6 +183,62 @@ test.describe('bands and composites in the Poles viewer', () => {
   });
 });
 
+test.describe('illumination normalisation in the Poles viewer', () => {
+  test('a JunoCam stack opens Lambert-corrected and the selector changes the picture', async ({
+    page,
+  }, testInfo) => {
+    await openApp(page);
+    await requireJunocam(page);
+    await page.locator('[data-testid="tab-poles"]').click();
+    const select = page.locator('[data-testid="stack-select"]');
+    await expect.poll(async () => select.locator('option').count(), { timeout: 90_000 }).toBeGreaterThan(1);
+    const junocam = (await stackIds(page)).filter((id) => id.toLowerCase().includes('junocam'));
+    test.skip(junocam.length === 0, 'this mirror has no JunoCam stack');
+
+    await select.selectOption(junocam[0]);
+    // A reflected-light instrument opens divided by cos(i): limb darkening is
+    // the loudest thing in the picture and it is not a property of Jupiter.
+    const opened = await waitForState(page, (s) => s.stack_id === junocam[0] && s.band !== null);
+    expect(opened.norm).toBe('lambert');
+    expect(opened.stretch_mode).toBe('linear');
+    await expect(page.locator('[data-testid="norm-select"]')).toHaveValue('lambert');
+
+    await expect(page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first()).toBeAttached({
+      timeout: 90_000,
+    });
+    const corrected = await frameCanvasStats(page);
+    expect(corrected?.visible ?? 0, 'the corrected frame has visible pixels').toBeGreaterThan(0);
+
+    // Turning the model off is a different picture of the same numbers.
+    await page.locator('[data-testid="norm-select"]').selectOption('none');
+    await waitForState(page, (s) => s.norm === 'none');
+    await expect
+      .poll(async () => (await frameCanvasStats(page))?.signature, { timeout: 90_000, intervals: [500] })
+      .not.toBe(corrected?.signature);
+    const raw = await frameCanvasStats(page);
+    expect(raw?.visible ?? 0).toBeGreaterThan(0);
+    testInfo.annotations.push({
+      type: 'illumination',
+      description: `raw signature ${raw?.signature} vs lambert ${corrected?.signature}`,
+    });
+
+    // A parameterised model carries its parameter in the state and on the wire.
+    const request = page.waitForRequest(
+      (r) => r.url().includes('/frame/') && r.url().includes('norm=minnaert'),
+      { timeout: 90_000 },
+    );
+    await page.locator('[data-testid="norm-select"]').selectOption('minnaert');
+    await expect(page.locator('[data-testid="norm-k"]')).toBeVisible();
+    const asked = await request;
+    expect(decodeURIComponent(asked.url())).toContain('norm=minnaert:');
+    expect((await debugState(page)).norm).toMatch(/^minnaert:/);
+
+    // ...and the stretch mapping is its own control.
+    await page.locator('[data-testid="stretch-mode"]').selectOption('asinh');
+    await waitForState(page, (s) => s.stretch_mode === 'asinh');
+  });
+});
+
 test.describe('bands in the Strips viewer', () => {
   test('a JunoCam strip computes its statistics for the chosen band', async ({ page }) => {
     await openApp(page);
@@ -205,8 +261,17 @@ test.describe('bands in the Strips viewer', () => {
       .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
     test.skip(!bands.includes('GREEN'), 'this strip has no GREEN band');
 
+    // The statistics request carries the illumination model: a spectrum of a
+    // limb-darkened swath and a spectrum of the corrected one are two
+    // different measurements and must not share a label.
+    const statsRequest = page.waitForRequest(
+      (r) => r.url().includes('/stats') && r.url().includes('norm='),
+      { timeout: 120_000 },
+    );
     await bandSelect.selectOption('GREEN');
     await waitForState(page, (s) => s.strip_band === 'GREEN');
+    expect((await statsRequest).url()).toContain('band=GREEN');
+    expect((await debugState(page)).strip_norm).toBe('lambert');
     await expect(page.locator('[data-testid="strip-image"] canvas').first()).toBeVisible({ timeout: 120_000 });
 
     if (!(await debugState(page)).stats_visible) {
@@ -217,6 +282,15 @@ test.describe('bands in the Strips viewer', () => {
     await expect(page.locator('[data-testid="plot-isotropic"] .js-plotly-plot')).toBeVisible({ timeout: 180_000 });
     await expect(page.locator('[data-testid="strip-stats"]')).toContainText('GREEN');
     await expect(page.locator('[data-testid="download-stats"]')).toBeEnabled();
+
+    // Changing the model asks for that model's statistics.
+    const raw = page.waitForRequest(
+      (r) => r.url().includes('/stats') && r.url().includes('norm=none'),
+      { timeout: 120_000 },
+    );
+    await page.locator('[data-testid="strip-norm-select"]').selectOption('none');
+    await raw;
+    await waitForState(page, (s) => s.strip_norm === 'none');
   });
 
   test('a JunoCam strip composes RGB in the browser', async ({ page }) => {

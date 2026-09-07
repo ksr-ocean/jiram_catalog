@@ -17,6 +17,11 @@ export interface DebugState {
   n_footprints: number;
   strip_band: string | null;
   strip_composite: boolean;
+  /** Photometry amendment 2026-09-07: the wire spelling of each viewer's norm. */
+  norm: string;
+  stretch_mode: string;
+  strip_norm: string;
+  strip_stretch_mode: string;
 }
 
 /**

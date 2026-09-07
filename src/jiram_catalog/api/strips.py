@@ -21,7 +21,18 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from . import data, images
 from .arrow import ARROW_MEDIA_TYPE, generic_ipc
-from .stacks import DLAT, DLON, attrs_of, band_names, graticule_geojson, linestrings
+from .stacks import (
+    DLAT,
+    DLON,
+    attrs_of,
+    band_names,
+    graticule_geojson,
+    linestrings,
+    meta_norms,
+    norm_default_of,
+    norm_options_of,
+    resolve_norm,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,10 +98,39 @@ def band_plane(dataset: xr.Dataset, band: str | None) -> tuple[xr.Dataset, str |
     return dataset.isel(band=upper.index(wanted.upper())), names[upper.index(wanted.upper())]
 
 
-def stretch_of(dataset: xr.Dataset, key: str) -> dict[str, float]:
-    """The strip's display limits, from the same subsampler the stacks use."""
-    low, high = data.stack_stretch(dataset, key=key)
+def stretch_of(dataset: xr.Dataset, key: str, norm: str = "none") -> dict[str, float]:
+    """The strip's display limits, from the same subsampler the stacks use.
+
+    Unnormalised and band-less is the JIRAM case and takes the JIRAM path
+    unchanged; anything else goes through the masked, normalised subsampler,
+    because a strip's canvas is mostly the NaN padding around a diagonal
+    swath and a percentile over the padding is a percentile over nothing.
+    """
+    name, parameter = images.parse_norm(norm)
+    label = images.norm_label(name, parameter)
+    if name == "none" and "band" not in dataset.dims:
+        low, high = data.stack_stretch(dataset, key=key)
+    else:
+        low, high = data.normalised_stretch(dataset, key=key, norms=(label,))[label]
     return {"p1": float(low), "p99": float(high)}
+
+
+def stretch_for_meta(dataset: xr.Dataset, key: str) -> dict[str, Any]:
+    """``{p1, p99}`` for a JIRAM strip, ``{norm: {band: {p1, p99}}}`` for a JunoCam one.
+
+    The same two shapes the stack metadata uses, and for the same reason; see
+    :func:`jiram_catalog.api.stacks.stretch_for_meta`.
+    """
+    names = band_names(dataset)
+    if not names:
+        return stretch_of(dataset, key)
+    return {
+        norm: {
+            name: stretch_of(band_plane(dataset, name)[0], f"{key}::{name}", norm)
+            for name in names
+        }
+        for norm in meta_norms(dataset)
+    }
 
 
 def _finite_list(values: Any) -> list[float | None]:
@@ -150,11 +190,9 @@ def strip_meta(request: Request, strip_id: str) -> dict[str, Any]:
         "x_km": [float(x_km.min()), float(x_km.max())],
         "y_km": [float(y_km.min()), float(y_km.max())],
         "shape": [int(dataset.sizes.get("y", 0)), int(dataset.sizes.get("x", 0))],
-        "stretch": (
-            {name: stretch_of(band_plane(dataset, name)[0], f"{key}::{name}") for name in names}
-            if names
-            else stretch_of(dataset, key)
-        ),
+        "stretch": stretch_for_meta(dataset, key),
+        "norm_default": norm_default_of(dataset),
+        "norm_options": norm_options_of(dataset),
         "graticule": graticule_geojson(dataset, key),
         "local_time_contours": local_time_geojson(dataset, key),
     }
@@ -167,21 +205,33 @@ def strip_image(
     band: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
+    norm: str | None = None,
+    stretch: str = Query(default="linear", pattern="^(linear|asinh)$"),
     max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
 ) -> Response:
-    dataset = open_strip(request.app.state.mirror, strip_id)
-    if "image" not in dataset:
+    whole = open_strip(request.app.state.mirror, strip_id)
+    if "image" not in whole:
         raise HTTPException(status_code=404, detail=f"strip {strip_id} has no image")
-    dataset, selected = band_plane(dataset, band)
+    name, parameter, label = resolve_norm(whole, norm)
+    dataset, selected = band_plane(whole, band)
     key = f"strip::{strip_id}" + (f"::{selected}" if selected else "")
-    stretch = stretch_of(dataset, key)
+    limits = stretch_of(dataset, key, label)
     valid = np.asarray(dataset["valid"].values, dtype=bool) if "valid" in dataset else None
     payload, stride, shape = images.plane_png(
         np.asarray(dataset["image"].values),
         valid,
-        vmin=stretch["p1"] if vmin is None else vmin,
-        vmax=stretch["p99"] if vmax is None else vmax,
+        vmin=limits["p1"] if vmin is None else vmin,
+        vmax=limits["p99"] if vmax is None else vmax,
         max_px=max_px,
+        mode=stretch,
+        incidence=(
+            np.asarray(dataset["incidence"].values) if "incidence" in dataset else None
+        ),
+        emission=(
+            np.asarray(dataset["emission"].values) if "emission" in dataset else None
+        ),
+        norm=name,
+        parameter=parameter,
     )
     bounds = images.bounds_header(dataset["x_km"].values, dataset["y_km"].values, stride, shape)
     return Response(
@@ -190,19 +240,37 @@ def strip_image(
 
 
 @router.get("/api/strips/{strip_id}/stats")
-def strip_stats(request: Request, strip_id: str, band: str | None = None) -> dict[str, Any]:
+def strip_stats(
+    request: Request, strip_id: str, band: str | None = None, norm: str | None = None
+) -> dict[str, Any]:
     """Spectra and structure functions, computed once and cached on disk.
 
     ``band`` picks one band of a multi-band strip and defaults to its first;
-    each band's statistics get their own cache file.
+    each band's statistics get their own cache file.  ``norm`` divides the
+    illumination out before the transform and defaults to the strip's own
+    ``norm_default``, so a JunoCam spectrum is a spectrum of the cloud field
+    rather than of the terminator: limb darkening is a smooth ramp across the
+    whole swath and puts a red slope under every wavenumber below it.
     """
     mirror = request.app.state.mirror
+    if norm is not None and str(norm).strip():
+        try:
+            images.parse_norm(norm)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        statistics = data.strip_stats(mirror, str(strip_id), band)
+        statistics = data.strip_stats(mirror, str(strip_id), band, norm)
     except (ValueError, KeyError, FileNotFoundError, OSError) as exc:
         raise HTTPException(status_code=404, detail=f"unknown strip: {strip_id}") from exc
     return statistics_payload(statistics)
 
 
 #: Re-exported so a reader can see the strip graticule is the stacks'.
-__all__ = ["router", "DLAT", "DLON", "statistics_payload", "local_time_geojson"]
+__all__ = [
+    "router",
+    "DLAT",
+    "DLON",
+    "statistics_payload",
+    "local_time_geojson",
+    "stretch_for_meta",
+]

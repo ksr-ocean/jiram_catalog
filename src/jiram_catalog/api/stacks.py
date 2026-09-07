@@ -221,12 +221,63 @@ def graticule_geojson(dataset: xr.Dataset, key: str) -> dict[str, Any]:
     return linestrings(paths)
 
 
+def norm_default_of(dataset: xr.Dataset) -> str:
+    """The normalisation this product is meant to be read with."""
+    return data.strip_norm_default(dataset)
+
+
+def norm_options_of(dataset: xr.Dataset) -> list[str]:
+    """Which normalisations this product can answer for; see ``images``.
+
+    A product whose default is ``none`` is offered none of them.  That is
+    JIRAM, and it is not a shortcut: a thermal camera's night side is the
+    measurement, so dividing it by the cosine of a solar angle would not be an
+    option the viewer should put in front of anyone -- and the metadata would
+    then have to carry a set of limits for a picture nobody should ask for.
+    """
+    if norm_default_of(dataset).lower() == "none":
+        return ["none"]
+    return images.norm_options("incidence" in dataset, "emission" in dataset)
+
+
+def meta_norms(dataset: xr.Dataset) -> tuple[str, ...]:
+    """The norms ``meta.stretch`` carries a set of limits for.
+
+    Every option the product can answer for, at its default parameter, so
+    that the viewer's illumination selector can re-initialise its sliders
+    from the metadata it already has rather than guessing or asking again.
+    That costs nothing extra: :func:`data.normalised_stretch` answers all of
+    them from one strided read, and the whole set lands in the meta cache
+    together.
+
+    A product whose default is ``none`` is a JIRAM product, and it keeps the
+    single unnormalised pair it has always sent -- reading a JIRAM strip's
+    metadata must not start computing Minnaert corrections for an instrument
+    that measures its own thermal emission.
+    """
+    default = norm_default_of(dataset)
+    if default.lower() == "none":
+        return ("none",)
+    return tuple(norm_options_of(dataset))
+
+
+def stretch_entry_key(label: str, band: str) -> str:
+    """Where one ``(norm, band)`` pair lives in the meta cache file.
+
+    The unnormalised entry keeps the bare band name it has always had -- an
+    empty string for a band-less stack -- so a cache file written before the
+    amendment is read rather than thrown away.
+    """
+    return band if label == "none" else f"{label}|{band}"
+
+
 def stretch_of(
     mirror: str | Path | None,
     identifier: str,
     dataset: xr.Dataset,
     path: Path,
     band: str | None = None,
+    norm: str = "none",
 ) -> dict[str, float]:
     """The 1st and 99th percentiles, computed once and cached on disk.
 
@@ -238,6 +289,12 @@ def stretch_of(
     A multi-band stack gets one stretch per band -- three colour strips of one
     camera differ in throughput by tens of per cent, so a shared stretch would
     tint the composite -- and they share one cache file keyed by band name.
+
+    Every normalisation gets its own pair, under a key that carries its name:
+    dividing by ``cos(i)`` moves the whole histogram, so the limits of the raw
+    image are the wrong limits for the corrected one.  The band-less, unnormalised
+    case keeps the bare band key it always had, so a cache file written before
+    the amendment is still read rather than silently recomputed.
     """
     cache = meta_cache_path(mirror, identifier)
     try:
@@ -245,7 +302,10 @@ def stretch_of(
         signature = f"{stat.st_mtime_ns}:{stat.st_size}"
     except OSError:
         signature = ""
-    key = "" if band is None else str(band).strip().upper()
+    name, parameter = images.parse_norm(norm)
+    label = images.norm_label(name, parameter)
+    band_key = "" if band is None else str(band).strip().upper()
+    key = stretch_entry_key(label, band_key)
     entries: dict[str, dict[str, float]] = {}
     if cache.exists():
         try:
@@ -262,11 +322,25 @@ def stretch_of(
         except (OSError, ValueError, KeyError, TypeError) as exc:
             LOGGER.warning("unreadable stretch cache %s: %s", cache, exc)
     plane = dataset
-    if key:
-        index = band_index(dataset, key)
+    if band_key:
+        index = band_index(dataset, band_key)
         plane = dataset.isel(band=index) if index is not None else dataset
-    low, high = data.stack_stretch(plane, key=f"{identifier}::{key}")
-    stretch = {"p1": float(low), "p99": float(high)}
+    if not band_key and name == "none":
+        # The JIRAM path, untouched: every finite pixel of a few strided time
+        # steps, no mask and no model.
+        low, high = data.stack_stretch(plane, key=f"{identifier}::{key}")
+        found = {label: (low, high)}
+    else:
+        # One read of the band answers for every norm the metadata offers, so
+        # a miss on one of them fills the rest of the cache file too.
+        found = data.normalised_stretch(
+            plane,
+            key=f"{identifier}::{band_key}",
+            norms=tuple({label, *meta_norms(dataset)}),
+        )
+    stretch = {"p1": float(found[label][0]), "p99": float(found[label][1])}
+    for other, (low, high) in found.items():
+        entries[stretch_entry_key(other, band_key)] = {"p1": float(low), "p99": float(high)}
     entries[key] = stretch
     payload: dict[str, Any] = {"signature": signature, "bands": entries}
     if "" in entries:
@@ -281,11 +355,24 @@ def stretch_of(
 def stretch_for_meta(
     mirror: str | Path | None, identifier: str, dataset: xr.Dataset, path: Path
 ) -> dict[str, Any]:
-    """``{p1, p99}`` for a band-less stack, ``{band: {p1, p99}}`` for a banded one."""
+    """``{p1, p99}`` for a band-less stack, ``{norm: {band: {p1, p99}}}`` for a banded one.
+
+    The extra level is the amendment's: a banded product is a JunoCam product,
+    a JunoCam product is displayed normalised, and the limits of the raw image
+    are not the limits of the normalised one.  A band-less stack is JIRAM and
+    keeps the one pair it has always sent, so nothing that reads the old shape
+    has to learn the new one to keep working.
+    """
     names = band_names(dataset)
     if not names:
         return stretch_of(mirror, identifier, dataset, path)
-    return {name: stretch_of(mirror, identifier, dataset, path, name) for name in names}
+    return {
+        norm: {
+            name: stretch_of(mirror, identifier, dataset, path, name, norm)
+            for name in names
+        }
+        for norm in meta_norms(dataset)
+    }
 
 
 def per_time_records(dataset: xr.Dataset) -> list[dict[str, Any]]:
@@ -718,6 +805,8 @@ def get_meta(request: Request, identifier: str) -> dict[str, Any]:
         "times": [pd.Timestamp(value).isoformat() for value in times],
         "per_time": per_time_records(dataset),
         "stretch": stretch_for_meta(mirror, identifier, dataset, path),
+        "norm_default": norm_default_of(dataset),
+        "norm_options": norm_options_of(dataset),
         "graticule": graticule_geojson(dataset, f"stack::{identifier}"),
         "attrs": attrs_of(dataset),
     }
@@ -748,18 +837,25 @@ def get_rgb_png(
     vmax_g: float | None = None,
     vmin_b: float | None = None,
     vmax_b: float | None = None,
+    norm: str | None = None,
+    stretch: str = Query(default="linear", pattern="^(linear|asinh)$"),
     max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
 ) -> Response:
     """One time step of a multi-band stack as a colour composite.
 
     Each channel is stretched on its own limits, defaulting to that band's
-    entry in ``meta.stretch``: the three JunoCam colour strips differ in
-    throughput by tens of per cent and share a stretch only at the cost of a
-    tint that is the camera's, not the planet's.
+    entry in ``meta.stretch`` for the requested normalisation: the three
+    JunoCam colour strips differ in throughput by tens of per cent and share a
+    stretch only at the cost of a tint that is the camera's, not the planet's.
+
+    The normalisation is per band as well, because the bands are read a
+    fraction of a second and a fraction of a degree apart and therefore see
+    the terminator in slightly different places.
     """
     mirror = request.app.state.mirror
     path = resolve(mirror, identifier)
     dataset = data.open_stack(path)
+    norm_name, parameter, label = resolve_norm(dataset, norm)
     names = band_names(dataset)
     if not names:
         raise HTTPException(status_code=404, detail=f"{identifier} has no band dimension")
@@ -778,18 +874,33 @@ def get_rgb_png(
     stretched: list[np.ndarray] = []
     mask: np.ndarray | None = None
     stride = 1
-    for position, name in enumerate(channels):
-        plane, valid = _plane(dataset, "image", index, name)
+    for position, channel in enumerate(channels):
+        plane, valid = _plane(dataset, "image", index, channel)
         if not planes:
             stride = images.stride_for(plane.shape, max_px)
-        sub = np.asarray(plane)[::stride, ::stride]
-        stretch = stretch_of(mirror, identifier, dataset, path, name)
-        low = stretch["p1"] if limits[position][0] is None else float(limits[position][0])
-        high = stretch["p99"] if limits[position][1] is None else float(limits[position][1])
-        grey, finite = images.stretch_to_uint8(sub, low, high)
-        if valid is not None:
-            finite = finite & np.asarray(valid, dtype=bool)[::stride, ::stride]
-        mask = finite if mask is None else (mask | finite)
+        cut = (slice(None, None, stride), slice(None, None, stride))
+        sun = _angle(dataset, "incidence", index, channel)
+        view = _angle(dataset, "emission", index, channel)
+        sub, keep = images.normalise_plane(
+            np.asarray(plane)[cut],
+            incidence=None if sun is None else sun[cut],
+            emission=None if view is None else view[cut],
+            valid=None if valid is None else np.asarray(valid, dtype=bool)[cut],
+            norm=norm_name,
+            parameter=parameter,
+        )
+        band_stretch = stretch_of(mirror, identifier, dataset, path, channel, label)
+        low = band_stretch["p1"] if limits[position][0] is None else float(limits[position][0])
+        high = band_stretch["p99"] if limits[position][1] is None else float(limits[position][1])
+        grey, finite = images.stretch_to_uint8(sub, low, high, stretch)
+        finite = finite & keep
+        # Intersection, not union: a composite pixel is a colour only where
+        # all three channels measured something.  The three colour strips
+        # cross the terminator a second apart and therefore mask slightly
+        # different fringes of it, and a union would paint that fringe in one
+        # channel against two zeros -- a red or blue rim around the night
+        # side that is an artefact of the mask, not of the planet.
+        mask = finite if mask is None else (mask & finite)
         planes.append(sub)
         stretched.append(grey)
     payload = _rgba_png(stretched, mask)
@@ -805,19 +916,32 @@ def get_frame_png(
     band: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
+    norm: str | None = None,
+    stretch: str = Query(default="linear", pattern="^(linear|asinh)$"),
     max_px: int = Query(default=images.DEFAULT_MAX_PX, ge=16, le=8000),
 ) -> Response:
     mirror = request.app.state.mirror
     path = resolve(mirror, identifier)
     dataset = data.open_stack(path)
-    stretch = stretch_of(mirror, identifier, dataset, path, band if band_names(dataset) else None)
+    name, parameter, label = resolve_norm(dataset, norm)
+    # The plane first: it is what refuses a banded stack asked for without a
+    # band, and computing a stretch over three colours before saying so would
+    # be a slow way to answer 400.
     plane, valid = _plane(dataset, "image", index, band)
+    limits = stretch_of(
+        mirror, identifier, dataset, path, band if band_names(dataset) else None, label
+    )
     payload, stride, shape = images.plane_png(
         plane,
         valid,
-        vmin=stretch["p1"] if vmin is None else vmin,
-        vmax=stretch["p99"] if vmax is None else vmax,
+        vmin=limits["p1"] if vmin is None else vmin,
+        vmax=limits["p99"] if vmax is None else vmax,
         max_px=max_px,
+        mode=stretch,
+        incidence=_angle(dataset, "incidence", index, band),
+        emission=_angle(dataset, "emission", index, band),
+        norm=name,
+        parameter=parameter,
     )
     return _png_response(dataset, payload, stride, shape)
 
@@ -867,6 +991,21 @@ def post_export(request: Request, identifier: str, body: ExportRequest) -> dict[
 # ---------------------------------------------------------------------------
 # helpers the routes share
 # ---------------------------------------------------------------------------
+def resolve_norm(dataset: xr.Dataset, norm: str | None) -> tuple[str, float, str]:
+    """``(name, parameter, label)`` of a request's ``norm``, or a 400.
+
+    An absent ``norm`` is the product's own default rather than ``none``: a
+    JunoCam frame asked for with no opinion should arrive looking like a
+    picture of Jupiter, and the viewer that does have an opinion says so.
+    """
+    text = norm_default_of(dataset) if norm is None or str(norm).strip() == "" else norm
+    try:
+        name, parameter = images.parse_norm(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return name, parameter, images.norm_label(name, parameter)
+
+
 def _plane(
     dataset: xr.Dataset, name: str, index: int, band: str | None = None
 ) -> tuple[np.ndarray, np.ndarray | None]:
@@ -894,6 +1033,26 @@ def _plane(
             mask = mask.isel(band=position)
         valid = np.asarray(mask.values, dtype=bool)
     return np.asarray(plane.values), valid
+
+
+def _angle(
+    dataset: xr.Dataset, name: str, index: int, band: str | None = None
+) -> np.ndarray | None:
+    """One time step of ``emission`` or ``incidence``, or ``None`` if absent.
+
+    Absent is the ordinary case for a JIRAM stack and for any JunoCam stack
+    built before the amendment, so it is answered with ``None`` rather than
+    with a 404: the normalisation degrades to a no-op and the frame still
+    arrives.
+    """
+    if name not in dataset:
+        return None
+    variable = dataset[name]
+    plane = variable.isel(time=int(index)) if "time" in variable.dims else variable
+    if "band" in plane.dims:
+        position = band_index(dataset, band) if band is not None else None
+        plane = plane.isel(band=position if position is not None else 0)
+    return np.asarray(plane.values)
 
 
 def _rgba_png(channels: list[np.ndarray], mask: np.ndarray | None) -> bytes:

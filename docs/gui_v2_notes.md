@@ -78,11 +78,15 @@ selection a human makes.
 It should be noted that the store also renders a hidden `<pre id="debug-state">`
 element, `src/components/DebugState.tsx`, carrying
 `{n_points, n_filtered, selection_n, view, stack_id, level, t, cmap, stats_visible,
-instrument_filter, band, composite, n_footprints, strip_band, strip_composite}`
-as JSON. The last six arrived with the instrument work of 2026-09-07; `band` and
-`composite` are the Poles viewer's, which is what the amendment's tests name,
-and the strips viewer carries its own pair beside them rather than sharing one
-field whose meaning would depend on which tab happened to be open. v1 could not be tested from the outside because everything it did
+instrument_filter, band, composite, n_footprints, strip_band, strip_composite,
+norm, stretch_mode, strip_norm, strip_stretch_mode}` as JSON. Six of those
+arrived with the instrument work of 2026-09-07 and four more with the
+photometry work of the same day; `band`, `composite`, `norm` and `stretch_mode`
+are the Poles viewer's, which is what the amendments' tests name, and the
+strips viewer carries its own beside them rather than sharing fields whose
+meaning would depend on which tab happened to be open. The two norms are the
+wire spelling -- `lambert`, `minnaert:0.8`, `flat:64` -- so a test can compare
+what the viewer believes with the query string it actually sent. v1 could not be tested from the outside because everything it did
 happened inside a server-rendered canvas; the debug element gives the Playwright suite a
 number to wait on instead of a screenshot to compare, and it is the reason the
 end-to-end tests are assertions rather than smoke tests.
@@ -224,11 +228,40 @@ arrives from the contract's `frame/{t}/rgb.png` already carrying three bands,
 `ImageView` draws its bytes as they are, and the colour-map control is disabled
 while it is on screen, since a lookup table over three channels is not a colour
 map but a mistake. Each channel takes its own stretch pair, defaulting to
-`meta.stretch[band]`, and a "link bands" toggle, on by default, drives all
-three from the one pair on the toolbar; unlinking it puts three pairs on
-screen, which is what a deliberate colour balance needs and what a first look
-at a composite does not. The stretches are remembered per band, so moving
+`meta.stretch[norm][band]`, and a "link bands" toggle drives all three from the
+one pair on the toolbar; unlinking it puts three pairs on screen, which is what
+a deliberate colour balance needs. It starts *off* for a JunoCam stack and on
+for a JIRAM one: three colour strips of one camera differ in throughput by tens
+of per cent and in illumination by where each of them crossed the terminator, so
+they do not share a stretch without tinting the picture, while a single JIRAM
+band has nothing to link to. The stretches are remembered per band, so moving
 between bands and back does not undo an adjustment.
+
+### Illumination, which is not a property of Jupiter
+The photometry amendment of 2026-09-07 puts an **Illumination** selector beside
+the colour map in both viewers -- None, Lambert, Minnaert with a `k` slider from
+0.3 to 1.2, Flatten with a sigma slider from 8 to 256 pixels -- and a
+Linear/Asinh toggle for how the display range is laid over the eight bits. The
+selector is not a cosmetic control. JunoCam measures reflected sunlight, so
+what dominates a swath is the cosine of the solar incidence: the first orbit-4
+polar stack had band medians of 6 to 181 DN against 99th percentiles of 1,100
+to 2,800, which is a stretch that saturates the whole dayside to show a
+terminator nobody asked about. The choice travels to the server as
+`norm=` on `frame/{t}.png`, `frame/{t}/rgb.png` and a strip's `image.png`, and
+on to `stats?norm=` as well, because a spectrum of a limb-darkened swath and a
+spectrum of the corrected one are two different measurements and the panel must
+never show one under the other's label.
+
+The selector is initialised from `meta.norm_default` -- `lambert` for JunoCam,
+`none` for JIRAM, which measures its own thermal emission and for which a
+cosine correction means nothing -- and it offers only the models
+`meta.norm_options` says the product can answer for, since Lambert and Minnaert
+need a per-pixel incidence angle that a stack built before the amendment does
+not carry. Changing it re-reads every stretch slider from
+`meta.stretch[norm][band]` rather than carrying the old numbers over: dividing
+by `cos(i)` at 80 degrees is a factor of six, and keeping the raw limits under
+the corrected picture is how the first Lambert view of the orbit-4 stack came
+out white.
 
 The Strips view (`src/views/StripsView.tsx`) is the same viewer over
 `/api/strips/{id}/image.png`, with local-time contours as a second path layer,

@@ -38,7 +38,21 @@ import {
   sweepReadout,
   type StackLevel,
 } from '../lib/stackModes';
-import { bandForChannel, hasRgb, RGB_BANDS, resolveStretch, uniqueBands } from '../lib/bands';
+import {
+  bandForChannel,
+  FLAT_SIGMA_RANGE,
+  hasRgb,
+  MINNAERT_K_RANGE,
+  NORM_BLURBS,
+  NORM_LABELS,
+  NORM_NAMES,
+  normName,
+  RGB_BANDS,
+  stretchFor,
+  uniqueBands,
+} from '../lib/bands';
+import { currentNorm } from '../store/store';
+import type { NormName, StretchMode } from '../api/types';
 
 export function PolesView({ active }: { active: boolean }) {
   const stacks = useStore((s) => s.stacks);
@@ -66,6 +80,12 @@ export function PolesView({ active }: { active: boolean }) {
   const setLinkBands = useStore((s) => s.setLinkBands);
   const bandStretch = useStore((s) => s.bandStretch);
   const setBandStretch = useStore((s) => s.setBandStretch);
+  const norm = useStore((s) => s.norm);
+  const normK = useStore((s) => s.normK);
+  const normSigma = useStore((s) => s.normSigma);
+  const setNorm = useStore((s) => s.setNorm);
+  const stretchMode = useStore((s) => s.stretchMode);
+  const setStretchMode = useStore((s) => s.setStretchMode);
   const showGraticule = useStore((s) => s.showGraticule);
   const setShowGraticule = useStore((s) => s.setShowGraticule);
   const emissionAlpha = useStore((s) => s.emissionAlpha);
@@ -93,6 +113,15 @@ export function PolesView({ active }: { active: boolean }) {
   const instrument = meta?.instrument ?? listing?.instrument ?? 'JIRAM';
   const levels = useMemo(() => availableLevels(instrument), [instrument]);
   const rgbReady = hasRgb(stackBands);
+  const normLabel = currentNorm({ norm, normK, normSigma });
+  // Only the models the product can actually answer for: Lambert and
+  // Minnaert need a per-pixel incidence angle, and a stack built before the
+  // photometry amendment carries none.
+  const normChoices = useMemo(() => {
+    const offered = meta?.norm_options?.map((name) => normName(name));
+    const known = NORM_NAMES.filter((name) => !offered || offered.includes(name));
+    return known.length > 0 ? known : (['none'] as NormName[]);
+  }, [meta]);
 
   // A new stack answers whatever mode question was open.
   useEffect(() => {
@@ -437,6 +466,74 @@ export function PolesView({ active }: { active: boolean }) {
               />
             </div>
 
+            <div className={styles.toolbar} data-testid="illumination-bar">
+              <label htmlFor="norm-select" title={NORM_BLURBS[norm]}>
+                illumination
+              </label>
+              <select
+                id="norm-select"
+                data-testid="norm-select"
+                value={norm}
+                title={NORM_BLURBS[norm]}
+                onChange={(event) => setNorm(event.target.value as NormName)}
+              >
+                {normChoices.map((name) => (
+                  <option key={name} value={name} title={NORM_BLURBS[name]}>
+                    {NORM_LABELS[name]}
+                  </option>
+                ))}
+              </select>
+              {norm === 'minnaert' && (
+                <>
+                  <label htmlFor="norm-k">k {normK.toFixed(2)}</label>
+                  <input
+                    id="norm-k"
+                    data-testid="norm-k"
+                    type="range"
+                    min={MINNAERT_K_RANGE[0]}
+                    max={MINNAERT_K_RANGE[1]}
+                    step={0.05}
+                    value={normK}
+                    style={{ width: 110 }}
+                    onChange={(event) => setNorm('minnaert', Number(event.target.value))}
+                  />
+                </>
+              )}
+              {norm === 'flat' && (
+                <>
+                  <label htmlFor="norm-sigma">sigma {normSigma} px</label>
+                  <input
+                    id="norm-sigma"
+                    data-testid="norm-sigma"
+                    type="range"
+                    min={FLAT_SIGMA_RANGE[0]}
+                    max={FLAT_SIGMA_RANGE[1]}
+                    step={8}
+                    value={normSigma}
+                    style={{ width: 110 }}
+                    onChange={(event) =>
+                      setNorm('flat', undefined, Number(event.target.value))
+                    }
+                  />
+                </>
+              )}
+              <div className={styles.sep} />
+              <label htmlFor="stretch-mode">stretch</label>
+              <select
+                id="stretch-mode"
+                data-testid="stretch-mode"
+                value={stretchMode}
+                title="how the display range is laid out over the eight bits"
+                onChange={(event) => setStretchMode(event.target.value as StretchMode)}
+              >
+                <option value="linear">Linear</option>
+                <option value="asinh">Asinh</option>
+              </select>
+              <span className={styles.muted} data-testid="norm-note">
+                {NORM_BLURBS[norm]}
+              </span>
+            </div>
+
             <div className={styles.toolbar}>
               <label htmlFor="vmin">vmin</label>
               <input
@@ -461,7 +558,7 @@ export function PolesView({ active }: { active: boolean }) {
               <button
                 onClick={() => {
                   if (!meta) return;
-                  const stretch = resolveStretch(meta.stretch, band);
+                  const stretch = stretchFor(meta.stretch, normLabel, band);
                   setStretch(stretch.p1, stretch.p99);
                 }}
                 disabled={!meta}

@@ -37,13 +37,13 @@ def test_junocam_rgb_stack_and_strips():
     files = sorted((root / "regions" / "north_pole_paper").glob("junocam_*orbits4*frame.nc"))
     assert files, "no JunoCam stack for the paper region"
     ds = xr.open_dataset(files[0])
-    assert ds["image"].dims == ("time", "band", "y", "x") and ds.sizes["time"] >= 15
+    assert ds["image"].dims == ("time", "band", "y", "x") and ds.sizes["time"] >= 5  # close swaths only since the scale cutoff
     assert list(ds["band"].values) == ["RED", "GREEN", "BLUE"] and ds.attrs["instrument"] == "JunoCam"
     assert np.isfinite(np.asarray(ds["image"].isel(time=0, band=0).values)).any()
     dt = np.asarray(ds["dt_refined_s"].values, dtype=float)
     assert np.isfinite(dt).mean() >= 0.5
     idx = load_strips(root, orbits=[4], instrument="JunoCam")
-    assert len(idx) >= 50 and (idx["bands"] == "RED;GREEN;BLUE").all()
+    assert len(idx) >= 3 and (idx["bands"] == "RED;GREEN;BLUE").all()  # 30 km/px cutoff
     sd = read_strip(root, idx.iloc[0]["strip_id"])
     assert sd["image"].dims == ("band", "y", "x")
     st = strip_statistics(sd, band="RED")

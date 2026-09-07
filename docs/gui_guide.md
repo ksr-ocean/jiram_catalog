@@ -287,11 +287,13 @@ two modes meet at the end of each sweep.
 | speed | frames per second while playing (1-30) |
 | band | on a stack with a band dimension (a JunoCam stack, for instance), which band to display, plus `RGB composite` when RED, GREEN and BLUE are all present |
 | colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis` -- a 256-entry lookup table applied to pixels already in the browser, so changing it never needs a new request from the server; disabled while the RGB composite is on screen, which carries its own colour |
-| link bands | shown in the composite: on by default, so the one vmin/vmax pair on the toolbar drives all three channels; unchecking it puts a pair per band on screen for a deliberate colour balance |
+| link bands | shown in the composite: one vmin/vmax pair on the toolbar drives all three channels while it is on. It starts **off** for a JunoCam stack and on for a JIRAM one -- three colour strips of one camera differ in throughput and in where each crossed the terminator, so they do not share a stretch without tinting the picture |
+| illumination | the model divided out of every pixel before the stretch: `None`, `Lambert` (`I / cos(i)`), `Minnaert` (`I / (cos(i)^k cos(e)^(k-1))`, with a `k` slider from 0.3 to 1.2, 0.7 by default) or `Flatten` (divide by the image's own Gaussian low-pass, sigma slider 8-256 px). It opens on the product's own default -- Lambert for JunoCam, None for JIRAM -- and offers only the models the file can answer for, since the first two need a per-pixel incidence angle. Changing it re-reads every stretch slider from that model's limits |
+| stretch (Linear / Asinh) | how the display range is laid over the eight bits: linear, or `asinh`, which is linear near the bottom and logarithmic near the top and keeps one bright feature from eating the whole range |
 | graticule | overlays parallels every 2 deg and meridians every 30 deg, from the stack's own coordinate arrays (on by default) |
 | emission overlay | a 0-1 opacity slider blending in the per-pixel emission-angle PNG (always drawn with an inferno ramp), fetched only once you raise this above zero |
 | vmin / vmax | the display stretch's numeric limits; editing either refetches the frame at the new stretch, debounced by 350 ms so you can type without a flood of requests |
-| reset stretch | puts vmin/vmax back to the stack's own 1st/99th percentile |
+| reset stretch | puts vmin/vmax back to the stack's own 1st/99th percentile, over valid pixels and under the illumination model currently chosen |
 | the image itself | drag to pan, scroll to zoom (aspect ratio locked by construction, so it cannot distort); hovering shows an x/y (km) readout |
 | frame metadata | time, product id, sequence id, orbit, frame count, emission, instrument, band, km/px, and the served x/y range for the current step, from the stack's own per-time coordinates |
 | build dialog level | the tray's "Build stack..." names the same three modes, and its instrument, bands and quality controls decide which they are: a JIRAM build takes one band (`M` or `L`) and all three levels, a JunoCam build takes a set of filters (RED, GREEN and BLUE by default) and only `frame`, and the quality control names the worst tier the job may use (`A only` by default) |
@@ -376,6 +378,8 @@ for itself (640 px tall instead of 380).
 | current strip | the open strip's id |
 | band | on a multi-band (JunoCam) strip, which band the viewer draws and the statistics are computed for, plus `RGB composite` when RED, GREEN and BLUE are all present; the composite is assembled in the browser from the three band images |
 | colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis`, same LUT mechanism as Poles; disabled while the RGB composite is on screen |
+| illumination | the same four models as the Poles viewer, opening on the strip's own default (Lambert for a JunoCam strip). It travels to the statistics as well as to the picture: a spectrum of a limb-darkened swath and a spectrum of the corrected one are two different measurements, and the isotropic-spectrum heading names the model it used |
+| stretch (Linear / Asinh) | the PNG mapping, as in the Poles viewer |
 | graticule | parallels every 2 deg, meridians every 30 deg |
 | local-time contours | dashed contours every 2 h from the strip's own local-time field |
 | the image itself | drag to pan, scroll to zoom, hover for an x/y (km) readout |

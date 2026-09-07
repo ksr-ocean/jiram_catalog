@@ -15,14 +15,28 @@ import type {
   FrameDetail,
   ImagePayload,
   JobRecord,
+  NormName,
   SelectionRecord,
   StackListing,
   StackMeta,
+  StretchMode,
   StripMeta,
   StripStats,
 } from '../api/types';
 import { bandsByInstrument, columnsFromIPC, EMPTY_COLUMNS, type CatalogColumns } from '../lib/catalogTable';
-import { bandForChannel, hasRgb, resolveStretch, splitBands, uniqueBands } from '../lib/bands';
+import {
+  bandForChannel,
+  DEFAULT_FLAT_SIGMA,
+  DEFAULT_MINNAERT_K,
+  hasRgb,
+  normLabel,
+  normName,
+  resolveStretch,
+  splitBands,
+  stretchFor,
+  stretchForNorm,
+  uniqueBands,
+} from '../lib/bands';
 import { computeFootprints, EMPTY_FOOTPRINTS, type FootprintSet } from '../lib/footprints';
 import { composePayloads } from '../lib/rgb';
 import { DEFAULT_FILTERS, filterIndices, filtersToParams, type CatalogFilters } from '../lib/filters';
@@ -99,6 +113,16 @@ interface State {
   /** One stretch pair for all three channels, or one pair per band. */
   linkBands: boolean;
   bandStretch: Record<string, [number, number]>;
+  /**
+   * The illumination model the Poles viewer asks the server to divide out,
+   * its two parameters, and the PNG mapping.  Initialised from the stack's
+   * `meta.norm_default`, so a JunoCam stack opens Lambert-corrected and a
+   * JIRAM one opens raw.
+   */
+  norm: NormName;
+  normK: number;
+  normSigma: number;
+  stretchMode: StretchMode;
   showGraticule: boolean;
   emissionAlpha: number;
   frameImage: ImagePayload | null;
@@ -123,6 +147,11 @@ interface State {
   stripBands: string[];
   stripBand: string | null;
   stripComposite: boolean;
+  /** The Strips viewer's own illumination state; see `norm` above. */
+  stripNorm: NormName;
+  stripNormK: number;
+  stripNormSigma: number;
+  stripStretchMode: StretchMode;
   statsVisible: boolean;
 
   jobs: JobRecord[];
@@ -169,6 +198,8 @@ interface Actions {
   setComposite(composite: boolean): void;
   setLinkBands(linked: boolean): void;
   setBandStretch(band: string, vmin: number, vmax: number): void;
+  setNorm(norm: NormName, k?: number, sigma?: number): void;
+  setStretchMode(mode: StretchMode): void;
   setShowGraticule(show: boolean): void;
   setEmissionAlpha(alpha: number): void;
   loadFrame(t: number): Promise<void>;
@@ -177,6 +208,9 @@ interface Actions {
   openStrip(id: string): Promise<void>;
   setStripBand(band: string): void;
   setStripComposite(composite: boolean): void;
+  setStripNorm(norm: NormName, k?: number, sigma?: number): void;
+  setStripStretchMode(mode: StretchMode): void;
+  refreshStripStats(): Promise<void>;
   loadStripImage(): Promise<void>;
   setStripOrbitFilter(orbits: number[] | null): void;
   setStatsVisible(visible: boolean): void;
@@ -252,6 +286,42 @@ export function compositeStretch(state: {
   return { r: pair('r'), g: pair('g'), b: pair('b') };
 }
 
+/** The wire spelling of the Poles viewer's illumination choice. */
+export function currentNorm(state: { norm: NormName; normK: number; normSigma: number }): string {
+  return normLabel(state.norm, state.normK, state.normSigma);
+}
+
+/** The same for the Strips viewer. */
+export function currentStripNorm(state: {
+  stripNorm: NormName;
+  stripNormK: number;
+  stripNormSigma: number;
+}): string {
+  return normLabel(state.stripNorm, state.stripNormK, state.stripNormSigma);
+}
+
+/**
+ * The per-band stretch pairs a product's metadata gives for one norm.
+ *
+ * Every model moves the histogram -- dividing by `cos(i)` at 80 degrees is a
+ * factor of six -- so the pairs have to be re-read whenever the norm changes
+ * rather than carried over, which is what made the first Lambert view of the
+ * orbit-4 stack come out white.
+ */
+export function bandStretchFor(
+  stretch: StackMeta['stretch'] | StripMeta['stretch'] | null | undefined,
+  norm: string,
+  bands: string[],
+): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  const forNorm = stretchForNorm(stretch, norm);
+  for (const name of bands) {
+    const pair = resolveStretch(forNorm, name);
+    out[name] = [pair.p1, pair.p99];
+  }
+  return out;
+}
+
 export const useStore = create<Store>((set, get) => ({
   config: null,
   loading: {},
@@ -290,6 +360,10 @@ export const useStore = create<Store>((set, get) => ({
   composite: false,
   linkBands: true,
   bandStretch: {},
+  norm: 'none',
+  normK: DEFAULT_MINNAERT_K,
+  normSigma: DEFAULT_FLAT_SIGMA,
+  stretchMode: 'linear',
   showGraticule: true,
   emissionAlpha: 0,
   frameImage: null,
@@ -307,6 +381,10 @@ export const useStore = create<Store>((set, get) => ({
   stripBands: [],
   stripBand: null,
   stripComposite: false,
+  stripNorm: 'none',
+  stripNormK: DEFAULT_MINNAERT_K,
+  stripNormSigma: DEFAULT_FLAT_SIGMA,
+  stripStretchMode: 'linear',
   statsVisible: persistedUi.statsVisible,
 
   jobs: [],
@@ -537,12 +615,16 @@ export const useStore = create<Store>((set, get) => ({
       // three requests and hides the colour maps.
       const bands = uniqueBands(meta.bands);
       const band = bands.length > 0 ? bands[0] : null;
-      const stretch = resolveStretch(meta.stretch, band);
-      const bandStretch: Record<string, [number, number]> = {};
-      for (const name of bands) {
-        const pair = resolveStretch(meta.stretch, name);
-        bandStretch[name] = [pair.p1, pair.p99];
-      }
+      // The product says how it wants to be read; the viewer opens that way
+      // and the user overrides it from the Illumination selector.
+      const norm = normName(meta.norm_default);
+      const label = normLabel(norm, DEFAULT_MINNAERT_K, DEFAULT_FLAT_SIGMA);
+      const stretch = stretchFor(meta.stretch, label, band);
+      // Three JunoCam colour strips differ in throughput by tens of per cent
+      // and in illumination by where each crossed the terminator, so their
+      // stretches start apart rather than linked; one JIRAM band has nothing
+      // to link to and keeps the old default either way.
+      const junocam = String(meta.instrument ?? 'JIRAM').toLowerCase() === 'junocam';
       set({
         stackId: id,
         stackMeta: meta,
@@ -552,7 +634,11 @@ export const useStore = create<Store>((set, get) => ({
         stackBands: bands,
         band,
         composite: false,
-        bandStretch,
+        bandStretch: bandStretchFor(meta.stretch, label, bands),
+        norm,
+        normK: DEFAULT_MINNAERT_K,
+        normSigma: DEFAULT_FLAT_SIGMA,
+        linkBands: !junocam,
         frameImage: null,
         emissionImage: null,
         frameLoaded: false,
@@ -592,9 +678,9 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setBand(band) {
-    const { stackMeta } = get();
-    const pair = get().bandStretch[band] ?? (() => {
-      const stretch = resolveStretch(stackMeta?.stretch, band);
+    const state = get();
+    const pair = state.bandStretch[band] ?? (() => {
+      const stretch = stretchFor(state.stackMeta?.stretch, currentNorm(state), band);
       return [stretch.p1, stretch.p99] as [number, number];
     })();
     set({ band, vmin: pair[0], vmax: pair[1] });
@@ -624,19 +710,51 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
+  /**
+   * Change the illumination model, and re-read every stretch under it.
+   *
+   * Keeping the old limits would be the same mistake the raw stack made:
+   * a Lambert-corrected band near the terminator runs to twenty times the
+   * radiance of the raw one, and the picture would arrive white.
+   */
+  setNorm(norm, k, sigma) {
+    const state = get();
+    const normK = k ?? state.normK;
+    const normSigma = sigma ?? state.normSigma;
+    const label = normLabel(norm, normK, normSigma);
+    const stretch = stretchFor(state.stackMeta?.stretch, label, state.band);
+    set({
+      norm,
+      normK,
+      normSigma,
+      vmin: stretch.p1,
+      vmax: stretch.p99,
+      bandStretch: bandStretchFor(state.stackMeta?.stretch, label, state.stackBands),
+    });
+    frameCache.clear();
+    void get().loadFrame(get().t);
+  },
+
+  setStretchMode(stretchMode) {
+    set({ stretchMode });
+    frameCache.clear();
+    void get().loadFrame(get().t);
+  },
+
   setShowGraticule: (showGraticule) => set({ showGraticule }),
   setEmissionAlpha: (emissionAlpha) => set({ emissionAlpha }),
 
   async loadFrame(t) {
     const state = get();
-    const { stackId, vmin, vmax, band, composite } = state;
+    const { stackId, vmin, vmax, band, composite, stretchMode } = state;
     if (!stackId) return;
+    const norm = currentNorm(state);
     // The composite is one request per time step, not three: the contract's
     // `rgb.png` reads the three bands out of the same file server-side.
     const frameUrl = (step: number): string =>
       composite
-        ? api.stackRgbUrl(stackId, step, compositeStretch(state))
-        : api.stackFrameUrl(stackId, step, vmin, vmax, 1600, band);
+        ? api.stackRgbUrl(stackId, step, compositeStretch(state), 1600, norm, stretchMode)
+        : api.stackFrameUrl(stackId, step, vmin, vmax, 1600, band, norm, stretchMode);
     const target = frameUrl(t);
     const cached = frameCache.get(target);
     if (cached) {
@@ -686,11 +804,14 @@ export const useStore = create<Store>((set, get) => ({
         stripBands: bands,
         stripBand: bands.length > 0 ? bands[0] : null,
         stripComposite: false,
+        stripNorm: normName(meta.norm_default),
+        stripNormK: DEFAULT_MINNAERT_K,
+        stripNormSigma: DEFAULT_FLAT_SIGMA,
       });
       await get().loadStripImage();
     });
     void get().run('strip stats', async () => {
-      const stats = await api.stripStats(id, get().stripBand);
+      const stats = await api.stripStats(id, get().stripBand, currentStripNorm(get()));
       if (get().stripId === id) set({ stripStats: stats });
     });
   },
@@ -704,15 +825,19 @@ export const useStore = create<Store>((set, get) => ({
    * contract offers.
    */
   async loadStripImage() {
-    const { stripId, stripMeta, stripBand, stripComposite, stripBands } = get();
+    const state = get();
+    const { stripId, stripMeta, stripBand, stripComposite, stripBands, stripStretchMode } = state;
     if (!stripId || !stripMeta) return;
+    const norm = currentStripNorm(state);
     await get().run('strip image', async () => {
       if (stripComposite && hasRgb(stripBands)) {
         const channels = await Promise.all(
           (['r', 'g', 'b'] as const).map((channel) => {
             const name = bandForChannel(stripBands, channel);
-            const stretch = resolveStretch(stripMeta.stretch, name);
-            return fetchImage(api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, name));
+            const stretch = stretchFor(stripMeta.stretch, norm, name);
+            return fetchImage(
+              api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, name, norm, stripStretchMode),
+            );
           }),
         );
         const composed = composePayloads(channels[0], channels[1], channels[2]);
@@ -725,8 +850,10 @@ export const useStore = create<Store>((set, get) => ({
         set({ stripComposite: false, stripImage: channels[0], stripImageComposite: false });
         return;
       }
-      const stretch = resolveStretch(stripMeta.stretch, stripBand);
-      const image = await fetchImage(api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, stripBand));
+      const stretch = stretchFor(stripMeta.stretch, norm, stripBand);
+      const image = await fetchImage(
+        api.stripImageUrl(stripId, stretch.p1, stretch.p99, 1600, stripBand, norm, stripStretchMode),
+      );
       if (get().stripId === stripId) set({ stripImage: image, stripImageComposite: false });
     });
   },
@@ -734,17 +861,48 @@ export const useStore = create<Store>((set, get) => ({
   setStripBand(band) {
     set({ stripBand: band });
     void get().loadStripImage();
-    const id = get().stripId;
-    if (!id) return;
-    void get().run('strip stats', async () => {
-      const stats = await api.stripStats(id, band);
-      if (get().stripId === id && get().stripBand === band) set({ stripStats: stats });
-    });
+    void get().refreshStripStats();
   },
 
   setStripComposite(stripComposite) {
     set({ stripComposite });
     void get().loadStripImage();
+  },
+
+  /**
+   * Change the strip viewer's illumination model.
+   *
+   * Both the picture and the statistics follow it: a spectrum of a
+   * limb-darkened swath and a spectrum of the same swath corrected are two
+   * different measurements, and the panel must never show one under the
+   * other's label.
+   */
+  setStripNorm(stripNorm, k, sigma) {
+    set({
+      stripNorm,
+      stripNormK: k ?? get().stripNormK,
+      stripNormSigma: sigma ?? get().stripNormSigma,
+    });
+    void get().loadStripImage();
+    void get().refreshStripStats();
+  },
+
+  setStripStretchMode(stripStretchMode) {
+    set({ stripStretchMode });
+    void get().loadStripImage();
+  },
+
+  async refreshStripStats() {
+    const { stripId, stripBand } = get();
+    if (!stripId) return;
+    const norm = currentStripNorm(get());
+    await get().run('strip stats', async () => {
+      const stats = await api.stripStats(stripId, stripBand, norm);
+      const now = get();
+      if (now.stripId === stripId && now.stripBand === stripBand && currentStripNorm(now) === norm) {
+        set({ stripStats: stats });
+      }
+    });
   },
 
   setStripOrbitFilter: (stripOrbitFilter) => set({ stripOrbitFilter }),

@@ -156,11 +156,13 @@ def make_parser() -> argparse.ArgumentParser:
     export.add_argument("-v", action="store_true", help="enable debug logging")
     # Modules that own their own subcommand (see docs/agent_harness.md).
     from jiram_catalog import config_cmd, gui_cmd, stats2d, strips
+    from jiram_catalog.junocam import cli as junocam_cli
 
     strips.add_subparser(subparsers)
     stats2d.add_subparser(subparsers)
     gui_cmd.add_subparser(subparsers)
     config_cmd.add_subparser(subparsers)
+    junocam_cli.add_subparser(subparsers)
     return parser
 
 

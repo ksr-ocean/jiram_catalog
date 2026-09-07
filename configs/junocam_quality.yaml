@@ -1,0 +1,129 @@
+# JunoCam instrument-health epochs and documented throughput loss.
+#
+# Everything in this file is transcribed from the JunoCam volumes' own
+# ERRATA.TXT (cumulative free text, newest release first); nothing is
+# inferred, fitted, or averaged here.  Each entry names the volume whose
+# ERRATA it was read from so a later release can be diffed against it.
+#
+# Epochs are closed integer orbit (= perijove) intervals covering 0..99 with
+# no gap and no overlap; jiram_catalog.junocam.quality.epoch_for_orbit reads
+# them in order and returns the first match.  Orbits outside every interval
+# resolve to "unknown".
+#
+# Throughput entries give, per band, the orbit range over which the ERRATA
+# documents a response loss, the loss it quotes at the end of that range, and
+# the linear fit coefficients it publishes for correcting it.  The factor
+# applied to an image is intercept + slope * orbit, clipped to (0, 1]; an
+# orbit outside every band's range gets 1.0, i.e. no documented loss.  None
+# of this is applied to the archived RDR products -- the ERRATA says so
+# explicitly -- so these factors describe the data, they do not correct it.
+
+version: 1
+source_volumes: [JNOJNC_0028, JNOJNC_0033, JNOJNC_0035]
+
+epochs:
+  - name: nominal
+    orbit_min: 0
+    orbit_max: 46
+    source: JNOJNC_0035/ERRATA.TXT
+    note: >-
+      Prime mission and early extended mission.  No radiation-damage effect is
+      reported in any ERRATA release before the PJ47 anomaly; JunoCam operated
+      through the 34-orbit prime mission with little degradation.
+
+  - name: regulator_damage
+    orbit_min: 47
+    orbit_max: 55
+    source: JNOJNC_0035/ERRATA.TXT section B.9 and the release notes for orbits 47-55
+    note: >-
+      "Analysis and testing revealed that the anomalous behavior in PJ47 was
+      due to radiation damage to a voltage regulator in the camera head."
+      From March 2023 the camera head was continuously powered and heated to
+      about 20C outside PJ +/- 24h to anneal that damage, "which resulted in
+      substantially higher dark current in the marble movie images".  The
+      per-release note reads "Starting in orbit 47, there are many saturated
+      images particularly in the marble movies."
+
+  - name: ccd_damage
+    orbit_min: 56
+    orbit_max: 56
+    source: JNOJNC_0028/ERRATA.TXT section B.9, release 27 notes
+    note: >-
+      "This continued until PJ56, when the camera's black offset was observed
+      to increase substantially over the course of the perijove pass.  When
+      heating resumed after the pass, the offset increased even further.  The
+      root cause of this behavior was thought to be accumulated radiation
+      damage to the CCD."  Timing offsets could not be determined for all
+      PJ56 methane and some PJ56 RGB swath images, and the PJ56 global maps
+      are flagged as poor quality.
+
+  - name: post_anneal
+    orbit_min: 57
+    orbit_max: 99
+    source: JNOJNC_0028/ERRATA.TXT section B.9 and docs/reports/junocam_navigation_quality.md
+    note: >-
+      Heating was resumed at a higher setpoint (focal plane about 45C) and
+      "the offset can be seen decreasing in the inbound marble movie images at
+      the end of PJ56"; PJ57 (30 December 2023) returned imagery free of the
+      PJ56 problems (Ravine et al., IEEE Trans. Nucl. Sci., 2025).  Later
+      orbits are still degraded in places -- the ERRATA reports saturated
+      images and lost global maps for orbits 73-80 -- but the annealing
+      campaign, not the damage epochs above, is the documented state.
+
+throughput:
+  - band: red
+    orbit_min: 47
+    orbit_max: 60
+    loss_at_orbit_max: 0.23
+    slope: -0.00391
+    intercept: 1.01
+    source: JNOJNC_0033/ERRATA.TXT section B.10
+    note: >-
+      "An analysis of the images through orbit 60 indicates that there has
+      been varying degrees of loss of throughput in each of the color
+      channels... Red 23%".  The orbit range is set to the damage era of the
+      epoch table (47) through the last orbit the analysis covers (60): the
+      ERRATA quotes no loss for the prime mission and its fit is not
+      extrapolated beyond the orbits it was measured on.
+
+  - band: green
+    orbit_min: 47
+    orbit_max: 60
+    loss_at_orbit_max: 0.47
+    slope: -0.00787
+    intercept: 1.05
+    source: JNOJNC_0033/ERRATA.TXT section B.10
+    note: 'Green 47% response loss through orbit 60; linear fit -0.00787, 1.05.'
+
+  - band: blue
+    orbit_min: 47
+    orbit_max: 60
+    loss_at_orbit_max: 0.64
+    slope: -0.0108
+    intercept: 1.07
+    source: JNOJNC_0033/ERRATA.TXT section B.10
+    note: 'Blue 64% response loss through orbit 60; linear fit -0.0108, 1.07.'
+
+notes:
+  - source: JNOJNC_0035/ERRATA.TXT section B.6
+    subject: blooming
+    text: >-
+      Excess photocharge from the greatly overexposed visible regions,
+      primarily the adjacent blue strip, blooms into the methane strip; "this
+      is especially pronounced with increasing amounts of TDI".  Mitigated by
+      moving the methane readout region, which makes INS-61504_DISTORTION_Y
+      vary from methane image to methane image instead of being constant.
+  - source: JNOJNC_0035/ERRATA.TXT section B.7
+    subject: timing_offsets
+    text: >-
+      Some EDR/RDR products have a variable image-start-time error; the
+      products that had an offset applied are listed per volume in
+      EXTRAS/EDR_TIMING_OFFSETS.TXT and RDR_TIMING_OFFSETS.TXT.  Only images
+      in the perijove swath were considered, and from orbit 74 the images are
+      too oversaturated for offsets to be determined at all.
+  - source: JNOJNC_0035/ERRATA.TXT, release notes for orbits 73-80
+    subject: saturated_orbits
+    text: >-
+      Orbits 73-80 carry release notes about oversaturated or all-black
+      images and global map products that could not be produced (orbits 74,
+      75, 76, 77, 78, 79, 80 named explicitly).

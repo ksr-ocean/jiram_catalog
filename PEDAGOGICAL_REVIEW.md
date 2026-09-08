@@ -21,6 +21,15 @@ vs. `orbit_dir` in the frame index; the exact wording of one archive
 fact that a later measurement revised). No claim here should need you
 to trust prose over `git blame`.
 
+The implementation described here is **commit `1e2723d`**, through
+2026-09-07. It includes the intervening JunoCam acquisition, geometry and
+photometry work and the scientific-workspace implementation. Earlier JIRAM
+measurements remain validation history, not a fresh census. The new deep
+dives are [4.18, JunoCam](#418-junocam--archive-camera-and-quality-evidence)
+and [4.19, scientific workflow](#419-scientific-workflow--what-the-data-can-support).
+Current counts and verification are recorded in the
+[delivery log](docs/build_log_2026-09-07.md).
+
 ## Table of contents
 
 1. [What the tool is for](#1-what-the-tool-is-for-and-the-two-regimes)
@@ -36,89 +45,84 @@ to trust prose over `git blame`.
 
 ## 1. What the tool is for, and the two regimes
 
-Juno's JIRAM instrument is a small two-channel infrared camera riding
-along on a spacecraft that spins twice a minute and swoops from
-4,200 km to well past a million kilometers from Jupiter on every
-46-day (now shorter) orbit. Every few weeks it produces a few hundred
-to a few thousand 128×432-pixel frames, each one a narrow, instantaneous
-look at a strip of cloud top or aurora. NASA's Planetary Data System
-(PDS) archives all of it — 85,108 camera frames as of this writing
-(`README.md`) — as calibrated radiance images plus a text label per
-image. What the archive does *not* give you is where each frame is
-pointed: the label was designed to record which SPICE kernels
-(orientation and trajectory files — see the glossary) were used to
-process the data, not to hand you the answer in degrees of latitude
-and longitude. For most of the archive, working out "where on Jupiter
-was this pixel looking, and at what surface angle" from those kernels
-yourself is the entire first half of the problem this tool solves.
+The project began with Juno's JIRAM instrument, a small two-channel
+infrared camera on a spacecraft that spins twice a minute. Its eccentric
+polar orbit gives a short close encounter with Jupiter followed by a long
+departure. During a pass, JIRAM produces hundreds to thousands of
+128×432-pixel band images: narrow looks at cloud-top thermal emission or
+aurora. The original archive census contains 85,108 camera-frame labels
+(`docs/build_log_2026-09-04.md`). For much of that archive the label does not
+supply usable surface coordinates. Reconstructing where a pixel looked,
+from spacecraft trajectory, attitude and camera geometry, is the first
+problem this tool solves.
 
-The second half is that a JIRAM frame is small and the spacecraft is
-fast: no single frame is useful on its own for anything resembling
-fluid-dynamical time series or spatial statistics, and the *shape* of
-the imagery you get out of the archive is completely different at the
-poles than everywhere else. This is not a detail — it is the single
-fact that organizes the entire codebase into two regimes, and every
-architectural decision downstream of the geometry engine traces back
-to it.
+The current system also reads **JunoCam**, a visible and near-infrared
+pushframe camera. One native JunoCam product contains multiple timed camera
+readouts, each carrying one or more filter strips. Its archive layout,
+detector arithmetic, timing and health evidence have their own modules.
+The two instruments meet at the mapped-product and browser interfaces;
+they do not become physically interchangeable there. Sections 2–4.17 retain
+the original JIRAM foundations, with instrument-specific qualifications;
+section 4.18 explains the second camera.
 
-**Regime 1 — the poles, where Juno revisits.** Because Juno's science
-orbits are polar and the spacecraft's spin axis is (on most orbits)
-perpendicular to the orbital plane, JIRAM's single degree of pointing
-freedom sweeps back and forth across the pole on every close pass. The
-mission plans this deliberately: a "sequence" is 12–20 consecutive
-spins commanded to tile a mosaic over one pole, and the same target
-gets a fresh sequence every 8–20 minutes for as long as the perijove
-pass lasts (`docs/brainstorm_2026-09-03.md`, §1; `docs/reports/
-jiram_pointing_overlap.md`, §5). This is real time-series data: the
-same patch of atmosphere, imaged again and again, with a well-defined
-cadence. It is exactly the situation the published gate for this whole
-project is built from — perijove 4 (2017-02-02), whose 48 archived
-frames Ingersoll et al. (2022, *Nature Astronomy*) turned into 4
-polar mosaics and a published wind-vector field, and whose numbers
-this codebase reproduces from raw bytes before trusting anything else
-it computes (see section 5). The natural product here is a **region
-time stack**: every frame that overlaps a named polar region,
-reprojected onto one fixed map grid, laid along a time axis with a
-validity mask and an emission-angle channel (`src/jiram_catalog/
-stacks.py`).
+The second problem is organizing the observations into forms useful for
+fluid dynamics. A single image can support spatial diagnostics, but cannot
+supply a motion pair or a time series. The original design therefore splits
+into two regimes. Think of the distinction as one between a model time
+series at fixed grid cells and a collection of individual survey transects.
 
-**Regime 2 — everywhere else, where Juno never comes back.** Outside
-the poles, JIRAM's single spin sequence sweeps across a strip of
-mid-latitude or equatorial cloud once, over one to a few minutes, and
-then Juno's orbit carries the spacecraft away; nothing points back at
-that same patch of Jupiter again at useful resolution for the rest of
-the mission (`docs/architecture.md`, "7. Strip library"). A time stack
-is the wrong data structure for a single look — there is no time axis
-worth having — so the natural product is instead a **library**: every
-independent look, reprojected onto its own small tangent-plane grid at
-its own natural resolution, queryable by latitude, epoch, and
-illumination, and reduced to the same numerical diagnostics (spectra,
-structure functions) across many independent samples rather than
-across time (`src/jiram_catalog/strips.py`, `stats2d.py`).
+**Regime 1 — a region observed repeatedly.** JIRAM's polar sequences can
+revisit the same atmospheric region. The project's reference is perijove 4
+(2017-02-02), whose 48 archived frames underlie four published mosaics and
+TRACKER4 wind vectors from Ingersoll et al. (2022). A **region time stack**
+puts contributing frames or composites onto one fixed map grid, with
+observation times, validity and viewing geometry. The repeated views are a
+scientific opportunity; regular cadence, adequate overlap and navigation
+accuracy must still be demonstrated for the particular selection.
 
-| | regime 1: polar / repeat-view | regime 2: everywhere else |
+That qualification matters immediately for JunoCam. The preserved local
+polar file originally had six entries, but two processing versions of each
+of three observations do not give six independent times. After version
+selection it has three observations with approximately 577- and 243-second
+gaps. It is viewable, but cannot supply the default constant-cadence triple.
+These are current measured results, recorded in
+[the delivery log](docs/build_log_2026-09-07.md), not a claim about all
+possible JunoCam passes.
+
+**Regime 2 — individual swaths.** Much of the useful nonpolar JIRAM sampling
+is a sweep across cloud over one to a few minutes, followed by departure.
+A library of locally projected swaths therefore makes more sense than
+inventing a regular time axis. This does not establish that every location
+is seen only once for the whole mission: `trackability.py` tests repeat-view
+geometry, and JunoCam has its own schedule. An absent repeat assessment
+means *unassessed*, not an observed absence of a partner.
+
+A **strip library** stores these looks on local map grids with their source
+identities and times. It supports spectra and structure functions of single
+swaths, followed by comparisons across observations or passes. A large
+library does not by itself supply a large number of independent realizations;
+overlapping strips and reprocessed versions must be accounted for.
+
+| | repeated-region product | individual-swath product |
 | --- | --- | --- |
-| product | region time stack | strip library |
-| grid | one per region, shared by every frame | one per chunk, centred on that chunk |
-| time axis | real (multiple visits, known cadence) | none (one look, no revisit) |
-| built by | `region-stack`, `movie`, `export-goflow` | `strips`, `strip-stats` |
-| answers | velocity retrieval at a cadence | distribution-level statistics across many independent looks |
-| ground truth | Ingersoll et al. (2022) PJ4 maps and TRACKER4 vectors | none published; internal consistency only |
+| stored form | region time stack | strip library |
+| grid | shared region grid | local grid for each swath/chunk |
+| temporal support | explicit times; cadence and overlap tested | source times retained, no stacked image time axis |
+| builders | instrument-specific `region-stack` | instrument-specific `strips` |
+| analysis | preflighted motion-model inputs and comparisons | spatial statistics and independent-pass summaries |
+| reference evidence | validated JIRAM PJ4 maps and vectors | synthetic statistical checks; no general published swath truth |
 
-(table reproduced from `docs/architecture.md`, "The two regimes, side
-by side")
-
-Everything from the SPICE geometry engine downward exists to feed one
-or the other of these two rows. If you remember nothing else from this
-document before reading code, remember this: when you are unsure why a
-module is shaped the way it is, ask first "is this regime 1 or regime
-2?" — the answer usually explains the design in one sentence.
+The browser exposes five task views: **Explore**, **Time series**,
+**Image library**, **Compare**, and **Coverage**. Those names describe what
+you do; the two product regimes describe what the files mean. Keep both in
+mind when modifying a module: first identify the physical observation, then
+the map product, then the question its temporal and spatial support can answer.
 
 ---
 
 ## 2. Three archive facts that shaped everything
 
-Three facts about the archive itself — none of them documented
+Three facts about the **JIRAM archive** itself — none of them documented
 anywhere the project could find *before* someone measured them
 directly — forced most of the architecture below. Each one was found
 the hard way, each one is enforced today by a specific line of code
@@ -127,7 +131,7 @@ downstream geometry rather than raising an error. If you are about to
 touch `labels.py`, `index.py`, `geometry.py`, or anything that reads a
 raw `.IMG` file, read this section before you read the module itself.
 
-### 2.1. Archive labels lose all geometry after orbit 38
+### 2.1. JIRAM archive labels lose all geometry after orbit 38
 
 The PDS3 label attached to every camera frame carries an
 `M_BAND_PARAMETERS` and an `L_BAND_PARAMETERS` group, and *when they
@@ -175,20 +179,20 @@ useful for exactly one purpose from this point on: a per-orbit
 consistency report (`geo.py`'s `geo_report_text`, written to
 `<mirror>/index/geo_report.md`) that answers "does our independent
 computation of geometry agree with the archive's own pipeline, where
-both exist?" — see section 4.5 for the numbers, and section 5 for how
+both exist?" — see section 4.6 for the numbers, and section 5 for how
 that consistency check itself had to be fixed once it was built on
 the wrong subset of frames.
 
-### 2.2. Archive image files are little-endian, despite every label saying the opposite
+### 2.2. JIRAM image files are little-endian, despite every label saying the opposite
 
-Every PDS3 and PDS4 label in the archive declares its calibrated image
+The JIRAM PDS3 and PDS4 labels examined declare their calibrated image
 data `SAMPLE_TYPE = IEEE_REAL` (PDS3) or `IEEE754MSBSingle` (PDS4) —
 both mean big-endian IEEE 754 float32, unambiguously, in the archive's
 own documented terminology. Believing the label is the natural first
 move, and it is wrong.
 
 This surfaced while fitting the published map's exact projection
-(section 4.9), which needed to read a raw calibrated frame
+(section 4.8), which needed to read a raw calibrated frame
 (`JIR_IMG_RDR_2017033T114006_V02`) and compare it pixel for pixel
 against the published mosaic:
 
@@ -204,7 +208,7 @@ against the published mosaic:
 
 A second, fully independent investigation happening in parallel (the
 question of which detector half is which band inside a 256-line
-product, section 2.3's cousin fact, discussed in section 4.5) hit the
+product, section 2.3's cousin fact, discussed in section 4.6) hit the
 identical wall from a different angle and reported it separately:
 reading the label's declared big-endian order made every one of the
 32 orbit-24 frames it sampled come out with a background of huge,
@@ -216,10 +220,11 @@ mis-declared byte order, found the same way both times: by checking
 whether the numbers that come out are physically plausible, not by
 trusting the label's field name.
 
-**What it forced.** Every place in the codebase that reads raw image
-bytes off disk hard-codes the little-endian dtype `'<f4'` — never the
-label's declared type — and this is now a project-wide rule stated in
-`AGENTS.md`, not a one-off patch: `stacks.read_frame_image`,
+**What it forced.** Native JIRAM radiance readers hard-code `'<f4'`,
+rather than that label declaration. This is a JIRAM rule, not a universal
+`.IMG` rule: `junocam/images.py` reads RDR as big-endian unsigned 16-bit
+integers and EDR as unsigned 8-bit counts. The JIRAM convention is recorded
+in `docs/decisions.md`; `stacks.read_frame_image`,
 `strips.py`'s frame reads, the projection-fit and tracking scripts all
 do this identically. The original crawl-index spec, written *before*
 this was discovered, still says "big-endian" in its own text and is
@@ -228,9 +233,9 @@ useful reminder that in this repository, when a spec and a later
 report disagree, the report (and the code) wins, and the spec is left
 as a historical record rather than silently edited.
 
-### 2.3. Sequence numbering is one-based, and the archive never delivers frame 1
+### 2.3. JIRAM sequence numbering is one-based, and frame 1 is absent
 
-The label of every camera frame carries `SEQUENCE_NUMBER` (this
+The JIRAM camera-frame labels carry `SEQUENCE_NUMBER` (this
 frame's 1-based position within its spin sequence) and
 `SEQUENCE_SAMPLES` (how many frames the sequence is supposed to
 contain in total). The natural assumption — that a sequence's frames
@@ -263,8 +268,8 @@ boundary. `index.assign_sequences` instead defines a sequence purely
 from observed behaviour, sorted in time order within each
 `(orbit_dir, band)` group: a new sequence starts at the first row of
 the group and again whenever the gap since the previous frame exceeds
-45 seconds (a spin cadence is a fixed ~30.5 s, so 45 s is comfortably
-past one dropped frame but well short of two), or whenever
+45 seconds (the observed spin spacing is about 30.5 s, so one
+missing intervening frame creates a roughly 61 s gap that crosses it), or whenever
 `sequence_number` fails to strictly increase (`docs/decisions.md`,
 "Sequence definition"; enforced in `src/jiram_catalog/index.py`,
 `assign_sequences`). The resulting `seq_id`, `seq_index`, `seq_n`, and
@@ -283,7 +288,7 @@ the n01a frame's label says `SEQUENCE_NUMBER = 2`,
 `SEQUENCE_SAMPLES = 13`, and the sequence it belongs to has exactly 12
 members in the index). Less obviously: because sequence identity has
 to be *reconstructed* from timing and the (unreliable) sequence
-number rather than read directly, every module that groups frames by
+number rather than read directly, every module that groups JIRAM frames by
 sequence is implicitly trusting `index.assign_sequences`'s 45-second
 threshold to have drawn the right boundaries — get that threshold
 wrong for some future orbit with an unusual cadence, and every
@@ -306,16 +311,15 @@ with a pointer to section 2 or 4 for the story of why.
 ### 3.1. Module map
 
 Every module lives under `src/jiram_catalog/` unless noted. One
-paragraph each, in dependency order (a module only imports from
-modules above it in this list, with the single deliberate exception
-that `regions.py` imports `geo.longitude_arc`, a pure helper with no
-SPICE dependency):
+paragraph each, following the data journey. This is not a strict import
+graph: shared normalization helpers, for example, live in `api/images.py`
+and are also called by scientific code:
 
 - **`config.py`** — resolves the two paths every other module needs
   (the local mirror, and the read-only published ground truth) through
   one precedence chain: explicit argument, then environment variable,
-  then an optional TOML file, then a built-in default. Nothing else in
-  the codebase hard-codes a path; see section 4.16.
+  then an optional TOML file, then a built-in default. Ordinary product
+  workflows therefore need no hard-coded mirror path; see section 4.17.
 - **`pds.py`** — parses the archive's own Apache directory listings
   (plain HTML, no API) into `manifest.parquet`, one row per file the
   archive has, before anything is downloaded.
@@ -330,10 +334,11 @@ SPICE dependency):
   the sequence-identity columns described in section 2.3.
 - **`geometry.py`** — the vectorised SPICE engine: per-pixel
   planetocentric latitude, longitude, range, emission, incidence, and
-  phase for any camera frame, computed from the pinhole camera model
+  phase for a JIRAM camera frame, computed from the pinhole camera model
   and an analytic ellipsoid intercept, with careful handling of light
-  time and stellar aberration. This is the module every geometric
-  claim in the rest of the codebase ultimately traces back to.
+  time and stellar aberration. Its ellipsoid and aberration helpers are
+  shared with JunoCam; the second camera has a separate detector and
+  timing model.
 - **`kernels.py`** — resolves which SPICE kernel files a set of
   orbits needs (a small static set, plus per-orbit attitude and
   trajectory kernels named in the labels) and downloads whatever is
@@ -355,12 +360,12 @@ SPICE dependency):
 - **`stacks.py`** — regime 1's core: selects every frame overlapping
   a region, reprojects each one, and assembles a time-stacked NetCDF
   with validity and emission-angle channels.
-- **`movie.py`** — renders a stack to MP4 or GIF with one whole-stack
-  brightness stretch, so that a bad reprojection shows up as visible
-  wobble rather than being hidden by a per-frame renormalisation.
-- **`export_goflow.py`** — cuts a stack into constant-cadence runs and
-  writes them in the file layout a downstream optical-flow velocity
-  model expects.
+- **`movie.py`** — renders physical-band frames with the requested
+  normalization and one whole-stack display stretch; streams MP4 frames
+  and publishes finished output atomically.
+- **`export_goflow.py`** — preflights band, grid, observation identity,
+  cadence and common masks; writes image/mask/gradient realizations with
+  native units, normalization and source provenance.
 - **`strips.py`** — regime 2's core: chunks each spin sequence into
   geometrically coherent pieces, builds one tangent-plane grid per
   chunk, and maintains the resulting library's index.
@@ -371,20 +376,25 @@ SPICE dependency):
   imagery) of which orbits and latitude bands have repeat-view
   geometry that could support velocity retrieval at all, before any
   pixel is ever reprojected.
-- **`tracking.py`** — an independent classical cloud tracker, not a
-  pipeline stage but the tool used to validate every geometric claim
-  above it against the one published result this project can check
-  itself against.
-- **`api/`** (`app.py`, `catalog.py`, `stacks.py`, `strips.py`,
-  `selections.py`, `jobs.py`, `images.py`, `arrow.py`) plus
-  **`frontend/`** (a separate TypeScript build, not under `src/`) and
-  **`gui_cmd.py`** — a three-tab browser application, a FastAPI
-  backend paired with a React + deck.gl front end, that reads
-  everything the command line already wrote and computes no science of
-  its own.
+- **`tracking.py`** — an independent classical cloud tracker used to
+  test the JIRAM geometry-and-reprojection chain against published PJ4
+  vectors. That reference does not validate arbitrary JunoCam navigation.
+- **`junocam/`** — the second acquisition and geometry branch, from
+  volume tables through integer images, distortion, frame timing and
+  reprojection to banded stacks/strips. `quality.py` measures and describes
+  image quality; `policy.py` decides whether evidence permits its use.
+- **`science.py`** — physical-band selection, grid/cadence readiness,
+  masks, spectral fits and provenance. **`api/science.py`** adds comparison,
+  independent-pass populations, cross-instrument candidates and strict
+  association of existing vectors (section 4.19).
+- **`api/`**, **`frontend/`** and **`gui_cmd.py`** — FastAPI paired with
+  React/deck.gl. Explore, Time series, Image library, Compare and Coverage
+  expose the shared Python analysis kernels as well as product browsing.
+  `api/coverage.py` distinguishes archive metadata from local eligible data;
+  `api/io_guard.py` protects calls into the native NetCDF library.
 - **`cli.py`** — the argparse entry point; wires every subcommand
   together, and is the one file only the project lead edits (see
-  section 4.16).
+  section 4.17).
 
 `scripts/` holds one-off reconnaissance and validation scripts, each
 tied to a specific report or gate (`fit_paper_projection.py`,
@@ -395,7 +405,7 @@ package and are not imported by anything under `src/`.
 ### 3.2. How one frame flows from archive to product
 
 ```
-PDS4 archive (Apache HTML listings)
+JIRAM PDS4 archive (Apache HTML listings)
       |  pds.py: fetch_listing / parse_listing / build_manifest
       v
 manifest.parquet                          (one row per archive file)
@@ -426,9 +436,28 @@ region stack .nc (time,y,x)      strip .nc (y,x) + strips.parquet row
       |                               |
       +---------------+---------------+
                        v
-     GUI (Catalog / Poles / Strips tabs): reads every product above,
-     writes only <mirror>/gui_cache/ (per-strip stats, user exports)
+     Policy-aware API: Explore / Time series / Image library / Compare / Coverage
+     Shared Python science; gui_cache/ for caches, selections and exports
+     Requested stack builds write under regions/
 ```
+
+JunoCam meets that product layer through its own branch:
+
+```
+volume discovery -> INDEX.LBL / INDEX.TAB / ERRATA.TXT
+  -> manifest_files.parquet (all versions) + manifest.parquet (preferred)
+  -> mirrored labels + unsigned integer EDR/RDR pixels
+  -> junocam_images + junocam_quality + junocam_geo tables
+  -> eligible/preferred observation selection
+  -> per-frame camera geometry + optional limb timing refinement
+  -> stack (time,band,y,x) or strip (band,y,x)
+  -> selected physical band -> shared readiness / comparison / statistics
+```
+
+Metadata may remain available when pixel access is withheld. The policy must
+therefore be applied again at direct product access; hiding a table row
+alone is insufficient. The audited calibrated JunoCam bundle is a separate
+reference source, not a replacement input in this diagram.
 
 ### 3.3. Where every product lives on disk
 
@@ -450,7 +479,15 @@ prints the one in effect):
 | strip NetCDFs | `strips/orbitNN/<strip_id>.nc` | `strips` |
 | strip library index | `strips/strips.parquet` | `strips` |
 | strip statistics | `strips/stats/<strip_id>_stats.nc` (CLI) or `gui_cache/stats_<strip_id>.nc` (GUI) | `strip-stats` / GUI |
-| GUI cache and exports | `gui_cache/`, `gui_cache/exports/` | the GUI, on request |
+| JunoCam volume records and manifests | `junocam/manifest/` | `junocam manifest` |
+| JunoCam native bytes | `junocam/<volume>/<FILE_SPECIFICATION_NAME>` | `junocam mirror` |
+| JunoCam image/quality/geometry tables | `junocam/index/junocam_{images,quality,geo}.parquet` | `junocam index`, `quality`, `geo` |
+| JunoCam per-image geometry cache | `junocam/geometry_cache/<product_id>.nc` | `junocam.geometry` |
+| JunoCam stacks | `regions/<region>/junocam_<bands>_orbits<spec>_frame.nc` | `junocam region-stack` / GUI |
+| JunoCam strips | `strips/junocam/orbitNN/<product_id>.nc` | `junocam strips` |
+| Calibrated-collection audit samples | `junocam/calibration_review/` | bounded audit, not native indexing |
+| GUI research cache | `gui_cache/research/` | movies and population recipes/results |
+| GUI cache and exports | `gui_cache/`, `gui_cache/exports/` | GUI selections, statistics, jobs and explicit exports |
 
 (schema details for every one of these files are in
 `docs/data_products.md`, cross-checked there against the real files on
@@ -668,11 +705,12 @@ section 2.3.
 
 ### 4.4. `geometry.py` — the SPICE geometry engine
 
-This is the module everything else in the catalog ultimately depends
-on, and it is the one place where getting the physics slightly wrong
-is invisible until you compare against an independent oracle — every
-other module either reads its output or reads a table this module
-built. It deserves the longest treatment in this document.
+This is the foundation of the JIRAM geometry pipeline. Getting its
+physics slightly wrong can remain invisible until comparison against an
+independent oracle, because downstream maps inherit its predicted
+coordinates. JunoCam reuses its ellipsoid and aberration helpers, but
+supplies its own camera model and frame epochs (section 4.18). Shared
+geometry mathematics does not imply interchangeable instrument models.
 
 **Purpose.** For any JIRAM camera frame — a 128×432 single-band image,
 or a 256×432 dual-band one — compute, for every pixel, the
@@ -680,7 +718,7 @@ planetocentric latitude, east longitude, range, emission angle,
 incidence angle, and phase angle of the point on Jupiter's ellipsoid
 that pixel is looking at, at the frame's exact label epoch, using only
 SPICE kernels (no image data, no per-pixel Python loop). This is a
-*forward camera model*: pixel index in, ground truth out. Section 4.9
+*forward camera model*: pixel index in, predicted surface point out. Section 4.8
 (`reproject.py`) is this module's inverse.
 
 **Key data structures.** `KernelSet`: a small RAII-style wrapper
@@ -695,7 +733,7 @@ every per-pixel array (`lat`, `lon_east`, `range_km`, `emission`,
 `incidence`, `phase`, `on_planet`) plus scalar summaries (`boresight`,
 `corners`, `sub_sc_lat`, `obspos_km`). `LM_HALF_ORDER`: a module-level
 constant, `("L", "M")`, that says which detector half comes first in a
-256-line dual-band product — this is section 4.5's "L-band residual"
+256-line dual-band product — this is section 4.6's "L-band residual"
 story's cousin fact, discussed there.
 
 **Algorithm.** Four steps, each worth walking through because each one
@@ -727,9 +765,10 @@ ephemeris time; the chain here is band frame → `J2000` (inertial) →
 two matrix multiplies and would be, except for step 3.
 
 *3. Light time and stellar aberration — the subtlety that took two
-implementation passes.* JIRAM sees Jupiter roughly 35–45 light-minutes
-away depending on range, and Juno itself moves at tens of km/s, so
-what the instrument actually points at ("apparent" direction) differs
+implementation passes.* The relevant light time is between Juno and
+the observed point on Jupiter, not between Earth and Jupiter. Together
+with the observer's motion, it means that what the instrument actually
+points at ("apparent" direction) differs
 measurably from where the target geometrically *is* right now
 ("geometric" direction) — light-time correction and stellar aberration,
 the same effects Earth-based telescopes correct for when pointing at a
@@ -778,7 +817,7 @@ docstring) — small enough to be easy to miss in a spot check, large
 enough to fail a gate built on sub-pixel tolerances. `reproject.py`'s
 inverse camera model has to re-apply the same correction in the
 *forward* direction for exactly the same reason; skipping it there
-leaves the identical systematic offset (section 4.9).
+leaves the identical systematic offset (section 4.8).
 
 *4. The ellipsoid intercept, vectorised.* `ellipsoid_intercept(obspos,
 dirs, radii)` solves, for a whole array of rays at once, the
@@ -797,8 +836,8 @@ of milliseconds rather than the many seconds a per-pixel `sincpt` call
 would cost.
 
 **What a modifier must know.**
-- **The epoch is the label's `START_TIME`, exactly, with no exposure
-  offset — ever.** Juno spins at 2 rpm, 12 degrees per second
+- **For JIRAM, the epoch is the label's `START_TIME`, exactly, with no
+  exposure offset.** Juno spins at 2 rpm, 12 degrees per second
   (`docs/reports/juno_mission_facts.md`, primary-source quote from
   Adriani et al. 2017); a boresight computed even 0.1 seconds off
   moves by more than a degree, and computing it at mid-exposure
@@ -808,7 +847,9 @@ would cost.
   (`docs/build_log_2026-09-04.md`, step 1b "48-frame result").
   `frame_geometry(epoch, ...)` takes the epoch as a direct argument
   precisely so nothing upstream can silently add an offset; `geo.py`
-  never does.
+  never does. JunoCam has a different acquisition model: its
+  `frame_epochs` applies instrument timing terms and an optional refined
+  offset to individual frames. Section 4.18 derives that expression.
 - **The engine is deliberately mirror-blind.** JIRAM has a physical
   de-spinning mirror that counter-rotates to hold the line of sight
   still during each exposure and can be commanded to point ahead of or
@@ -1044,9 +1085,9 @@ remains unresolved rather than papered over: reproducing the gate's
 own well-conditioned filter for orbit 4 and splitting the boresight-
 vs-label residual by band gives L median 0.0239 deg (p95 0.059,
 n=277) against M median 0.0104 deg (p95 0.056, n=427) — the L-band
-residual is roughly double the M-band one, though both are
-comfortably inside the 0.02 deg tolerance the gate applies (to M only;
-there is no L-band assertion) — `docs/open_items.md`, "L-band geometry
+residual is roughly double the M-band one. M is inside the gate's
+0.02 deg tolerance; L is slightly above it, but the gate applies that
+assertion to M only — `docs/open_items.md`, "L-band geometry
 is roughly twice as noisy as M-band against the label." Whether this
 is a real property of the L-band instrument kernel (less well
 characterised, since L is the lower-traffic auroral channel) or an
@@ -1106,7 +1147,7 @@ meanings.
 - VICAR labels are 1-indexed in spirit (line/sample numbering) but the
   reader itself never needs to know or care — it hands back a plain
   0-indexed numpy array in `(line, sample)` order, and any 1-based
-  bookkeeping is the *caller's* responsibility (see section 4.11's
+  bookkeeping is the *caller's* responsibility (see section 4.12's
   discussion of the TRACKER4 tables' own 0-vs-1-based ambiguity, which
   this module deliberately leaves unresolved because the file format
   itself does not settle it).
@@ -1140,8 +1181,9 @@ Second, `project_to_pixels`, the exact algebraic *inverse* of
 ellipsoid, which fractional detector pixel saw it? Composing the two —
 ask the map grid what (lat, lon) a target output pixel represents,
 then ask the inverse camera model which input pixel that corresponds
-to — is `reproject_frame`, the one function every reprojection in this
-codebase, in both regimes, ultimately calls.
+to — is `reproject_frame`, used by the original JIRAM product regimes.
+`junocam/reproject.py` follows the same destination-grid strategy with
+JunoCam distortion and frame timing.
 
 **Key data structures.** `PolarStereo` is a frozen dataclass:
 `pole_line`, `pole_sample` (0-based pixel coordinates of the
@@ -1184,8 +1226,7 @@ the single number that certifies the forward and inverse chains are
 truly mirror images of each other, not merely close.
 
 **Algorithm — exact inverse-mapping resampling.** `reproject_frame`
-never touches an input pixel more than once and never leaves an output
-pixel unpainted by construction: for every *output* pixel inside a
+evaluates each destination pixel through the inverse map: for every *output* pixel inside a
 padded footprint bounding box, it asks the map grid what (lat, lon)
 that pixel represents, then asks `project_to_pixels` which fractional
 input pixel that came from, then bilinearly samples the *input* image
@@ -1193,9 +1234,11 @@ there (`_bilinear`, which returns both a value and an `ok` mask —
 `False` outside the detector, off the visible hemisphere, or wherever
 any of the four bilinear neighbours is non-finite). This is the
 standard graphics technique of resampling by walking the *destination*
-grid and pulling from the source, rather than walking the source and
-scattering into the destination — it guarantees no output gaps and no
-double-counted input pixels, at the cost of one inverse-camera-model
+grid and pulling from the source, rather than scattering into the
+destination. This avoids holes caused solely by forward scattering;
+invalid or off-detector neighbors still produce legitimate masked output.
+Several map pixels may sample the same detector neighborhood. The cost is
+one inverse-camera-model
 evaluation per output pixel rather than one per input pixel (output
 canvases here are typically larger than input frames, so this is the
 more expensive direction, but the only one that avoids resampling
@@ -1380,7 +1423,7 @@ choice unless you have derived it yourself once.
 against `PAPER_GRID`, `south_pole`, and a synthetic `local_ortho`
 region; far-side points confirmed not visible) and transitively
 through `test_gate_regions_pj4.py` (section 4.10) and
-`test_gate_strips.py` (section 4.12), both of which depend on this
+`test_gate_strips.py` (section 4.13), both of which depend on this
 module's grids being correct.
 
 **Scars.** None distinct from the two already described in this
@@ -1389,6 +1432,10 @@ the visibility test) — this module's scars are really `reproject.py`'s
 scars inherited and generalised.
 
 ### 4.10. `stacks.py` — region time stacks
+
+This is the JIRAM builder. JunoCam shares named map grids but uses
+`junocam/stacks.py` and retains a band axis (section 4.18); its swaths are
+not JIRAM spin sequences and must not be passed to JIRAM compositing.
 
 **Purpose.** For a named region, find every frame that overlaps it,
 reproject each one, and assemble the results into one time-indexed
@@ -1492,12 +1539,12 @@ has time steps.
 
 **Scars.** None specific to this module beyond the aberration and
 byte-order facts it inherits from `geometry.py`/`reproject.py` and
-section 2.2. On the current mirror, the orbit-4 frame-level stack has
+section 2.2. In the original JIRAM build record, the orbit-4 frame-level stack has
 294 time steps at 2.25 GB, and the sequence-level composite compresses
 that to 25 time steps, each with strictly more valid coverage than any
 one contributing frame (`docs/usage.md`, "Worked example: build a
 polar stack and a movie") — a concrete sense of the compression a
-sequence composite buys, and of why the GUI (section 4.15) is careful
+sequence composite buys, and of why the GUI (section 4.16) is careful
 never to load a frame-level stack fully into memory.
 
 
@@ -1505,14 +1552,17 @@ never to load a frame-level stack fully into memory.
 
 **Purpose.** Two small consumers of a finished region stack. `movie.py`
 renders it to MP4/GIF, purely for human inspection. `export_goflow.py`
-cuts it into constant-cadence runs and writes them in the exact NetCDF
-layout a downstream optical-flow velocity-retrieval model expects,
+preflights it, cuts eligible observations into constant-cadence runs,
+and writes NetCDF image/mask/gradient inputs for a downstream optical-flow
+velocity-retrieval model,
 because that model was designed around synthetic data with a fixed
 frame spacing and this project's real data does not naturally arrive
 that way.
 
-**Key data structures.** `movie.py` has none beyond plain numpy frame
-buffers. `export_goflow.py`'s unit of output is a *realization*:
+**Key data structures.** `movie.py` uses plain NumPy frame buffers and a
+streaming iterator for MP4 encoding. GUI/CLI callers select one physical
+band and pass the requested normalization before rendering. The GIF writer
+still materializes its frame list. `export_goflow.py`'s unit of output is a *realization*:
 `rNNNNN/realization.nc`, dims `(frame, y_img, x_img)`, variables
 `image` (invalid pixels **zero-encoded**, not NaN — a deliberate
 departure from every other product in this codebase, forced by the
@@ -1539,18 +1589,28 @@ building a QA movie of any reprojected time series: a movie is a
 diagnostic tool, and diagnostics should be built to reveal failure
 modes, not to look good despite them.
 
+**Before the run finder.** `export_stack` now calls `stack_readiness`
+(section 4.19): select a physical band, preserve its units, collapse
+processing versions, check the square map grid, require positive regular
+cadence and a nonempty common-valid mask. Failure raises before creating
+the destination. It prepares one accepted run at a time. Native JunoCam
+exports retain DN and their normalization; JIRAM defaults retain radiance
+in `W m-2 sr-1 um-1`. RGB is rejected as an analysis band. Source identities,
+versions, times, units and transformation provenance accompany the exported
+specification, realization manifest and NetCDF attributes.
+
 **Algorithm — constant-cadence runs.** `constant_cadence_runs` grows a
 run from the left, checking at each step whether every gap seen *so
 far in this run* stays within `dt_tol` of the run's own running median
 spacing — comparing against the run's own median, not a fixed
 absolute tolerance, is what makes the same 5% test apply equally to a
-30-second polar spin cadence and a several-minute mid-latitude
-revisit. A run must reach at least `min_frames` (default 3) to be kept
+roughly 30-second spacing and a several-minute revisit, wherever
+the actual observations support either. A run must reach at least `min_frames` (default 3) to be kept
 at all, but a frame that ends one run is free to start the next
 immediately — no time step is wasted just because it happened to be
 the moment the cadence changed.
 
-**`loggrad`, precisely.** Section 4.9's decision to zero-encode invalid
+**`loggrad`, precisely.** This exporter's decision to zero-encode invalid
 pixels rather than leave them NaN matters here specifically: `loggrad`
 is computed with `np.gradient` on the *already zero-filled* image, so
 a valid pixel sitting next to an invalid one sees the mask boundary
@@ -1563,10 +1623,12 @@ crop boundary still differences against its true neighbour rather than
 against an artificial edge introduced by the crop itself.
 
 **What a modifier must know.**
-- `movie.py` never has a system `ffmpeg` binary to depend on; MP4
+- `movie.py` does not require a system `ffmpeg` binary; MP4
   output goes through `imageio`'s `imageio-ffmpeg` backend, which
   ships its own ffmpeg binary bundled in the Python package
-  (`CLAUDE.md`, "Environment"). Frame dimensions are rounded to a
+  ([movie.render_movie](src/jiram_catalog/movie.py); the dependency is
+  declared in `pyproject.toml`).
+  Frame dimensions are rounded to a
   multiple of 16 pixels (`MACRO_BLOCK`) specifically so the H.264
   encoder stores exactly what it is given rather than silently
   rescaling a non-conforming frame size.
@@ -1588,9 +1650,15 @@ gradient; a tiny synthetic movie written and read back with the
 expected frame count) and by `test_gate_regions_pj4.py`'s export and
 movie assertions described in section 4.10.
 
-**Scars.** None beyond the zero-vs-NaN convention mismatch already
-described, which is a deliberate, documented departure rather than an
-oversight.
+**Scars.** The zero-vs-NaN convention is a deliberate model-input
+choice. The later review found different failures: repeated processing
+versions looked like extra times, an implicit RGB band was not a scalar
+field, fixed JIRAM unit strings misdescribed JunoCam, and reusing export
+directories could leave obsolete realizations beside new ones. The GUI
+now keys default destinations by source/policy/settings and refuses explicit
+nonempty destinations. Movie publication is atomic; a failed encoder cannot
+leave a partial file at the public movie path. These are scientific
+provenance and publication fixes, not changes to the gradient formula.
 
 ### 4.12. `tracking.py` — the classical cloud tracker
 
@@ -1826,7 +1894,7 @@ grid onto valid strip pixels inside the canvas (a direct check that
 the strip grid and the frame geometry that built it are mutually
 consistent); every `km_per_px` value is one of the fourteen resolution
 classes; and a latitude-band query returns only genuinely overlapping
-strips. On the current mirror this produced 289 strips across orbits 4
+strips. The original JIRAM build produced 289 strips across orbits 4
 and 24 (both bands), 392 MB total (`docs/build_log_2026-09-04.md`,
 step 9b).
 
@@ -1837,7 +1905,7 @@ confirmed rather than a case of something built wrong and later fixed.
 
 ### 4.14. `stats2d.py` — masked spectra, structure functions, bicoherence
 
-**Purpose.** Every numerical diagnostic a strip supports, all built
+**Purpose.** The core numerical diagnostics for a scalar strip, all built
 around one recurring fact: a strip is a field *with holes*, and every
 formula that assumes a complete rectangular grid (an FFT, a lag
 difference, a bispectrum) has to be adapted to survive that. This
@@ -1845,9 +1913,12 @@ module deliberately adopts a downstream velocity-retrieval model's own
 numerical conventions verbatim (angular wavenumbers, forward-normalised
 FFT, `(y, x)` array order with row increasing with `y`) — tagged
 `conventions-v1` and quoted directly in the module's own docstring —
-specifically so that a JIRAM radiance spectrum and that model's own
-internal spectra are directly comparable without a unit-conversion
-step.
+so that the wavenumber axes and Fourier normalization match the model's
+diagnostics. The physical field and its units still matter: radiance
+variance is not kinetic energy. These kernels now also receive selected
+JunoCam DN bands through the scientific API; band selection, normalization
+and compatible population grouping belong to the preparation layer in
+section 4.19.
 
 **Key data structures.** `power_spectrum_2d` returns a dict, not a
 bespoke class, deliberately — `power` (the 2-D periodogram),
@@ -1891,14 +1962,16 @@ point' and dropping the corner shells would break the exact Parseval
 identity the offline tests check" (`src/jiram_catalog/stats2d.py`,
 module docstring). A second, separate departure: the conventions
 document defines `E` with a kinetic-energy factor of `0.5·|û|²`,
-appropriate for a velocity field; JIRAM strips carry radiance, not
-velocity, so the factor is simply absent here and `E` integrates to
-plain variance instead.
+appropriate for a velocity field; these strips carry a scalar image
+field (JIRAM radiance or JunoCam DN), so the factor is absent here and
+`E` integrates to plain variance instead.
 
 **Mask leakage — a limitation stated plainly, not corrected away.**
-The `valid_frac · window_power` correction above is only *unbiased in
-total variance*, and only to first order, and the module's docstring
-is explicit about exactly where this breaks down: masking a strip
+The `valid_frac · window_power` correction above is only approximately
+unbiased in total variance when the mask and taper are uncorrelated.
+Preferential holes at a tapered border can bias even the total, since
+`mean(mask × window²)` need not equal `mean(mask) × mean(window²)`.
+The module's docstring also states the larger spectral limitation: masking a strip
 *convolves* the true spectrum with the mask's own power spectrum, which
 moves variance across wavenumber `k` even when the total is right.
 Smooth, sparse, large-scale masks (a few big holes) have a "red" mask
@@ -1984,15 +2057,16 @@ along-track than across).
 
 ### 4.15. `trackability.py` — repeat-view and displacement resolvability
 
-**Purpose.** A pure numpy/pandas analysis, no SPICE calls and no
-imagery, that answers a question logically prior to any actual
-tracking: for a given orbit and latitude band, does the archive even
+**Purpose.** A pure numpy/pandas analysis of the JIRAM geometry table,
+with no SPICE calls or imagery, that answers a question logically prior
+to actual tracking: for a given orbit and latitude band, does the archive
 provide two views of the *same* patch of Jupiter close enough in time
 that a plausible cloud displacement would be measurable at that
 frame's own pixel scale — before a single pixel is ever reprojected?
-This is the module that turns "regime 1 has revisits, regime 2 does
-not" from section 1's qualitative claim into per-orbit, per-band
-quantitative counts.
+It tests the repeat-view opportunity behind section 1's two regimes,
+producing per-orbit, per-band candidate counts. It does not establish
+that every nonpolar location lacks repeats, or supply a completed
+JunoCam revisit assessment.
 
 **Key data structures.** `select_unit_of_analysis`: `frames_with_geo`
 rows passing `geo_ok`, `on_planet_frac >= 0.3`, `bore_emission <= 70`,
@@ -2085,7 +2159,7 @@ cadence; the pairs table contains at least 6 pairs between the paper's
 first and third sequences with `dt_s` within 30 s of 974 s (two
 sequence intervals); trackable counts never exceed with-partner counts,
 which never exceed total frame counts; and the heatmap figure exists.
-On the full mirror this produced 29,862 unit-of-analysis frames,
+The original JIRAM mirror analysis produced 29,862 unit-of-analysis frames,
 16,541 with at least one partner, 7,493 trackable at 30 m/s, from
 31,308 candidate pairs and 2,097 deliberate repeat-sequence pairs
 across 61 orbits (`docs/reports/trackability.md`, "Totals").
@@ -2095,163 +2169,201 @@ discussed further in section 5 and section 6.
 
 ### 4.16. `api/` and `frontend/` — the browser
 
-**Purpose.** A FastAPI backend (`src/jiram_catalog/api/`, JSON, Arrow
-and PNG under `/api`) paired with a React + TypeScript + deck.gl
-single-page front end (`frontend/`, built to `webapp/dist/` and served
-by the backend at `/`), one process for both halves so there is one
-port to tunnel and no cross-origin story to get wrong. It displays
-every product the command line already writes and computes no science
-of its own — the same governing rule the first version stated, "the
-GUI is a view and a selector" — but it moves *state and rendering* into
-the browser and leaves the server the two jobs it is uniquely suited to,
-reading NetCDF and Parquet off Lustre and running long jobs. The
-division between the two halves is written down once, as
-`docs/specs/2026-09-06_api_contract.md`, and it is normative for both:
-neither side improvises a field name or a filter semantic the other
-does not already expect. Three tabs, the same two regimes plus the
-global overview that ties them together: Catalog (every frame,
-filterable and selectable — the entry point), Poles (a viewer and now
-also a *builder* for region stacks, regime 1), Strips (the strip
-library, its viewer, and its per-strip statistics, regime 2).
+**Purpose.** The browser makes the observation-to-analysis path visible.
+FastAPI serves JSON, Arrow and PNG under `/api` and the compiled React /
+TypeScript / deck.gl application at `/`. One process serves both halves,
+so an SSH tunnel exposes one port. The original API contract established
+the catalog, stack and strip schemas; the
+[accepted review specification](docs/specs/2026-09-07_review_implementation.md)
+and its companion specs add the scientific workflows. The current GUI can
+request Python scientific calculations and builds as well as inspect files.
+There is no separate browser implementation of the spectral or navigation
+estimators.
 
-**Key data structures.** All front-end state lives in one `zustand`
-store, `src/store/store.ts`: the config, the catalog columns and a
-`product_id|half → row` index, the filters, the filtered index array,
-the working selection, the saved selections, the current stack/strip,
-the job list, and a loading/toast map. Every remote call is routed
-through `store.run(key, work)`, which sets a loading flag, turns a
-failure into a toast carrying the contract's `detail` string, and
-clears the flag in a `finally` — "shows a loading state and never
-freezes on a failed request" is a property of one function, not a
-discipline every view has to remember. The catalog itself never
-becomes an array of JavaScript objects: `/api/catalog/frames.arrow`
-arrives as one Arrow IPC stream of about 47,600 rows (built once on
-the server, kept in memory, served with an `ETag` thereafter) and
-`src/lib/catalogTable.ts` splits it into contiguous typed arrays
-(`Float32Array` for geometry, a `Float64Array` of epoch milliseconds,
-plain string arrays for the four text columns); a filter is one pass
-over those arrays producing a `Uint32Array` of surviving row indices,
-and deck.gl is handed packed binary attributes rather than accessor
-callbacks per point.
+**Task names and product names are different layers.**
+[App.tsx](frontend/src/components/App.tsx) mounts all five views and displays
+only the active one. The internal state keys `catalog`, `poles` and `strips`
+remain stable even though their user-facing names have changed:
 
-**The colour map moved into the browser — why it cannot fail to
-arrive.** The server sends a stack or strip frame as an 8-bit grayscale
-PNG (`src/jiram_catalog/api/images.py`), value in the red channel,
-validity in alpha (0 for an invalid pixel, so a viewer can put a map
-under the image and see through the gaps), integer-strided down so the
-served image's longer side never exceeds `max_px` — a real subsample,
-not a blur, and the served bounds and stride travel back as
-`X-Rows`/`X-Cols`/`X-Stride`/`X-Bounds` headers because the server
-decides the geometry, not the browser. The front end draws that PNG
-into a canvas and maps it through a 256-entry lookup table
-(`src/lib/lut.ts`, gray/viridis/magma/inferno/cividis, each generated
-from nine anchors) before handing the canvas to deck.gl as a
-`BitmapLayer` via `createImageBitmap`. Changing the colour map is
-therefore one pass over pixels already sitting in browser memory: there
-is no request in the loop to silently not arrive, which is exactly what
-made the first version's colour-map control unreliable.
+| Task view | What it lets the user do | Main implementation |
+| --- | --- | --- |
+| Explore | filter mapped observations, inspect footprints/details, build a selection | `CatalogView`, `api/catalog.py` |
+| Time series | inspect/build region stacks, choose a physical band, check readiness, render/export | `PolesView`, `api/stacks.py` |
+| Image library | browse mapped swaths, open native statistics, summarize selected populations | `StripsView`, `api/strips.py`, `api/science.py` |
+| Compare | linked split/blink inspection and measured registration on compatible grids | `CompareView`, `api/science.py` |
+| Coverage | distinguish archive, indexed, mapped and eligible data; inspect sources and references | `CoverageView`, `api/coverage.py` |
 
-**`OrthographicView` and GPU picking.** deck.gl's `OrthographicView`
-has a scalar zoom rather than an independent x/y pair, so a locked
-aspect ratio is not a rule anyone enforces, it is what the view class
-*is*; the Catalog map's ~47,600 boresights are drawn as a
-`ScatterplotLayer` over the same typed arrays the filter pass produces,
-never rasterised, so hovering is real GPU point picking (with a
-fourteen-pixel nearest-point search over the same arrays as a
-fallback) and box/lasso selection is a polygon test over the filtered
-indices after one unprojection through the view's scalar zoom.
+The task presets and instrument-specific controls narrow what matters for a
+particular question. A latitude search uses footprint overlap rather than
+assuming the boresight lies inside every swath of interest. JunoCam's
+unassessed revisit state stays distinct from a failed revisit criterion.
+Its mapped coverage is deliberately smaller than its archive inventory;
+Coverage and product details make the reason inspectable.
 
-**The selection tray — a visible object instead of a metaphor.**
-`src/components/SelectionTray.tsx` holds the working selection as a
-`Set` of `product_id|half` keys, not row indices, so a selection saved
-to `/api/selections` and reloaded later survives a catalog that has
-grown, and its summary (frame count, orbits, latitude span, band
-halves) is derived from those keys on every render rather than kept as
-a second, driftable copy. Every other view only *adds to* this one
-object; the tray *consumes* it, via "Build stack…" (saves the
-selection, then posts `/api/stacks/build` with its `selection_id`) and
-"Show in Strips" (filters the Strips tab to the selection's orbits).
+**State is a scientific interface concern.**
+[store.ts](frontend/src/store/store.ts) keeps catalog columns, filtered row
+indices, the working selection, source metadata, image settings and request
+state. The catalog arrives as Arrow IPC and is unpacked into typed arrays,
+so filters can produce a compact `Uint32Array` of surviving rows without
+allocating a JavaScript object for every point. Geometry uses numeric arrays;
+epoch milliseconds are a `Float64Array`. The timestamp conversion must be
+explicit on the server: the old JunoCam 1970 dates were unit conversion,
+not a bad spacecraft clock.
 
-**Jobs.** Rendering a movie, building a stack, and exporting a goflow
-dataset are too slow for one request; each goes to a two-worker
-in-process thread pool (`api/jobs.py` — two workers deliberately, since
-a build and a movie render are both bound by the mirror's I/O and a
-third job on a login node buys queue depth, not throughput), and the
-browser polls `/api/jobs` every two seconds. Records are mirrored as
-JSON under `<mirror>/gui_cache/jobs/` so a restarted server can still
-report what the last run produced.
+The current snapshot has 47,731 mapped rows, including 72 preferred eligible
+JunoCam observations ([delivery record](docs/build_log_2026-09-07.md)). This
+is an inventory of the local policy view, not a promise that all those rows
+have independent motion partners. Instrument-aware detail responses include
+identity, available versions, label/source links, geometry and the quality
+rationale. An excluded product can remain discoverable as metadata while
+its thumbnail returns HTTP 403.
 
-**What a modifier must know.**
-- The missing-value rule is written once and shared: a threshold
-  excludes a row only when its value is both known and fails it, with
-  two exceptions — `on_planet_min` and the latitude bounds drop a row
-  outright when the value is missing, because a frame whose boresight
-  misses the planet has no latitude to be inside a band. `src/lib/
-  filters.ts` applies it client-side for the map; the summary endpoint
-  in `src/jiram_catalog/api/catalog.py` applies the same rule
-  server-side for the coverage charts — a threshold drops a row only
-  when its value is known and fails it — so the two counts cannot
-  disagree.
-- All three views stay mounted at all times; only the active tab is
-  hidden. Unmounting a view is what made the first version's tabs stop
-  repainting when a user returned to them, so v2's rule is that nothing
-  is ever torn down and rebuilt just because a user looked away from
-  it.
-- A hidden `<pre id="debug-state">` (`src/components/DebugState.tsx`)
-  carries `{n_points, n_filtered, selection_n, view, stack_id, t,
-  cmap}` as JSON, updated on every state change. The first version
-  could not be tested from the outside because everything it did
-  happened inside a server-rendered canvas the test runner could not
-  introspect; this element gives the end-to-end suite a number to
-  assert on instead of a screenshot to eyeball, which is why those
-  tests are assertions rather than smoke tests.
-- The GUI still writes to exactly one place under the mirror,
-  `<mirror>/gui_cache/` (selections, per-strip statistics, per-stack
-  meta caches, job records, and a user's exports under
-  `gui_cache/exports/` by default, every export destination a plain
-  text field the user can redirect) — nothing else under the mirror is
-  ever touched, and no request leaves the node.
+At overview scale the map uses density aggregation so overlapping
+boresights do not hide the sampling pattern. Points, selected footprint
+outlines, coordinate conventions, legends and hover detail restore the
+individual-observation context. `OrthographicView` uses a scalar zoom,
+keeping x/y aspect fixed. The actual ellipsoid geometry remains in Python;
+the browser's map and graticules are display coordinates.
 
-**Validation gate.** Two gates, split along the same seam as the code.
-`tests/test_gate_api.py` drives the FastAPI app directly (no browser):
-the Arrow catalog has the contract's required columns and an `int64`
-`start_time_ms`; a known sequence stack's meta has exactly 25 time
-steps and a `FeatureCollection` graticule, its frame PNG has both
-alpha-0 and alpha-255 pixels and headers matching the served shape, and
-its movie answers a `Range` request with `206`; a strip's stats have
-matching, finite spectral arrays; a selection round-trips through
-`POST`/`GET`/`DELETE`. `tests/test_gate_frontend.py` checks the
-committed bundle is under 8 MB and that `index.html` references hashed
-assets, then starts the backend as a subprocess on a free port, polls
-`/api/health` until it answers, and runs `npx playwright test` against
-it end to end — the catalog renders at least 40,000 points, a filter
-changes `n_filtered` and the server agrees, hovering a dense cluster
-produces a tooltip with a real product id, a box selection increases
-`selection_n`, opening a stack sets `stack_id` and loads a frame,
-changing the colour map changes both `cmap` and a sampled canvas pixel,
-the movie element reaches `readyState >= 1`, and a strip's statistics
-render as Plotly figures.
+**Selections survive changes in row order.** The selection tray stores
+`product_id|half` identities rather than table positions. It can be collapsed
+to give space back to the image, and can save selections, pass them to a
+stack build, or filter the image library using actual source membership.
+Matching by shared orbit alone would include unrelated swaths and is no
+longer the selection-to-library rule. Dialogs have keyboard/focus handling;
+wrapping controls, collapsible metadata and a minimum image height prevent
+opening statistics from reducing the scientific image to a narrow strip.
 
-**Scars.** This module's scars are not new failures found while
-building it; they are the first version's failures, kept on record
-because they are the reason this version has the shape it has
-(`docs/gui_v2_notes.md`, "Why v2"). Colour maps that did not apply are
-now a client-side LUT over pixels already downloaded, with no request
-in the loop to fail to arrive. Tabs that stopped repainting are now
-views that never unmount. A movie that rendered but was never shown is
-now a native `<video controls>` element instead of a custom player
-inside a reactive framework. Hover that did nothing because the
-catalog's points had been rasterised away is now a `ScatterplotLayer`
-over typed arrays, GPU-picked directly. A zoom that changed the aspect
-ratio is now impossible by construction, because `OrthographicView`'s
-zoom is a scalar. And "send to Poles/Strips", whose effect was
-invisible, is now the selection tray, a permanent column that shows
-exactly what is selected before anything consumes it. One genuinely new
-condition had to be verified rather than assumed: this cluster node has
-no GPU, so every one of those end-to-end assertions runs against
-Chromium's software `SwiftShader` implementation of WebGL 2 — deck.gl
-accepts it, and, checked directly rather than taken on faith, it
-performs GPU picking correctly there too.
+**Physical normalization precedes display mapping.** The image API reads
+a chosen physical band, applies requested normalization and validity, then
+produces an 8-bit image for viewing. For grayscale images, the frontend's
+lookup table maps those bytes to a color palette; changing that palette can
+operate on pixels already downloaded. RGB composites carry three channels,
+with explicit channel limits and intersection validity. No RGB canvas is
+used as a scalar input to a spectrum or optical-flow export.
+
+`X-Rows`, `X-Cols`, `X-Stride` and `X-Bounds` describe the actual served
+raster. The server chooses the integer sampling stride, and the browser
+places that sampled image in physical map coordinates. This distinction is
+especially important for `flat:sigma`: its display implementation measures
+sigma in served pixels, whereas scientific preparation uses native map
+pixels (section 4.18). Percentile/asinh stretching is a viewing operation,
+not another calibration.
+
+**An old successful response can still be the wrong response.** Suppose a
+RED image request starts, the user chooses GREEN/Lambert, and the slow RED
+request finishes last. Checking only that the stack ID still matches would
+paint obsolete pixels under correct-looking GREEN controls. The store now
+compares the full request identity: source, frame, band/composite choice,
+linked or per-channel limits, normalization and parameters, and stretch.
+It clears previous pixels while an uncached replacement loads and accepts a
+response only if it still answers the current request. Statistics use
+corresponding band/normalization guards. `ImageView` also clears/replaces
+asynchronous bitmaps, so stale GPU content cannot outlive a cleared source.
+
+The lesson is transferable to model diagnostics: a field is identified by
+its processing settings as well as its filename and time index. A loading
+state is preferable to a plausible plot whose controls describe another
+calculation. Browser tests therefore wait for actual replacement pixels;
+an empty intermediate canvas is not evidence that a band change worked.
+
+**Lazy statistics make browsing cheaper without changing the estimator.**
+Opening a library image loads its metadata and pixels. Native spectral and
+structure-function calculations are requested when the statistics panel is
+opened, and old curves are cleared if band or normalization changes. A
+6000-square image can still take minutes for full native statistics. The
+responsiveness improvement is avoiding unrequested work and identifying
+pending results honestly; it does not replace the estimator with a cheap
+thumbnail spectrum. Population analysis and export recipes are discussed in
+section 4.19.
+
+**NetCDF serialization is a deliberate concurrency limit.** FastAPI handlers
+and background jobs are threaded, but the native NetCDF library is not safe
+for arbitrary concurrent use. Real browser concurrency exposed a native
+crash, so [io_guard.py](src/jiram_catalog/api/io_guard.py) supplies a
+process-wide reentrant lock. Its route wrapper is intentionally small:
+
+```python
+with NETCDF_IO_LOCK:
+    return function(*args, **kwargs)
+```
+
+`NetCDFRoute` wraps stack, strip and science endpoints at registration;
+Coverage's native-data access and background movie/build/export jobs use the
+same guard. It spans the whole operation, including expensive calculations,
+not just an individual `.values` call. This matters because xarray reads
+lazily and file handles can outlive a superficially guarded open. The
+tradeoff is equally real: a long native statistics request can queue other
+image work. Health, configuration, job polling and catalog operations stay
+outside the native I/O critical section. Do not promise that every image
+interaction remains immediate while statistics run.
+
+**Bounded reads and cache keys are part of correctness.** A display sample
+must slice the lazy DataArray *before* accessing `.values`; slicing a NumPy
+array after materialization has already paid for the full native read.
+Metadata now shares one band's sampled variables across requested display
+normalizations. Graticules and local-time contours use at most roughly
+400 pixels per side for display, with the matching x/y coordinates and
+periodic seam handling.
+
+The [performance record](docs/build_log_2026-09-07.md) measured native
+6000×6000 local-time contouring at 6.471 seconds and 1.87 GB peak process
+memory. The sampled version took 0.581 seconds and 243 MB; both produced
+zero lines for the examined strip. This is a useful caution against
+assuming an invisible overlay is cheap. Source-size/mtime caching prevents
+repeating it. A midnight-crossing fixture checks that reducing the contour
+grid preserves the physical coordinate and seam conventions.
+
+Cold strip metadata can still take seconds because large compressed
+NetCDF chunks must be decompressed even for sparse scene-wide samples.
+The final recorded large-strip metadata times were 12.294 seconds cold and
+0.011 seconds repeated. These are measurements from that deployment, not
+latency guarantees for every node or filesystem state. Native scientific
+arrays are unchanged by the display-read optimization.
+
+Catalog/strip-table caches include source-index and quality-policy
+signatures and share one cold build among concurrent readers. A policy
+signature covers source size/mtime and the quality YAML; the loader also
+tracks size because a same-second configuration update on Lustre exposed an
+mtime-only invalidation failure. Arrow gets a separate bounded thread pool
+(default four, configurable with `JIRAM_ARROW_THREADS`) rather than changing
+BLAS/OpenMP settings used by scientific workers. These fixes address table
+construction and duplicate work, not model physics.
+
+**Jobs, publication and paths.** Movie rendering, stack building and goflow
+export use an in-process job manager, with persisted JSON job records and
+browser polling. The worker pool does not override the NetCDF serialization
+rule. Stack builds write the appropriate product under `regions/`; other
+GUI selections, caches, statistics and exports live under `gui_cache/`.
+The GUI constrains explicit export destinations to its mirror export
+subdirectory. It does not offer unrestricted server-side output paths.
+
+Movies are rendered from policy-aware selected-band data, written to a
+temporary output, and published by atomic rename after encoding succeeds.
+GET also validates the requested physical band. Historical JIRAM movies
+have a controlled native/unnormalized fallback; historical JunoCam movies
+are refused because their unfiltered frames cannot establish current
+eligibility. Current JunoCam movie identity includes source state and
+eligible observation identities, band and normalization, and responses
+avoid browser storage that could bypass a later policy check. A policy
+change must alter more than the visible catalog count.
+
+The service need not download new native data merely to browse local
+products. Source buttons and the Coverage reference links can leave the
+application for PDS or Mission Juno; the older blanket claim that no request
+leaves the node is therefore not an interface contract.
+
+**Validation and the remaining boundary.** The original API and production
+browser gates remain. New unit/integration checks exercise direct failure
+exclusion, requests finishing out of order, full parameter identity, actual
+band-specific pixels, NetCDF serialization, bounded contour reads and cache
+invalidation. The delivery record reports 135 frontend unit tests and a
+successful complete production browser gate, including real JIRAM/JunoCam
+pixels and native statistics. It separately records the old JunoCam
+minimum-count gate that conflicts with accepted exclusions (section 5).
+The interface makes missing cadence, unavailable vectors and uncertain
+navigation visible; successful browser interaction does not turn those
+unknown scientific quantities into validated results.
 
 ### 4.17. `config.py`, and the subcommand-registration pattern
 
@@ -2337,22 +2449,537 @@ in the codebase.
 
 ---
 
+### 4.18. JunoCam — archive, camera and quality evidence
+
+**Purpose.** The JunoCam branch brings reflected-light images into the same
+catalog and map workspace without borrowing JIRAM assumptions that would
+silently change their meaning. For an ocean modeler, this is the difference
+between adding another variable from the same model grid and adding an
+entirely different observing instrument: the eventual arrays may align,
+but the acquisition, calibration and sampling operators do not.
+
+**Start with archive identity.** [junocam/pds.py](src/jiram_catalog/junocam/pds.py)
+reads per-volume `INDEX.LBL` and `INDEX.TAB` records. This avoids walking
+tens of thousands of individual product directories. The label supplies
+column names and ordering, but quoted CSV parsing is tried before the
+nominal fixed-width positions because real releases do not obey one
+consistent padding convention. Archive directory names are authoritative
+for locating volumes; an inconsistent `VOLUME_ID` inside an index does not
+become the local directory name. Bare filenames in the early volume indexes
+are resolved against a cached directory listing.
+
+A product such as `JNCR_2017033_04C00104_V02` encodes an RDR, day of year,
+orbit/filter/sequence identity, and processing version. Its last suffix is
+provenance, not another exposure. Two tables deliberately answer different
+questions:
+
+| Table | Unit being counted | Why preserve it? |
+| --- | --- | --- |
+| `manifest_files.parquet` | archive-listed product versions | exact file provenance and supersession history |
+| `manifest.parquet` | highest-version product identities | preferred archive inventory |
+| `junocam_images.parquet` | indexed local label/product versions | dimensions, timing, filters and paths needed to read pixels |
+| policy observation table | versions joined with quality and geometry evidence | current eligibility and preferred-version decisions |
+
+Do not infer level solely from `JNCR_`: global mosaics can share the prefix
+and an RDR product label. Processing level and `GLOBAL_MAPS` directory
+membership distinguish native framelet products from maps. This boundary
+prevents an already mosaicked image from being treated as a camera exposure.
+
+`discover_volumes` now inspects the live PDS directory. If discovery fails,
+it reports use of a cached directory snapshot; only when that is unavailable
+does it fall back to the historical 1–35 range, explicitly marking
+completeness unverified. `LAST_VOLUME = 35` is therefore a fallback bound,
+not a claim that no later volume can exist. Coverage presents inventory
+stages and source ages so that a metadata count cannot masquerade as a
+local-pixel or mapped-product count.
+
+[junocam/mirror.py](src/jiram_catalog/junocam/mirror.py) preserves the archive
+path under `<mirror>/junocam/<volume>/`. It retrieves labels before images,
+caps simultaneous download shards at four, and handles throttling and
+retryable HTTP errors. A readable label's `RECORD_BYTES * FILE_RECORDS`
+provides an image-size check. That is a transfer-integrity check; it does
+not establish meaningful signal or valid radiometry. The label parser and
+indexer, [labels.py](src/jiram_catalog/junocam/labels.py) and
+[index.py](src/jiram_catalog/junocam/index.py), preserve those distinctions.
+
+**The native image is a timed sequence of filter strips.** A *framelet* is
+one 128×1648 band strip from one camera readout. A *frame* is the simultaneous
+readout of the commanded bands. The file cycles through bands inside each
+frame, in the label's `FILTER_NAME` order. The reader checks the equation
+
+```text
+LINES = n_frames × n_bands × 128
+array shape = (n_frames, n_bands, 128, 1648)
+```
+
+The index's historical name `n_framelets` means the number of these frame
+repeats, not the total number of band strips. `n_framelet_rows` and the band
+count disambiguate it. This is the sort of naming detail that matters when
+allocating geometry arrays: multiply by the band count exactly once.
+
+[images.read_image](src/jiram_catalog/junocam/images.py) reads 16-bit RDR
+samples with `dtype='>u2'` and 8-bit EDR samples with `np.uint8`. It checks
+the detector width, line equation and sample count, and rejects summed
+products that do not fit the supported camera grid. Only after decoding
+does it convert to a working floating-point dtype. JIRAM's `'<f4'` rule
+would turn these bytes into meaningless values.
+
+EDR decompanding uses the 256-entry SIS `SQROOT_TABLE`; it is a lookup,
+not an approximate square-root formula. For example, encoded 255 maps to
+linear value 2879. This recovers the specified count mapping, not the
+information discarded by quantization. RDR processing has also rescaled the
+signal using the archive's radiometric convention. Consequently, decompanded
+EDR and RDR are both linearized count representations, but are not certified
+as having interchangeable calibration. Current native JunoCam map variables
+retain **DN** units; they are not relabeled as JIRAM radiance or as absolute
+I/F merely because they are stored in float32.
+
+**Camera geometry: the half pixel is real.**
+[camera.BandCamera](src/jiram_catalog/junocam/camera.py) gets focal length,
+pixel size, distortion centers and coefficients from `juno_junocam_v03.ti`.
+The instrument-kernel recipe measures from the upper-left pixel corner;
+public array indices measure pixel centers from zero. Thus an array pixel
+`(x,y)` enters the camera model as `(x + 0.5 - cx, y + 0.5 - cy)`.
+A half-pixel error here is a systematic displacement, not harmless indexing
+notation.
+
+For ideal focal-plane coordinates, the radial distortion is
+
+```text
+r² = x² + y²
+(x_distorted, y_distorted) = (x, y) × (1 + k1 r² + k2 r⁴)
+```
+
+`undistort` uses the kernel's five fixed-point iterations. `pixel_to_vector`
+then forms a unit ray from the undistorted point and focal length;
+`project` runs the inverse direction and rejects rays behind the camera.
+The photoactive mask keeps 1608 columns after the first 23 dark columns;
+the rest of the line includes dark/isolation/overscan regions. These are
+physical detector masks, not display crops.
+
+**Timing differs fundamentally from JIRAM.** All bands in one readout share
+one epoch. Their focal-plane positions differ, so the same atmospheric
+point can enter RED and GREEN in different frames. Geometry must therefore
+use the epoch of each contributing frame, not one epoch for the whole tall
+archive file. `camera.frame_epochs` implements:
+
+```text
+t_i = str2et(START_TIME) + START_TIME_BIAS
+      + i × (INTERFRAME_DELAY + INTERFRAME_DELTA) + dt_refined
+```
+
+The bias and interframe delta come from the instrument kernel; the delay
+comes from the label. `dt_refined` is one fitted offset for the whole image.
+There is no additional unconditional half-exposure correction. JIRAM's
+rule of using its label `START_TIME` exactly (section 4.4) still applies to
+JIRAM; copying that rule into this camera would drop explicit timing terms.
+
+[geometry.py](src/jiram_catalog/junocam/geometry.py) reuses the established
+observer-reference, light-time, stellar-aberration and ellipsoid-intercept
+helpers. It changes the rays and frame contexts rather than creating a
+second definition of Jupiter. Arrays have the same leading frame/band shape
+as the decoded image. Work proceeds one band of one frame at a time, but the
+returned geometry can still be large; processing multiple full products
+simultaneously is not a free consequence of having a generator somewhere.
+
+**Limb fitting is an observation with limitations.**
+[limb.py](src/jiram_catalog/junocam/limb.py) compares an observed intensity
+edge with the predicted ellipsoid limb. The predicted edge uses an
+interpolated zero crossing of the ray-intercept quadratic's discriminant.
+Using the first `True` row of an intercept mask would quantize the objective
+into whole-pixel steps and spoil the timing fit.
+
+The code detects against nominal geometry, fits an offset, re-detects
+against the improved prediction, then fits again. Golden-section search
+minimizes a robust absolute residual over bounded timing offsets. Too few
+usable limb points leaves the image unrefined; it does not produce a
+fabricated zero-error navigation result. The known PJ4 timing offsets of
+roughly 1–26 ms and approximately half-pixel residuals are historical
+measurements in [the geometry report](docs/reports/junocam_pj4_geometry.md).
+
+That report also records different apparent heights for leading and
+trailing limbs, and band-registration evidence favoring a different
+interframe correction from the kernel's published value. These are stated
+limitations. The implementation retains the kernel value; one fitted
+per-image offset cannot remove a per-frame rate error or resolve haze
+height. A small limb residual is not, by itself, a wind-accuracy certificate.
+
+**Reprojection and validity.**
+[reproject.reproject_image](src/jiram_catalog/junocam/reproject.py) asks where
+each map cell projects onto each relevant frame and band, samples the source
+bilinearly, and accumulates a mean plus contribution count. It uses the
+stored per-frame transforms to invert the same geometry that generated the
+footprint. Cells outside the camera strip, outside active columns, on the
+hidden hemisphere, or without valid interpolation neighbors do not acquire
+observations merely because a map grid has room for them.
+
+[junocam/stacks.py](src/jiram_catalog/junocam/stacks.py) writes
+`image(time,band,y,x)`; [junocam/strips.py](src/jiram_catalog/junocam/strips.py)
+writes `image(band,y,x)` for one observation. Incidence and emission retain
+the band axis. The shared `valid` map can mean that at least one band painted
+a cell; it is not proof that every band measured it. Quantitative analysis
+intersects this support with the selected band's finite image and available
+illumination mask. RGB rendering uses the intersection of channel masks,
+preventing a one-channel terminator fringe from appearing as a real color.
+Current reflected-light products use an 88° incidence cutoff; JIRAM thermal
+nightside emission must remain valid.
+
+**Eligibility: quality evidence is separate from an attractive image.**
+[quality.py](src/jiram_catalog/junocam/quality.py) contains measured signal
+summaries and descriptive instrument epochs. The decision used by the
+application is [policy.py](src/jiram_catalog/junocam/policy.py), configured
+in [junocam_quality.yaml](configs/junocam_quality.yaml). Its
+`failure-exclusion-v1` assessment returns a status, reasons and separate
+navigation/signal/calibration fields. The status is one of `eligible`,
+`excluded`, or `unassessed`. The latter two withhold pixels.
+
+A shortened view of the decision is:
+
+```text
+documented exclusion or failed measured signal -> excluded
+complete clean metrics + supported unaffected evidence -> eligible
+otherwise -> unassessed
+explicit geometry failure -> excluded
+```
+
+Complete clean metrics require affirmative `metrics_ok` and finite,
+nonnegative measurements: streak index below 0.3, saturation fraction below
+0.02, zero fraction below 0.999, and positive maximum DN. Explicit corruption,
+content-free, invalid-radiometry and bloom flags can exclude a product;
+label rationale is also checked. These thresholds are operational
+screening choices recorded by policy, not estimates of all instrument error.
+In particular, a bloom flag is a conservative measured exclusion and need
+not identify a documented hardware incident.
+
+The supported legacy sample is PJ4. A new unaffected clearance needs an
+individual product/observation identifier, a reason and a source. Describing
+a pass as *post-anneal*, assigning an A/B/C grade, or omitting a failure flag
+does not clear it. Explicit errata rules identify affected parts of PJ47,
+PJ48, PJ49, PJ73 and PJ74 and the content-free PJ75–80 interval. Other broad
+periods without affirmative evidence remain unassessed; the implementation
+does not guess recovery dates from a heat-treatment label.
+
+Preferred catalog defaults require the latest **archive-known** RDR
+version to be eligible. If a newer version is known but not locally
+assessed, an older attractive image is not silently promoted as current.
+Stored stacks are a separate access case: the loader filters source steps
+against eligible versions and selects the preferred available eligible step
+per observation within the file, preserving original bytes. This distinction
+keeps a provenance-bearing historical product usable without pretending it
+is the newest archive product. A corrected label time of a few milliseconds
+does not make V01 and V02 independent observations.
+
+The current snapshot contains **72 preferred eligible JunoCam observations**.
+The earlier mapped set had 93 stems; 21 methane observations are additionally
+withheld by existing bloom evidence. The preserved six-entry polar file is
+presented as three unique observations. See the
+[delivery record](docs/build_log_2026-09-07.md) for the count definitions and
+the unchanged historical count-gate conflict. Neither 72 nor the policy's
+legacy allowance is an archive-wide radiometric validation.
+
+**Photometry is an explicit transform, not a new unit label.** Let
+`μ0 = cos(i)` and `μ = cos(e)`, for incidence and emission angle. The
+shared [normalization implementation](src/jiram_catalog/api/images.py)
+applies:
+
+```text
+none:       I
+Lambert:    I / max(μ0, 0.05)
+Minnaert:   I / [max(μ0, 0.05)^k × max(μ, 0.05)^(k−1)]
+flat:σ:     I / [Gσ(I × valid) / Gσ(valid)] × mean_valid(background)
+```
+
+The angular denominator is dimensionless. Correcting a DN image therefore
+leaves a transformed DN field; it does not become a measured I/F map. The
+cosine floor limits amplification, and the illuminated-pixel mask removes
+the near-terminator region used by the product policy. Lambert and Minnaert
+are simple photometric models, not cloud radiative-transfer inversions.
+Scientific preparation refuses them for JIRAM thermal radiance. Flattening
+is permitted for thermal images, but passes no solar-incidence mask to the
+normalizer, so nightside thermal observations are retained.
+
+`flat:σ` needs particular care. For browser images and display-limit samples,
+σ is in pixels of the **served or sampled image**. Native scientific
+statistics, comparison preparation and quantitative exports apply the same
+kernel before spatial subsampling, so σ there is in **native map pixels**.
+At stride five, `flat:32` in a display corresponds to a broader native
+smoothing scale than `flat:32` in a native diagnostic. These are not the same
+filter merely because their selector text matches. If extending the
+interface to compare them quantitatively, carry pixel size and stride into
+the recipe rather than implying equivalent transfer functions.
+
+A display stretch is another operation again: percentile limits followed
+by linear/asinh mapping into image bytes. RGB channels may use separate
+limits. Such choices help inspect clouds, but a spectrum must use the
+selected physical-band array and recorded normalization, never the colored
+canvas or an RGB composite.
+
+**The PDS calibrated collection: a reference with a different observation
+operator.** The completed
+[bounded audit](docs/reports/junocam_calibrated_assessment_2026-09-07.md)
+examined actual labels, three GeoTIFFs and FITS metadata/rows from
+`junocam_atm-ml-calib`. Its inventory contains 37,386 tiles from PJ13–36;
+those are overlapping tiles, not that many independent exposures. The
+sampled TIFFs are 256×256×5, with 62.5 km grid spacing, generated channels
+and nil/inapplicable acquisition times. Their LAEA projection uses a
+planetographic reference, requiring explicit conversion before use with the
+repository's planetocentric maps. A sampled global mosaic spans about
+130 minutes, not one simultaneous observation.
+
+The production pipeline includes flattening, projection, mosaicking and
+learned transformations toward Hubble-like channels, including UV and
+methane predictions. Those steps can alter variance and texture. The audit
+also found channel-description, scaling and invalid-value ambiguities;
+finite values alone do not establish observed coverage. The native tables
+were not changed and no quantitative importer was certified. Coverage links
+the collection as a supplemental morphology/reference source. It is a poor
+replacement for exact-time native motion inputs or native radiance spectra,
+and plausible generated pixels do not establish recovery from instrument
+failure. A matched native/derived comparison would be required to measure
+its transfer function; visual smoothness alone does not supply that result.
+
+**What to test when changing this branch.** Archive tests protect version
+identity and level classification; camera tests protect detector centers,
+distortion and the timing equation; geometry/reprojection gates compare to
+independent SPICE and the documented PJ4 sample. The new policy tests also
+try missing evidence and direct pixel access. This last class is crucial:
+a correct hidden-row filter can coexist with an incorrect thumbnail or
+historical-movie route unless the routes are tested directly.
+
+### 4.19. Scientific workflow — what the data can support
+
+**Purpose.** [science.py](src/jiram_catalog/science.py) and
+[api/science.py](src/jiram_catalog/api/science.py) turn a chosen map product
+into a question with explicit prerequisites. Their role is similar to
+checking an ocean-model diagnostic's grid staggering, wet mask, units and
+sampling interval before applying an otherwise correct estimator. A valid
+FFT or correlation routine cannot repair the wrong input interpretation.
+
+The service always enters through policy-aware stack/strip loaders. Requests
+identify a catalog strip or resolved stack, not an arbitrary client file
+path. A physical band is required when multiple bands exist; `RGB` is a
+display composite and is rejected as a quantitative band. Native JunoCam DN
+and JIRAM radiance units are preserved with the transformation and sources.
+Unknown values become JSON `null`, rather than NaN/Infinity tokens or a
+fabricated numerical score.
+
+**Readiness is a sequence of explicit checks.** `stack_readiness` first
+selects one band and collapses processing versions by observation identity.
+Identity wins over small corrections to label time. It sorts the selected
+observations, requires a positive finite `km_per_px`, checks increasing
+regular square coordinates when provided, and requires a three-dimensional
+`image(time,y,x)` after selection. Datetime integers are explicitly converted
+to nanosecond units before differencing; assuming that a pandas integer time
+axis always counts nanoseconds was one of the bugs the new tests caught.
+
+The temporal test rejects nonpositive gaps and searches for runs whose gaps
+stay within the chosen relative tolerance of the run median. The default is
+at least three observations and 5% tolerance. Each candidate run then gets
+a one-frame-at-a-time mask intersection:
+
+```text
+common_run(y,x) = AND over t [valid_t AND finite(image_t)
+                            AND selected-band illumination support]
+```
+
+A run with no common valid pixel does not become an export. Masks are
+inspected without loading the whole time cube at once; metadata checks do
+not first call `prepare_stack` and allocate a second full cube. On success,
+the response records chosen band, normalization, units, times, gaps, retained
+runs, common-valid fractions, removed versions and provenance.
+
+Passing says that the arrays have the required format, grid, temporal
+spacing and some common support. It does **not** establish cloud-feature
+persistence, subpixel navigation accuracy, sufficient displacement signal,
+or trustworthy winds. For example, a single common pixel is enough to
+avoid an empty-mask error, but cannot make a useful full-field velocity
+retrieval. The actual JunoCam polar selection fails earlier on cadence:
+three observations at roughly 577/243-second intervals do not pass the
+regular-triple test. The UI keeps that explanation visible.
+
+`export_stack` repeats preflight before creating the requested destination,
+then prepares and writes one retained run at a time. `spec.json` and each
+realization's manifest record physical band, native units, normalization
+and source provenance; `dataset_manifest.json` inventories the written
+realizations, shapes and sampling intervals. The realization NetCDF contains
+the image, validity and log-gradient
+arrays, plus analysis provenance; there are no invented truth velocities.
+The GUI validates destinations within its mirror export directory and uses
+source/policy/settings-specific default names. Explicit nonempty output
+directories are refused by the GUI job, preserving old exports rather than
+mixing their obsolete realizations into a new result. The generic writer is
+still a low-level function: callers outside that GUI boundary must manage
+their destination and source eligibility deliberately.
+
+**Comparison begins with a grid question.** Two equal-shaped arrays are
+not necessarily maps of the same place. `equivalent_grids` requires matching
+physical x/y coordinates and resolution, plus identical projection metadata
+or verified per-cell latitude/longitude equivalence. Missing coordinates or
+differing grids return `incompatible`; this endpoint does not invent a
+reprojection or label an array-index shift as a geographic registration.
+The frontend may show linked split/blink views for inspection, but the
+numerical result keeps this distinction.
+
+For equivalent grids, each native image is normalized first. Masked
+normalized cross-correlation then runs on a subsample whose longest side
+is at most 512 pixels. FFTs efficiently form the shifted cross-products;
+means, variances and overlap counts are recomputed for each shifted mask
+intersection. Edges do not wrap around. Search radius and overlap/variance
+requirements are bounded, and a peak on the search boundary has its own
+status rather than a confident displacement.
+
+The returned `(dy_px, dx_px)` describes **motion from the left image to the
+right image**, expressed in native map pixels after multiplying the sampled
+integer shift by the sample stride. There is no subpixel refinement in this
+endpoint. `sample_stride` and `sample_km_per_px` reveal the measurement
+spacing. `common_valid_frac` is the intersection of the native masks, not
+an estimate from the coarse correlation grid. Correlation measures pattern
+registration; wavelength-dependent morphology, illumination, clouds at
+different heights and navigation error can all affect its interpretation.
+
+For an assumed speed `U`, map spacing `Δx` in metres and actual time
+separation, the expected displacement is
+
+```text
+d_predicted_px = U × |Δt| / Δx
+```
+
+This is a planning calculation, not the measured shift. Navigation error
+stays null unless supplied. If the user supplies an independent per-image
+one-sigma error `σnav` in pixels, the reported velocity contribution is
+
+```text
+σvelocity = sqrt(2) × σnav × Δx / |Δt|
+```
+
+It is null at zero separation or without that supplied error. The formula
+assumes independent errors in the two images; it is not an empirically
+validated total wind uncertainty, and does not include all pattern-evolution
+or correlation-estimator errors.
+
+**A population is organized by what can be averaged.** `/population` takes
+at most 100 strip identifiers and groups by instrument, physical band,
+normalization, native resolution class **and native units**. Missing source
+identifiers or pass metadata prevent an independence assessment and cause
+an explicit exclusion. Missing/withheld inputs are reported in `excluded`
+while eligible requested inputs can still be processed.
+
+Higher versions are considered first. A strip sharing any observation
+identity with an already retained strip is conservatively excluded, even
+if it also contains other sources. Within a group, the existing native
+`stats2d.strip_statistics` kernels compute spectra and structure functions.
+Their physical k/r grids are interpolated onto a reference grid with NaN
+outside support. These are summary-grid interpolations, not a claim that
+two original map canvases were co-registered.
+
+The key statistical decision is the averaging hierarchy. For pass `p`,
+first average the retained strip spectra belonging to that pass; then give
+each pass equal weight:
+
+```text
+E_pass,p(k) = mean of retained strip E(k) within pass p
+E_population(k) = mean over passes of E_pass,p(k)
+SE(k) = sample_std_over_passes(E_pass,p(k)) / sqrt(n_valid_passes(k))
+```
+
+The code uses the finite pass count separately at each bin. With fewer than
+two passes, `E_stderr` is null. Ten overlapping strips in one perijove thus
+do not create ten independent realizations or an artificial ten-sample
+error bar. Treating a pass as the replication unit is itself a stated
+statistical choice, not proof that atmosphere seen on different passes is
+independent under every hypothesis. `n_observations`, `n_passes`, sources
+and weights let the user assess that choice.
+
+The older `stats2d.population_statistics` CLI routine discussed in section
+4.14 averages strips directly and also provides bicoherence accumulation.
+The new scientific API's independent-pass spectrum/S2 summary is a separate
+aggregation layer over existing single-strip kernels; it should not be
+mistaken for the same uncertainty estimator or advertised as a new GUI
+bicoherence estimator.
+
+**Masks and slope fits describe limitations; they do not remove them.**
+`mask_diagnostics` measures finite valid fraction, four-neighbor connected
+components, the fraction of valid pixels touching a mask boundary, the
+1st–99th-percentile image range, and a row-discontinuity ratio. The last
+compares the largest supported row-to-row mean absolute difference with the
+median of those differences. A real cloud edge can make it large, so the
+output asks for inspection rather than diagnosing every discontinuity as
+a mosaic seam.
+
+The scale record reports pixel spacing, field extent and a Nyquist wavelength
+of twice the pixel spacing. **Effective physical resolution remains null**;
+interpolation, optics, navigation and masking prevent grid spacing from
+settling it. A fragmented mask can redistribute spectral power even when a
+variance correction is applied. Counting its components does not invert that
+spectral leakage.
+
+`fit_spectrum` fits `log10(E) = slope × log10(k) + intercept` using only
+positive finite bins inside the requested range. At least three bins and a
+nonzero k range are required. The API caps the fit at the common Nyquist
+bound; user-visible choices of fit range and normalization belong in the
+recipe. The reported slope standard error is the ordinary regression error;
+bins are correlated by tapering and masks, so this is distinct from the
+independent-pass error in the mean spectrum. The UI's normalization
+sensitivity comparison helps expose that dependence, without selecting a
+preferred physical interpretation automatically.
+
+**Candidates and vector overlays have weaker and stronger contracts.**
+Cross-instrument `/matches` uses actual catalog times and seam-aware
+latitude/longitude bounding boxes. Its overlap fraction is approximate
+spherical-box intersection divided by the smaller box area, taking the best
+band-pair overlap where a product has multiple band rows. This finds
+plausible contemporaneous targets; it does not establish exact pixel overlap,
+a common cloud altitude or registration compatibility.
+
+The vector endpoint is stricter. It examines existing neighboring tracking
+NetCDFs only when source-stack association, time, projection, explicit
+kilometre coordinates, `m s-1` velocities and `map_xy` basis all match.
+It bounds the displayed feature count and reports its sampling stride.
+Published TP4 line/sample vectors are understood by the dedicated validation
+script, but there is no general association of those files with arbitrary
+stacks. The normal current response is therefore `unassessed` with a reason,
+not assumed east/north arrows placed on the wrong grid. The browser's arrow
+scale uses a stated time interval, converting `u,v` to map-kilometre segments.
+
+**Reproducibility lives beside the number.** Population JSON caches under
+`gui_cache/research/` are keyed by source file size/mtime, request settings,
+current exclusions, source policy metadata and code-policy/revision fields.
+Returned recipes preserve sources and versions, transform, units, masks,
+known kernels, fit range and the averaging convention. Plot/numeric/recipe
+exports in the frontend carry the analysis context; a pretty chart is not
+used as the only durable record. Unknown kernel or navigation information
+remains unknown rather than being filled from a broad mission assumption.
+
+**Validation.** [test_review_science_offline.py](tests/test_review_science_offline.py)
+checks corrected-version timestamps, a known signed shift, actual selected-band
+NetCDF values/units/masks, failed exports creating no destination, equal-pass
+means and uncertainty, policy exclusions, seam overlap and vector association.
+The prewritten [science gate](tests/test_gate_review_science.py) checks
+known-band/cadence cubes, power-law slope and fragmented masks. These tests
+protect input semantics and estimator behavior. They add no new physical
+wind validation beyond the JIRAM reference work described earlier.
+
+---
+
 ## 5. Testing philosophy
 
-Two kinds of test live in `tests/`, and the distinction is load-bearing
-throughout this project, not a stylistic preference. **Offline tests**
-(`tests/test_*_offline.py`, plus a few plainly-named ones like
-`test_labels.py`, `test_index.py`, `test_manifest.py`) need no mirror,
-no paper data, and no network — they run under
-`JIRAM_SKIP_GATES=1 uv run pytest -q` and check a module's internal
-correctness against hand-derived cases, synthetic fields with known
-answers, or small fixture files checked into the repository. **Gates**
-(`tests/test_gate_*.py`) need the real mirror and the read-only
-published ground truth, run under a plain `uv run pytest -q`, and
-check whether the *whole pipeline up to that point* reproduces
-something independently known to be true — a published mosaic, a
-published wind-vector field, an oracle SPICE call made a completely
-different way than the code under test makes it.
+There are two distinctions to keep separate: what evidence a test uses,
+and who defined its acceptance criteria. **Offline tests** use hand-derived
+cases, synthetic fields with known answers or small checked-in fixtures;
+they need no mirror, paper data or network. The usual broad command is
+`JIRAM_SKIP_GATES=1 uv run pytest -q`. **Physical validation tests** use
+the real mirror, kernels or read-only published products, and can establish
+agreement with a published mosaic, wind-vector field or independent SPICE
+oracle.
+
+**Gates** (`tests/test_gate_*.py`) are acceptance tests written before
+implementation and kept read-only to executors. The original physical
+gates need cluster data, but the newer review API/science gates use small
+synthetic products and can run offline when invoked explicitly. The gate
+filename therefore does not itself imply a mirror dependency. Equally, a
+synthetic gate can establish cadence handling or estimator arithmetic
+without establishing a measured wind's accuracy. A skipped test is not a
+passed physical validation.
 
 **Gates are read-only to every executor and every agent, always**
 (`AGENTS.md`, `docs/agent_harness.md`) — "passing a gate by editing it
@@ -2362,9 +2989,9 @@ documents. Only the project lead writes or revises a gate, and always
 so the gate cannot be shaped after the fact to match whatever the
 implementation happens to produce.
 
-**How a gate gets its ground truth.** Every gate in this project draws
-from one of three sources, and knowing which one explains what the
-gate is actually capable of catching. (1) The published perijove-4
+**How the original physical gates get their ground truth.** Three main
+sources support the JIRAM validation, and knowing which one explains what
+a gate is actually capable of catching. (1) The published perijove-4
 fixture (`tests/fixtures/pj4_ingersoll2022_map_labels.csv`, 48 rows,
 one per Ingersoll et al. 2022 mosaic frame) — used by
 `test_gate_pj4.py`, `test_gate_geometry_pj4.py`, `test_gate_geo_pj4.py`,
@@ -2411,6 +3038,24 @@ real, GPU-less browser, not just synthetic fixtures; `test_gate_
 cumulative.py` — that cumulative sweep stacks agree with the frame-
 and sequence-level stacks at every point the three are required to
 coincide.
+
+**The current verification snapshot.** The September 7 delivery records
+339 Python tests passed with 49 skipped under the offline command, 135
+frontend tests passed, eight focused API/science gate checks passed, and
+the full production browser gate passed against the real mirror
+([delivery log](docs/build_log_2026-09-07.md)). These counts describe
+different suites and should not be summed into one claim about physical
+validation. The narrow mask-recipe wording correction made during this
+documentation refresh was also followed by the same 339-pass, 49-skip
+offline result and a check across the actual 88-degree boundary.
+
+One historical gate conflict is preserved: `test_gate_junocam_products.py`
+has two passing checks and one failing count assertion requiring at least
+100 library products. The current policy admits 72 independent JunoCam
+observations. Reintroducing duplicate versions or withheld images to satisfy
+that count would damage the scientific input selection. The gate remains
+unchanged and the conflict is reported explicitly; this is not an
+unqualified all-gates-pass state.
 
 **The two gates that were wrong, and how that was found.** Both cases
 share a shape worth naming explicitly: the *code* under test was not
@@ -2489,8 +3134,8 @@ verbatim clause: stop and list the ambiguities rather than choosing an
 interpretation, and list every judgment call made, however minor, at
 the end of the final report.
 
-**What each executor tier actually did, concretely.** Three tiers
-appear in the build log, and the pattern across them is informative in
+**What the executor tiers did in the original September 4–5 build.**
+Three tiers appear in that build log, and the pattern across them is informative in
 its own right, not just as a record. Reconnaissance and reader-facing
 prose consistently went to a lighter, cheaper executor tier — the
 initial archive and SPICE/geometry reconnaissance passes together cost
@@ -2511,9 +3156,9 @@ way, in one pass, against a gate written before the executor started
 geometric work — anything touching SPICE, a projection, or requiring
 fresh-context review of a subtle formula — went to a stronger executor
 tier by design, stated as a standing routing rule in
-`docs/agent_harness.md`: "Bounded numerical or geometric work, anything
-with a SPICE or projection oracle, and fresh-context review:
-Opus-class." Every milestone after the geometry engine — geo
+`docs/agent_harness.md`: numerical or geometric work with a
+SPICE/projection oracle, and fresh-context review, go to a stronger executor.
+In that original build, the milestones after the geometry engine — geo
 augmentation, the VICAR reader and reprojection engine, regions and
 stacks, classical tracking, `stats2d`, the strip library, the GUI —
 went to that stronger tier, each completing in 15 to 45 minutes with
@@ -2578,6 +3223,41 @@ correction the lead made afterward (the `orbit`/`orbit_dir` count
 above) came from exactly that kind of direct verification against the
 mirrored Parquet files rather than from re-reading prose more
 carefully.
+
+**What the JunoCam expansion changed about verification.** The intervening
+implementation history runs through the acquisition and native-product
+work (`28cec1e`), geometry (`b385f88`), mapped-product integration
+(`10c99f0`), photometry (`053dff1`) and the scientific workspace (`1e2723d`).
+The detailed chronology is in the
+[September 7 delivery log](docs/build_log_2026-09-07.md). Its teaching value
+is in the assumptions these changes forced into explicit contracts.
+
+First, an apparently useful six-frame polar stack became three observations
+once processing versions were treated as versions. Its unequal time gaps
+then failed the constant-cadence preflight. The right result was to keep a
+viewable stack and refuse that export. Second, instrument-health evidence
+became a separate condition from successful geometry or an attractive image:
+failure exclusions and unassessed states now travel through catalog queries,
+direct pixel access and derived products. A geometry grade or an annealing
+event cannot stand in for an observation's signal assessment.
+
+Third, the browser's apparent simplicity concealed scientific and systems
+costs. Hidden views could still request native statistics; stale responses
+could attach old pixels or diagnostics to a new selection; parallel NetCDF
+work could touch unsafe shared C-library state. Lazy statistics, full request
+identity and explicit I/O serialization address those different problems.
+Bounded metadata reads make a display operation cheaper without changing the
+native statistical estimators. This is a useful distinction for any large
+ocean-model viewer: a responsive control plane does not make a full-field FFT
+free, and serialization can make another image request wait.
+
+Finally, the calibrated-collection audit demonstrates why an archive's
+product name is a hypothesis about suitability, not the result of an
+assessment. Its mosaicking and generated channels make it useful as a
+reference while preventing an unqualified substitution into native variance,
+spectral or motion analyses (section 4.18). All of these lessons concern
+which observations and transformations a result represents, not just whether
+the software can open the file.
 
 **What this teaches about delegating numerical work.** Three patterns
 recur clearly enough across this build log to state as general lessons,
@@ -2669,7 +3349,7 @@ round trip (`pixel_to_latlon` then `latlon_to_pixel`) returns to within
 region is tested (`tests/test_regions_offline.py`'s existing pattern,
 extended with one more region name), and that `select_frames` against
 the real mirror returns a non-empty selection for at least one
-mirrored orbit — this is weaker than every gate in section 5 by
+mirrored orbit — this is weaker than the physical reconstruction gates in section 5 by
 necessity, and the spec should say so explicitly rather than implying
 a false equivalence with, say, `test_gate_paper_projection.py`. For
 the statistic: a genuine numerical gate *is* possible, following
@@ -2722,6 +3402,18 @@ gate the new region scientifically, exactly as this document's own
 section 7 states above, so a future contributor does not mistake the
 structural gate for a scientific validation.
 
+**Applying the example to the expanded workspace.** The region-building
+example above follows the JIRAM path. A JunoCam extension must use its own
+builder, preserve the physical band axis and source observation identities,
+and retain its timing and quality policy. A new browser statistic should be
+requested only when its panel is opened, computed from the documented native
+field and mask, and tied to the complete source/band/normalization request
+identity. Its NetCDF reads belong inside the existing I/O guard. If it joins
+a population summary, define the independent unit and missing-bin behavior
+before choosing an error bar; the current API uses pass-level replication
+(section 4.19). These are extension contracts, not optional presentation
+details.
+
 **What this worked example is meant to teach.** The two extensions
 were chosen to be asymmetric on purpose. Adding a region needed almost
 no code, because `regions.py` was designed from the start to generalise
@@ -2746,18 +3438,42 @@ Planetary-archive and SPICE terms, in the order a new reader is likely
 to need them; each entry says what the term means *in this codebase*,
 not the fullest possible general definition.
 
-- **PDS / PDS3 / PDS4.** NASA's Planetary Data System, the archive
-  this project mirrors from. PDS3 is the older label format (plain
-  `KEY = VALUE` text, the syntax every camera-frame `.LBL` file in this
-  archive actually uses); PDS4 is the newer XML-based bundle structure
-  the *files* are organized under (`data_calibrated/orbitNN/...`) even
-  though the individual product labels inside it are still PDS3
-  syntax. `labels.py` parses PDS3 text; `pds.py` crawls a PDS4 bundle
-  layout.
-- **RDR / EDR.** Reduced (calibrated, physical-unit) Data Record versus
-  Experiment (raw, uncalibrated) Data Record. This project reads RDR
-  products exclusively — the ones with real radiance units, not raw
-  instrument counts.
+- **PDS / PDS3 / PDS4.** NASA's Planetary Data System, the archive this
+  project mirrors from. PDS3 uses plain `KEY = VALUE` labels; PDS4 uses
+  XML labels and bundle/collection organization. The JIRAM crawler follows
+  the `data_calibrated/orbitNN/...` bundle while reading its legacy `.LBL`
+  companions. Native JunoCam uses indexed PDS3 volumes and its own crawler.
+  The separate calibrated JunoCam PDS4 collection contains derived maps;
+  the archive packaging alone says nothing about interchangeability with
+  native camera measurements (section 4.18).
+- **RDR / EDR.** Reduced Data Record versus Experiment Data Record.
+  Processing level and physical units are distinct properties. JIRAM's
+  calibrated images carry radiance. Native JunoCam RDR images decode as
+  big-endian unsigned 16-bit values and remain DN in this project's mapped
+  products; its reader also supports unsigned 8-bit EDR plus the archive
+  decompanding table. An RDR label is not an absolute I/F certification.
+- **Frame / framelet / swath.** In JunoCam, a timed detector readout
+  contains filter-specific 128-row framelets. Multiple readouts sample the
+  scene as the spacecraft spins. A mapped swath combines those contributions
+  on a surface grid. These internal frames are not independent repeat visits
+  merely because their times differ. JIRAM's frame and sequence conventions
+  are described separately in section 2.
+- **Observation identity / processing version.** `_V01` and `_V02` can
+  name alternate reductions of the same observation. Corrections to a version's
+  timestamp do not make it a new exposure. Deduplication protects cadence and
+  sample size; latest-known-version policy also prevents an older local copy
+  from silently substituting for a newer unassessed archive version.
+- **DN / decompanding / I/F.** DN is the detector's digital numerical
+  scale. Decompanding reverses the archive's nonlinear count encoding; it
+  does not by itself supply absolute radiometry or undo instrument damage.
+  I/F is a dimensionless radiometric reflectance convention. This code's
+  JunoCam DN products must not be relabeled I/F because they have been
+  decompanded, illumination-normalized or visually stretched.
+- **Eligible / excluded / unassessed.** The JunoCam access policy's
+  distinct evidence states. Eligible means the required current checks have
+  supporting evidence; excluded records a known disqualifying condition;
+  unassessed records missing evidence. Both latter states withhold pixels.
+  Signal health, navigation and absolute calibration remain separate claims.
 - **SPICE.** NASA/NAIF's toolkit (and file-format family) for
   spacecraft geometry: where things were, how they were pointed, and
   what time it was, all computed from a set of loaded binary and text
@@ -2785,8 +3501,9 @@ not the fullest possible general definition.
 - **Ephemeris time (ET) / epoch.** SPICE's internal continuous time
   scale (seconds past a fixed reference epoch, accounting for leap
   seconds); `spiceypy.str2et` converts an ISO-format UTC string to it.
-  This project's epoch is always a label's `START_TIME`, exactly
-  (section 2, section 4.4) — never mid-exposure, never approximated.
+  JIRAM uses its label's `START_TIME` exactly, without a mid-exposure
+  offset (sections 2 and 4.4). JunoCam's `frame_epochs` adds its instrument
+  bias, frame delay and optional limb-refined offset (section 4.18).
 - **Boresight.** The optical axis a camera or instrument points along
   — for JIRAM, the direction `(0, 0, 1)` in its own band frame, by
   definition the centre of the field of view.
@@ -2814,13 +3531,13 @@ not the fullest possible general definition.
   to define "latitude" on a non-spherical body. Planetocentric is the
   angle from the equatorial plane to the vector from the body's
   *centre* to the surface point — a simple, unambiguous geometric
-  definition, and the one this project uses everywhere, stated as a
-  project-wide rule (`AGENTS.md`, `docs/decisions.md`). Planetographic
+  definition, and the convention used by this project's native mapped
+  products (`docs/decisions.md`). Planetographic
   instead uses the local *surface normal* direction, which for an
   oblate body like Jupiter gives a numerically different value at the
-  same physical point; this project never uses it, and it is named
-  here mainly so its absence is a deliberate choice, not an oversight,
-  if you ever see the term in outside JIRAM literature.
+  same physical point. The audited external calibrated JunoCam tiles use
+  planetographic coordinates, one reason their grid cannot be treated as a
+  native-map replacement without an explicit coordinate transformation.
 - **East-positive longitude, `[0, 360)`.** This project's other
   fixed geometric convention, matching the archive's own label
   convention exactly (`docs/decisions.md`): longitude increases toward
@@ -2866,6 +3583,35 @@ not the fullest possible general definition.
   own match-quality metric (section 4.12) and as the general figure of
   merit for "does our reprojection match the published map" (section
   4.8, 4.10).
+- **Normalization / stretch / `flat:sigma`.** Normalization transforms
+  the physical scalar field using a documented rule; stretch maps that field
+  to display intensities. Lambert and Minnaert address reflected-light
+  illumination and are refused for thermal JIRAM. Flat normalization divides
+  by a smoothed background while preserving the field's scale; sigma is in
+  served pixels for images and native map pixels for scientific preparation.
+  Neither operation establishes absolute calibration (section 4.18).
+- **Readiness.** A checked contract for a particular export: physical band,
+  unique observations, positive nearly constant cadence, usable grid and
+  masks. Passing it establishes valid inputs to the requested operation,
+  not accurate atmospheric winds (section 4.19).
+- **Independent pass / standard error.** Population summaries first average
+  strips within each pass, then give passes equal weight. Per-bin standard
+  error uses the number of finite pass estimates and is unavailable with
+  fewer than two. This reduces pseudoreplication from many strips of one pass;
+  it does not prove that different passes are statistically independent.
+- **Nyquist / effective resolution.** Twice the map spacing is the sampled
+  grid's Nyquist wavelength. Optical blur, navigation and resampling can make
+  the effective scientific resolution coarser. The interface states the
+  former and leaves the latter unassessed when no measurement supports it.
+- **`map_xy` vectors.** Components along the product's own map x and y
+  axes, with explicit coordinate and velocity units. They are not silently
+  treated as east/north components. The vector reader requires association
+  metadata before overlaying a neighboring file.
+- **Request identity / provenance.** A result belongs to a source and its
+  processing settings, including physical band and normalization. Browser
+  request identity prevents late responses from replacing a new selection;
+  saved provenance and source/policy signatures make a derived result's
+  inputs inspectable and invalidate caches when those inputs change.
 - **`geo_ok` / `on_planet_frac` / `bore_*`.** Column-naming conventions
   used consistently across `frames_geo.parquet`,
   `trackability_*.parquet`, and every downstream module's own
@@ -2876,3 +3622,13 @@ not the fullest possible general definition.
   prefix (`bore_lat`, `bore_emission`, ...) always means "evaluated at
   the boresight specifically," distinct from a frame-wide mean, min,
   or max of the same underlying quantity.
+
+**Refresh judgment calls.** The original JIRAM walkthrough and section
+numbers are retained as foundations and validation history, while current
+JunoCam and scientific-workflow contracts are integrated throughout.
+Measured navigation, signal eligibility and absolute calibration remain
+separate claims; missing evidence stays unassessed. The derived calibrated
+collection is treated as a reference, and the old minimum-count gate
+conflict is reported without changing its assertion. These choices favor
+traceable inputs and explicit limits over larger inventories or unsupported
+scientific certainty.

@@ -69,6 +69,8 @@ def source_ids(dataset: xr.Dataset) -> list[str]:
 
 
 def provenance(dataset: xr.Dataset, *, norm: str = "none") -> dict[str, Any]:
+    from .api.images import NIGHT_INCIDENCE_DEG
+
     sources = source_ids(dataset)
     return json_safe({
         "policy_version": POLICY_VERSION, "software_revision": software_revision(),
@@ -85,7 +87,7 @@ def provenance(dataset: xr.Dataset, *, norm: str = "none") -> dict[str, Any]:
         "source_time_steps": dataset.attrs.get("source_time_steps"),
         "withheld_or_superseded_steps": dataset.attrs.get("withheld_or_superseded_steps"),
         "kernels": {k: v for k, v in dataset.attrs.items() if "kernel" in k.lower()},
-        "mask": "finite image AND supplied validity; JunoCam incidence < 89 degrees when present",
+        "mask": f"finite image AND supplied validity; JunoCam incidence < {NIGHT_INCIDENCE_DEG:g} degrees when present",
         "cautions": [WIND_CAVEAT],
     })
 

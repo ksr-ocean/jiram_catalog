@@ -165,8 +165,9 @@ velocity-model export, strips, statistics, the GUI). Path resolution
 - `docs/usage.md` -- the command reference and worked examples.
 - `docs/gui_guide.md` -- the catalog browser, tab by tab, with real
   screenshots.
-- `PEDAGOGICAL_REVIEW.md` -- a teaching-oriented walk through how this
-  codebase was built and reviewed.
+- [PEDAGOGICAL_REVIEW.md](PEDAGOGICAL_REVIEW.md) -- a teaching-oriented tour
+  of JIRAM and JunoCam acquisition, geometry, quality and scientific workflows,
+  with a companion [slide deck](docs/pedagogy/slides.pdf).
 - `docs/decisions.md` -- one entry per settled choice, with evidence.
 - `docs/open_items.md` -- known gaps, honestly listed.
 - `AGENTS.md` -- start here before changing any code; this repository

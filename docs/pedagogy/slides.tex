@@ -48,7 +48,7 @@
 % Footer that cites the review section a slide corresponds to, rather
 % than beamer's usual navigation dots. \revsec{X.Y} sets it per slide.
 \newcommand{\currevsec}{}
-\newcommand{\revsec}[1]{\renewcommand{\currevsec}{#1}}
+\newcommand{\revsec}[1]{\gdef\currevsec{#1}}
 \setbeamertemplate{footline}{%
   \leavevmode%
   \hbox{%
@@ -57,16 +57,16 @@
   \end{beamercolorbox}%
   \begin{beamercolorbox}[wd=.45\paperwidth,ht=2.6ex,dp=1.1ex,rightskip=.3cm plus1fil]{title in head/foot}%
     \usebeamerfont{title in head/foot}\scriptsize
-    \ifx\currevsec\@empty\else review \S\currevsec\ \textbullet\ \fi
+    \ifx\currevsec\empty\else review \S\currevsec\ \textbullet\ \fi
     \insertframenumber\,/\,\inserttotalframenumber
   \end{beamercolorbox}}%
   \vskip0pt%
 }
 
 \title{\textbf{jiram\_catalog}}
-\subtitle{A pedagogical review: archive, geometry, and the two regimes}
+\subtitle{A pedagogical review: two instruments, geometry, and scientific readiness}
 \author{}
-\date{}
+\date{\small Implementation through \texttt{1e2723d} --- 7 September 2026}
 
 \begin{document}
 
@@ -90,7 +90,7 @@
     \item Two-channel infrared camera on Juno: L-band (3.455~$\mu$m, aurora, H3$^+$) and M-band (4.780~$\mu$m, thermal, day \& night)
     \item Detector: 128 lines $\times$ 432 samples per band; 256-line \texttt{LM} products stack both bands, 10 gap lines removed
     \item Juno spins at 2~rpm (12~deg/s); JIRAM's despinning mirror holds one look steady per spin
-    \item 85{,}108 archived camera frames as of this writing (\texttt{README.md})
+    \item Initial JIRAM census: 85{,}108 archived camera frames (4 September build log); counts describe that snapshot
   \end{itemize}
   \vspace{0.3cm}
   \begin{block}{The archive's own labels do not tell you where a frame is pointed}
@@ -98,63 +98,76 @@
   \end{block}
 \end{frame}
 
-\begin{frame}{The single fact that organizes the whole codebase}
+% Refresh through 1e2723d.
+\begin{frame}{JunoCam adds a different measurement}
   \revsec{1}
-  A JIRAM frame is small; the spacecraft is fast. What the archive gives you looks completely different at the poles than everywhere else.
+\begin{itemize}
+    \item A spinning \textbf{pushframe camera}: an archived image contains successive 128$\times$1648 framelets, with physical filter strips
+    \item Native RED, GREEN, BLUE and METHANE are instrument channels; RGB is a viewing composite
+    \item Its unsigned detector samples and per-frame timing require a separate adapter, not JIRAM's float reader or single-frame epoch
+    \item The common workspace starts after each instrument has explicit geometry, validity, units and source identity
+  \end{itemize}
+  \begin{block}{Current scope, 7 September 2026}
+    Native JunoCam inspection is available. Failure exclusion and readiness checks decide which observations and calculations are accessible.
+  \end{block}
+\end{frame}
+
+\begin{frame}{Repeat coverage determines the useful product}
+  \revsec{1}
+A small detector on a fast spacecraft gives two useful observing regimes. They describe \emph{measured overlap and timing}, not a permanent division of Jupiter.
   \vspace{0.4cm}
-  \begin{columns}
-    \column{0.5\textwidth}
-    \textbf{At the poles:} Juno revisits\\
-    \small spin axis $\perp$ orbit plane $\Rightarrow$ JIRAM's one pointing DOF sweeps the pole every pass; a sequence returns every 8--20 min
-    \column{0.5\textwidth}
-    \textbf{Everywhere else:} Juno never comes back\\
-    \small one swath, one look, gone --- the spacecraft's orbit carries it away for the rest of the mission
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \textbf{Repeated views of one patch}\\
+    \small JIRAM polar campaigns motivate fixed-grid time stacks. Check the actual cadence and common valid area before treating them as motion data.
+    \column{0.48\textwidth}
+    \textbf{Individual mapped looks}\\
+    \small Much of the available sampling motivates a strip library. A later visit can exist without a usable short-baseline sequence.
   \end{columns}
 \end{frame}
 
 \begin{frame}{Regime 1: polar / repeat-view}
   \revsec{1}
   \begin{itemize}
-    \item Real time-series data: same patch, reimaged, known cadence
+    \item Repeated observations: verify unique exposures, positive cadence and common footprint; polar location alone is insufficient
     \item Natural product: a \textbf{region time stack} --- every overlapping frame, reprojected onto one fixed grid, laid along a time axis
     \item Ground truth exists: Ingersoll et al.\ (2022, \emph{Nature Astronomy}), 48 archived PJ4 frames $\to$ 4 published polar mosaics + wind vectors
     \item Built by: \texttt{region-stack}, \texttt{movie}, \texttt{export-goflow}
   \end{itemize}
 \end{frame}
 
-\begin{frame}{Regime 2: everywhere else}
+\begin{frame}{Regime 2: a library of mapped looks}
   \revsec{1}
-  \begin{itemize}
-    \item One look, no revisit, no time axis worth having
-    \item Natural product: a \textbf{library} --- each look reprojected onto its own small tangent-plane grid, queryable by latitude / epoch / illumination
-    \item No published ground truth; validated by internal consistency only
-    \item Built by: \texttt{strips}, \texttt{strip-stats}
+\begin{itemize}
+    \item Useful even when a local sequence does not support motion retrieval
+    \item Natural product: a \textbf{library} --- looks on local tangent-plane grids, queryable by latitude, epoch and illumination
+    \item Intensity structure can be compared across appropriately grouped observations; this does not require pretending they are a movie
+    \item JIRAM paths: \texttt{strips}, \texttt{strip-stats}; JunoCam has its own native image-to-strip adapter
   \end{itemize}
 \end{frame}
 
 \begin{frame}{The two regimes, side by side}
   \revsec{1}
-  \small
+\small
   \begin{tabular}{lll}
     \toprule
-     & \textbf{regime 1: polar} & \textbf{regime 2: everywhere else} \\
+     & \textbf{repeated views} & \textbf{mapped-look library} \\
     \midrule
     product & region time stack & strip library \\
-    grid & one per region & one per chunk \\
-    time axis & real, known cadence & none, one look \\
-    ground truth & Ingersoll et al.\ 2022 & internal consistency only \\
+    grid & fixed per region & fixed per strip \\
+    scientific question & change over a usable $\Delta t$ & spatial intensity structure \\
+    evidence needed & cadence, navigation, shared mask & masks, units, resolution, grouping \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}\par
   \vspace{0.4cm}
-
-  When a module's shape is confusing: ask ``is this regime 1 or regime 2?''
+  Published PJ4 JIRAM maps and vectors validate a particular campaign. They do not provide a mission-wide or JunoCam wind-accuracy guarantee.
 \end{frame}
 
 % =======================================================================
 \section{Three archive facts}
 % =======================================================================
 
-\begin{frame}{Three facts, undocumented, found the hard way}
+\begin{frame}{Three JIRAM facts, found the hard way}
   \revsec{2}
   \begin{enumerate}
     \item Archive labels lose all geometry after orbit 38
@@ -171,7 +184,7 @@
     ``label geometry is ABSENT for orbits $\geq$ 39 ... and for most 256-line dual-band products ... 64{,}139/85{,}108 frames have no label centre.'' \\
     \hfill---\texttt{docs/build\_log\_2026-09-04.md}, step 3d/3e
   \end{quote}
-  75\% of the archive has no usable label geometry at all.
+  75\% of that JIRAM census has no usable label geometry at all.
 \end{frame}
 
 \begin{frame}{Fact 1: what it forced}
@@ -185,7 +198,7 @@
 
 \begin{frame}{Fact 2: little-endian, despite every label}
   \revsec{2.2}
-  Every label declares \texttt{IEEE754MSBSingle} / \texttt{IEEE\_REAL} --- big-endian, unambiguously.
+  The JIRAM labels declare \texttt{IEEE754MSBSingle} / \texttt{IEEE\_REAL} --- big-endian, unambiguously.
   \vspace{0.2cm}
   \begin{columns}
     \column{0.5\textwidth}
@@ -202,8 +215,8 @@
 \begin{frame}{Fact 2: what it forced}
   \revsec{2.2}
   \begin{itemize}
-    \item Every raw-pixel read hard-codes \texttt{'<f4'} --- never the label's declared type
-    \item Now a project-wide rule (\texttt{AGENTS.md}), not a one-off patch
+    \item JIRAM RDR raw-pixel reads use \texttt{'<f4'} --- the empirically verified type
+    \item This rule is instrument-specific: JunoCam RDR uses \texttt{>u2}; EDR uses unsigned 8-bit counts (section 4.18)
     \item The original crawl-index spec still says ``big-endian'' --- explicitly superseded, left as historical record
   \end{itemize}
   \vspace{0.3cm}
@@ -212,11 +225,11 @@
 
 \begin{frame}{Fact 3: frame 1 never arrives}
   \revsec{2.3}
-  \begin{quote}\small
+  \begin{quote}\small\raggedright
     ``sequence\_number is 1-based and frame 1 is never delivered (\texttt{seq\_n = sequence\_samples-1} always).'' \\
     \hfill---\texttt{docs/build\_log\_2026-09-04.md}, ``Facts'' after step 3d
   \end{quote}
-  Total, exact, unexplained --- every sequence in the archive is missing its first frame.
+  Exact in the reconstructed JIRAM census: delivered sequences omit their first commanded frame. JunoCam has a different image/framelet identity model.
 \end{frame}
 
 \begin{frame}[fragile]{Fact 3: what it forced}
@@ -227,7 +240,7 @@ new sequence starts when:
     gap since previous frame > 45 s     # one spin ~30.5 s
  or sequence_number fails to increase
 \end{lstlisting}
-  Every later grouping (strip chunking, trackability pairing) trusts this reconstruction, not the label's own claimed count.
+  Later JIRAM grouping (strip chunking, trackability pairing) trusts this reconstruction. Do not apply its 45-second rule to JunoCam framelets.
 \end{frame}
 
 % =======================================================================
@@ -246,7 +259,7 @@ new sequence starts when:
     \item \texttt{regions.py} $\to$ \texttt{stacks.py} / \texttt{strips.py} --- the two regimes
     \item \texttt{movie.py}, \texttt{export\_goflow.py}, \texttt{stats2d.py}, \texttt{trackability.py} --- exports and analysis
     \item \texttt{tracking.py} --- the standing acceptance test, not a pipeline stage
-    \item \texttt{api/} + \texttt{frontend/} --- a view over everything above; computes nothing new
+    \item \texttt{api/} + \texttt{frontend/} --- browsing and orchestration; \texttt{science.py} supplies analysis preparation and \texttt{api/science.py} the research endpoints
   \end{enumerate}
 \end{frame}
 
@@ -254,7 +267,7 @@ new sequence starts when:
   \revsec{3.2}
   \begin{center}
 \begin{lstlisting}[basicstyle=\ttfamily\tiny,frame=none]
-PDS4 archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
+JIRAM PDS archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
       --(labels.py, index.py)--> frames.parquet (+ sequences)
       --(geometry.py, geo.py)--> frames_geo.parquet
       |
@@ -263,8 +276,24 @@ PDS4 archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
       +-- regime 2: unit_rows -> chunk_table -> build_strip -> strip .nc
       |        -> stats2d.strip_statistics -> stats NetCDF
       |
-      +-- GUI: reads every product above; writes only gui_cache/
+      +-- GUI: browse + science API -> gui_cache/research/, exports/
 \end{lstlisting}
+  \end{center}
+\end{frame}
+
+% Refresh through 1e2723d.
+\begin{frame}{A second adapter, shared scientific contracts}
+  \revsec{3.2}
+\begin{center}
+  \begin{tikzpicture}[node distance=0.38cm, every node/.style={font=\small},
+    box/.style={draw=jirblue,rounded corners,fill=jirblue!4,text width=10.8cm,align=center,minimum height=.60cm}]
+    \node[box] (a) {JunoCam volumes $\to$ manifest / images index / measured quality};
+    \node[box,below=of a] (b) {Unsigned framelets + band camera + per-frame geometry + limb fit};
+    \node[box,below=of b] (c) {Per-band reprojection $\to$ native strips and region stacks};
+    \node[box,below=of c] (d) {Policy-aware loaders $\to$ explicit band, units, mask, grid and time};
+    \node[box,below=of d] (e) {Compare / population statistics / readiness / exports};
+    \foreach \a/\b in {a/b,b/c,c/d,d/e} \draw[-{Stealth},jirblue] (\a)--(\b);
+  \end{tikzpicture}
   \end{center}
 \end{frame}
 
@@ -284,7 +313,30 @@ PDS4 archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
     strip statistics & \texttt{strips/stats/} or \texttt{gui\_cache/stats\_<id>.nc} \\
     GUI cache/exports & \texttt{gui\_cache/}, \texttt{gui\_cache/exports/} \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}\par
+\end{frame}
+
+% Refresh through 1e2723d.
+\begin{frame}{JunoCam and research paths stay separate}
+  \revsec{3.3}
+\small All paths below are relative to the mirror root.
+  \vspace{0.2cm}
+  \begin{tabular}{ll}
+    \toprule
+    product family & location \\
+    \midrule
+    archive manifest / every-version manifest & \texttt{junocam/manifest/} \\
+    image, geometry and quality indexes & \texttt{junocam/index/} \\
+    geometry and limb-fit cache & \texttt{junocam/geometry\_cache/} \\
+    native region stacks & \texttt{regions/<region>/junocam\_*.nc} \\
+    native strip products & \texttt{strips/junocam/orbitNN/} \\
+    bounded PDS reference audit & \texttt{junocam/calibration\_review/} \\
+    new research caches and movies & \texttt{gui\_cache/research/} \\
+    browser velocity-model exports & \texttt{gui\_cache/exports/} \\
+    \bottomrule
+  \end{tabular}\par
+  \vspace{0.3cm}
+  Source files are preserved. Export destinations include the selected sources and settings; a changed policy cannot reuse stale realizations as a new result.
 \end{frame}
 
 % =======================================================================
@@ -296,7 +348,7 @@ PDS4 archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
   For every module: purpose, key data structures, the algorithm, what a modifier must know, the validation gate, and the scars.
   \vspace{0.3cm}
 
-  17 modules, grouped by what they do:
+  19 teaching sections; the original JIRAM deep dives retain their numbers:
   \begin{itemize}
     \item archive mirror \& index (4.1--4.3)
     \item geometry \& kernels (4.4--4.6)
@@ -304,6 +356,7 @@ PDS4 archive --(pds.py, mirror.py)--> mirrored .LBL/.IMG
     \item the two regimes (4.10--4.11, 4.13)
     \item validation \& analysis (4.12, 4.14--4.15)
     \item the GUI, config (4.16--4.17)
+    \item JunoCam adapter and shared scientific workflow (4.18--4.19)
   \end{itemize}
 \end{frame}
 
@@ -367,7 +420,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   \revsec{4.4}
   \begin{itemize}
     \item Juno spins at 12~deg/s: a 0.1~s epoch error moves the boresight $>1$~deg
-    \item Epoch is always the label's \texttt{START\_TIME} exactly --- never mid-exposure (tested: off by \emph{tens of degrees})
+    \item For this JIRAM geometry model, use the label's \texttt{START\_TIME}; the tested mid-exposure alternative was off by \emph{tens of degrees}
     \item Engine is deliberately \textbf{mirror-blind}: models bus attitude only, not JIRAM's despinning mirror
   \end{itemize}
   \vspace{0.2cm}
@@ -381,7 +434,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     \item Operational server first, PDS SPICE archive as fallback (renames SPKs: \texttt{spk\_rec\_*} $\leftrightarrow$ \texttt{juno\_rec\_*})
     \item \texttt{naif.jpl.nasa.gov} fails system-CA TLS; every fetch pinned to the \texttt{certifi} bundle
   \end{itemize}
-  \textbf{Scar:} 6 CK gaps $>$7 days found archive-wide; orbits 38/55/70 fail geometry from short gaps \emph{not} among those six --- still unidentified.
+  \textbf{Open kernel coverage:} the earlier six long CK gaps did not explain every failure. Orbits 38/55 lack attitude coverage; orbit 70 lacks trajectory coverage. The missing intervals remain unresolved.
 \end{frame}
 
 \begin{frame}{\texttt{geo.py}: augmenting every frame}
@@ -435,7 +488,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     stereographic & 0.828 & 1.00178 & 15.069 \\
     \textbf{orthographic (ellipsoid)} & \textbf{0.339} & \textbf{1.00010} & \textbf{15.005} \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}\par
   \vspace{0.3cm}
 
   Every JIRAM paper checked calls the polar maps ``stereographic.'' The fit says otherwise, decisively: the map \emph{is} the body-fixed equatorial plane, orthographically projected --- no trig at all once you have the 3-D point.
@@ -487,7 +540,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     \item Output array allocated \textbf{once}, at the tight window's size --- never at the full region canvas (a \texttt{north\_pole} region is 3600$\times$3600)
     \item \texttt{spawn} workers each return only their own frame's footprint box, not the shared window
   \end{itemize}
-  Orbit-4 frame stack: 294 steps, 2.25~GB. Sequence composite: 25 steps, more valid coverage than any one frame.
+  Initial JIRAM PJ4 measurement: 294 frame steps, 2.25~GB. Sequence composite: 25 steps, more valid coverage than any one frame.
 \end{frame}
 
 \begin{frame}{\texttt{movie.py} + \texttt{export\_goflow.py}}
@@ -520,7 +573,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     direct & 0.0\% & 0.0\% \\
     reversed & 96.4\% & 91.4\% \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}\par
   \vspace{0.3cm}
 
   \texttt{row = NL - 1 - (line - 1)} --- settled unambiguously by footprint overlap. \\
@@ -537,7 +590,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     A: paper maps vs.\ TRACKER4 & 516{,}517 & 0.224 & 83.4\% \\
     B: our reprojections vs.\ TRACKER4 & 515{,}377 & 0.434 & 80.1\% \\
     \bottomrule
-  \end{tabular}
+  \end{tabular}\par
   \vspace{0.3cm}
 
   The A$\to$B gap ($\sim$0.2~px) is the honest cost of the full geometry+reprojection chain, on top of the tracker's own noise floor.
@@ -562,7 +615,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   \begin{block}{Why quantise at all}
     Two strips of the same class compare spectrum-to-spectrum, structure-function-to-structure-function, \textbf{with no resampling} --- resampling would contaminate exactly the small-scale statistics being measured.
   \end{block}
-  Result on the mirror: 289 strips, orbits 4+24, both bands, 392~MB.
+  Initial JIRAM result: 289 strips, orbits 4+24, both bands, 392~MB. This is a historical build measurement, not the current mixed-instrument count.
 \end{frame}
 
 \begin{frame}{\texttt{stats2d.py}: the recipe}
@@ -617,34 +670,82 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   \vspace{0.3cm}
   A sequence hours away could \emph{coincidentally} land closer to 5~px than the true nearest repeat and win. ``Smallest usable $dt$'' has no such failure mode.
   \vspace{0.2cm}
-  Totals: 29{,}862 unit frames, 16{,}541 with a partner, 7{,}493 trackable @ 30~m/s, 61 orbits.
+  Initial JIRAM totals: 29{,}862 unit frames, 16{,}541 with a partner, 7{,}493 trackable at 30~m/s, 61 orbits. JunoCam trackability remains unassessed by this model.
 \end{frame}
 
-\begin{frame}{\texttt{api/} + \texttt{frontend/}: one store, typed arrays}
+\begin{frame}{Five views follow five scientific tasks}
   \revsec{4.16}
-  \begin{itemize}
-    \item One \texttt{zustand} store shared by Catalog, Poles, Strips --- so the tabs cannot disagree with each other
-    \item Computes \textbf{no science}: every number shown is something the command line already wrote or could write
-    \item Catalog (\texttt{/api/catalog/frames.arrow}, $\sim$47{,}600 rows) split client-side into typed arrays; a filter is one pass producing a \texttt{Uint32Array} of surviving indices
+\small
+  \begin{tabular}{lp{9.8cm}}
+    \toprule
+    \textbf{Explore} & Find observations; inspect identity, footprint, date and band. \\
+    \textbf{Time series} & Inspect a fixed-grid stack; check cadence and export readiness. \\
+    \textbf{Image library} & Inspect strips; request individual or population statistics. \\
+    \textbf{Compare} & Align the view, blink sources and inspect registration diagnostics. \\
+    \textbf{Coverage} & Distinguish archive-known, local, navigated and eligible products. \\
+    \bottomrule
+  \end{tabular}\par
+  \vspace{0.3cm}
+  One \texttt{zustand} store and typed Arrow arrays connect the views. Legacy internal identifiers \texttt{catalog/poles/strips} remain for compatibility; the labels now describe tasks.
+\end{frame}
+
+\begin{frame}{Leave room for the image, then reveal detail}
+  \revsec{4.16}
+\begin{itemize}
+    \item Explore starts with \textbf{coverage density}; swath outlines, coordinate conventions and selected footprints can be inspected explicitly
+    \item A collapsible selection tray and metadata panels protect image area; controls wrap and statistics panels keep a usable minimum height
+    \item Grayscale PNG stores value in R and validity in alpha; local colour-map lookup changes appearance without a new scientific calculation
+    \item Orthographic navigation uses a scalar zoom, preserving aspect ratio; RGB uses a separate composite path
   \end{itemize}
 \end{frame}
 
-\begin{frame}{\texttt{api/} + \texttt{frontend/}: colour maps that cannot fail to arrive}
+\begin{frame}{A selection should say what the next action means}
   \revsec{4.16}
-  \begin{itemize}
-    \item Server sends grayscale PNG, value in R, validity in alpha; browser maps it through a 256-entry lookup table (5 colour maps) --- changing it is a redraw of pixels already in memory
-    \item \texttt{OrthographicView}: zoom is a \emph{scalar}, so aspect ratio is locked by construction, not by convention
-    \item Catalog points drawn as a \texttt{ScatterplotLayer}, never rasterised --- hover is real GPU picking over $\sim$47{,}600 points
+\begin{itemize}
+    \item Stable product/half keys survive reordering; metadata shows version identity and quality reasons
+    \item ``Browse images from these orbits'' transfers an \emph{orbit filter}, not an exact claim that the listed strips contain every selected exposure
+    \item Stack builds, movie renders and exports are jobs with visible progress; polling remains available during long work
+    \item Coverage keeps excluded and unassessed JunoCam entries metadata-only, including direct thumbnail access
+  \end{itemize}
+  \begin{block}{Interaction is part of scientific provenance}
+    The currently named source and settings must describe the pixels actually on screen.
+  \end{block}
+\end{frame}
+
+% Refresh through 1e2723d.
+\begin{frame}{A late response must not relabel old pixels}
+  \revsec{4.16}
+Suppose RED finishes loading after the user has already selected GREEN.
+  \vspace{0.3cm}
+  \begin{enumerate}
+    \item Identify a request by source, frame, band/RGB, normalization, stretch, size and every other setting carried on the image request
+    \item Clear previously displayed pixels while a new uncached request is pending; otherwise the new label describes the old image
+    \item Accept completion only if its full request identity is still current
+  \end{enumerate}
+  \vspace{0.2cm}
+  An out-of-order regression checks the race. A browser assertion must wait for actual visible pixels, not merely a changed control or an empty canvas.
+\end{frame}
+
+\begin{frame}{Responsive browsing does not change the estimator}
+  \revsec{4.16}
+\begin{itemize}
+    \item Statistics start on request. A 6000$\times$6000 native JunoCam strip can take several minutes; the interface says so while it is pending
+    \item Preview metadata slices \emph{before} loading array values; graticules and local-time contours use a bounded grid
+    \item Display ranges share reads across normalization choices. Source signatures invalidate caches when inputs or policy change
+    \item Native scientific normalization, FFTs and structure functions retain native pixels; no faster estimator was silently substituted
   \end{itemize}
 \end{frame}
 
-\begin{frame}{\texttt{api/} + \texttt{frontend/}: the selection tray \& jobs}
+\begin{frame}{The NetCDF lock protects correctness, with a cost}
   \revsec{4.16}
-  \begin{itemize}
-    \item Selection tray: a \texttt{Set} of \texttt{product\_id|half} keys, not row indices --- survives a catalog that grows; feeds ``Build stack…'' and ``Show in Strips''
-    \item Long jobs (movie render, stack build, goflow export) run on a two-worker thread pool, polled from \texttt{/api/jobs} every 2~s
-    \item Two gates: \texttt{test\_gate\_api.py} against the backend directly, \texttt{test\_gate\_frontend.py} running Playwright end to end against a live server
+\begin{itemize}
+    \item Concurrent NetCDF reads caused a real process crash. A shared lock now spans complete image, coverage and science routes and relevant jobs
+    \item An image request can queue behind requested native statistics; serialization does not make every operation instantly responsive
+    \item Health, job status, configuration and Arrow catalog reads remain outside that lock
+    \item Single-flight table caches avoid duplicate cold loads; Arrow uses an explicit bounded pool instead of inheriting a pathological one-thread setting
   \end{itemize}
+  \vspace{0.2cm}
+  Concurrency checks therefore verify both protected access and the independent status paths.
 \end{frame}
 
 \begin{frame}{\texttt{config.py} + the subcommand pattern}
@@ -653,6 +754,252 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     \item Precedence: explicit arg $>$ env var $>$ TOML file $>$ built-in default --- resolved \emph{at call time}, never cached at import
     \item \texttt{add\_subparser(subparsers)} / \texttt{run(args)}: a module owns its own CLI surface; \texttt{cli.py} wires it in afterward
     \item Enforces a project rule: executors never edit \texttt{cli.py}, \texttt{pyproject.toml}, \texttt{uv.lock} directly --- exactly where concurrent milestones would collide
+  \end{itemize}
+\end{frame}
+
+% Refresh: new review section 4.18.
+\begin{frame}{JunoCam: identify the observation before counting it}
+  \revsec{4.18}
+\begin{itemize}
+    \item \texttt{junocam/pds.py} discovers published volumes and builds an archive manifest; downloaded labels and images populate a separate local index
+    \item A later \texttt{\_V02} release can supersede \texttt{\_V01}. They represent one observation, even if corrected label times differ by milliseconds
+    \item Defaults select the \textbf{latest known version}, then require eligibility. They do not silently fall back to a clean older release
+    \item An eligible older version can be inspected explicitly; derived products retain their stored source-version provenance
+  \end{itemize}
+  Archive discovery, local availability and scientific eligibility are three different counts.
+\end{frame}
+
+\begin{frame}{JunoCam: an image is a sequence of band framelets}
+  \revsec{4.18}
+\begin{block}{\texttt{junocam/images.py}: natural array shape}
+    $(n_{\rm frames},\ n_{\rm bands},\ 128,\ 1648)$; bands cycle inside each frame in the label's \texttt{FILTER\_NAME} order.
+  \end{block}
+  \begin{itemize}
+    \item RDR: unsigned big-endian 16-bit values (\texttt{>u2}), already linearized DN
+    \item EDR: unsigned 8-bit companded counts; the SIS \texttt{SQROOT} lookup restores the linear count scale
+    \item The table is not a fitted square-root formula: code 23 maps to 23, code 255 maps to 2879
+    \item Shape and sample count are checked; summed products on a different detector grid are rejected
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{JunoCam: the camera is a band-dependent geometry}
+  \revsec{4.18}
+\begin{itemize}
+    \item \texttt{camera.py} reads focal length, distortion centre and radial distortion from the instrument kernel
+    \item Array indices refer to pixel centres; the kernel's framelet coordinates start at a corner. The $+0.5$ conversion is deliberate
+    \item Different filters occupy different focal-plane strips. One ground feature crosses them in different frames as Juno spins
+    \item Reprojection can bring those observations together only with the correct camera \emph{and} frame timing; a colour fringe is a diagnostic, not just a display defect
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{JunoCam: use an epoch for each frame}
+  \revsec{4.18}
+\small
+  \[
+    t_i = t_{\rm start}+b_{\rm start}
+          + i\bigl(\Delta t_{\rm label}+\delta t_{\rm IK}\bigr)
+          + \delta t_{\rm fitted} .
+  \]
+  \normalsize
+  \begin{itemize}
+    \item Commanded bands share a readout epoch within one frame; the next frame gets a new attitude and observer geometry
+    \item \texttt{geometry.py} stores per-frame transformations for the inverse camera path
+    \item \texttt{limb.py} fits one start-time offset per image against the predicted ellipsoid limb; it cannot absorb arbitrary frame-to-frame jitter or a wrong timing rate
+  \end{itemize}
+  At Juno's spin rate, millisecond timing errors can produce visible subpixel shifts.
+\end{frame}
+
+\begin{frame}{JunoCam: a limb fit is evidence with limits}
+  \revsec{4.18}
+\begin{enumerate}
+    \item Interpolate the predicted ray/ellipsoid discriminant through zero: a smooth boundary avoids whole-row quantization
+    \item Detect the observed edge, fit an offset, then detect and fit again; compare before/after residuals on the same final point set
+    \item Inspect entering and leaving limbs separately. Haze above the reference ellipsoid can shift an apparent limb without a pointing error
+  \end{enumerate}
+  \vspace{0.2cm}
+  The PJ4 assessment records limb-height and interframe-rate residuals. It retains the kernel timing rate; a low fitted residual does not establish independent navigation accuracy.
+\end{frame}
+
+\begin{frame}{JunoCam: reproject each band and preserve its support}
+  \revsec{4.18}
+\begin{itemize}
+    \item \texttt{reproject.py} walks output cells through each frame's stored inverse transform, then bilinearly samples the appropriate filter strip
+    \item Facing-surface, detector bounds and photoactive-column tests restrict valid contributions
+    \item Per-band sums and hit counts produce a mean where observed and NaN where there is no support
+    \item \texttt{stacks.py} and \texttt{strips.py} write fixed-grid products; masks, bands and source identities travel with the pixels
+  \end{itemize}
+  A displayed RGB composite is assembled from those physical bands; it is not a fifth measured channel.
+\end{frame}
+
+\begin{frame}{JunoCam: quality is an access decision with evidence}
+  \revsec{4.18}
+\small
+  \begin{tabular}{lp{10cm}}
+    \toprule
+    \textbf{Excluded} & Documented affected images/intervals, measured signal failures or failed geometry; pixels withheld. \\
+    \textbf{Unassessed} & Incomplete metrics or no affirmative unaffected-image evidence; pixels withheld. \\
+    \textbf{Eligible} & Complete clean metrics and supported evidence under the versioned policy; navigation status remains explicit. \\
+    \bottomrule
+  \end{tabular}\par
+  \vspace{0.3cm}
+  \texttt{failure-exclusion-v1} keeps instrument, signal and navigation reasons distinct. A legacy A/B/C grade or ``post-anneal'' epoch does not establish recovery.
+  \vspace{0.2cm}
+
+  Loaders enforce this for images and derived analysis/export access. No browser override reveals withheld pixels.
+\end{frame}
+
+\begin{frame}{JunoCam: what the current eligible sample supports}
+  \revsec{4.18}
+\begin{itemize}
+    \item At \texttt{1e2723d}: \textbf{72 preferred eligible PJ4 observations} in the current mirror
+    \item Compared with the earlier 93 mapped observations, 21 methane observations are additionally withheld by existing bloom flags; no RGB observation is removed by this additional cut
+    \item The bloom metric is conservative signal evidence, not proof of a documented hardware event in every flagged image
+    \item The polar stack contains \textbf{three unique observations}; gaps are about 577 and 243 seconds, outside a 5\% constant-cadence tolerance
+  \end{itemize}
+  Viewing those three maps is useful. Calling them an export-ready regular three-frame sequence would be incorrect.
+\end{frame}
+
+\begin{frame}{PDS ``calibrated'' is a derived reference here}
+  \revsec{4.18}
+\begin{itemize}
+    \item The ML collection preprocesses, flattens, reprojects and mosaics native inputs before generating Hubble-equivalent channels
+    \item Its five channels include predicted UV and methane values; these are not five simultaneous native measurements
+    \item Useful role: broad morphology and method comparison. Native motion, intensity spectra and cross-instrument radiometry require separate validation
+    \item A plausible generated image does not establish repair of an instrument failure or make its damaged input eligible
+  \end{itemize}
+  Coverage links to the collection as a reference. No automatic native import or repaired-data certification is enabled.
+\end{frame}
+
+\begin{frame}{PDS reference: what the bounded audit actually measured}
+  \revsec{4.18}
+\small
+  \begin{itemize}
+    \item Inventory: 37{,}386 tile identifiers across PJ13--36; overlapping tiles are not that many independent exposures
+    \item Three sampled PJ13 TIFFs: $256\times256\times5$, float32, 62.5~km grid spacing, LAEA with planetographic latitude
+    \item All three labels have nil observation times. The sampled mosaic spans about 130 minutes; no per-pixel timing was established
+    \item Actual FITS rows already contain values below 1; a guide's extra division by 255 would mis-scale them. Zeros and the labelled invalid sentinel require mask reconciliation
+  \end{itemize}
+  \vspace{0.1cm}
+  \texttt{docs/reports/junocam\_calibrated\_assessment\_2026-09-07.md} records sources, hashes and limits. Three tiles plus headers/rows cannot certify the entire collection.
+\end{frame}
+
+% Refresh: new review section 4.19.
+\begin{frame}{Choose the physical quantity before its colour scale}
+  \revsec{4.19}
+\begin{itemize}
+    \item \texttt{science.py} selects one physical band, validates the grid, prepares native arrays and records provenance
+    \item JIRAM measures spectral radiance; native JunoCam products here carry DN. An illumination transform does not turn DN into calibrated I/F
+    \item RGB is accepted for viewing. Statistics, motion-model exports and physical-band movies require an actual available channel
+    \item Brightness stretch maps values to display levels; scientific normalization changes the field whose statistics are calculated
+  \end{itemize}
+  A plot labelled by instrument, band, units and normalization names a reproducible quantity.
+\end{frame}
+
+\begin{frame}{Illumination correction has a domain of validity}
+  \revsec{4.18}
+For reflected light, write $\mu_0=\cos i$ and $\mu=\cos e$.
+  \[
+    I_{\rm Lambert}=I/\mu_0, \qquad
+    I_{\rm Minnaert}=I/(\mu_0^k\,\mu^{k-1}).
+  \]
+  \begin{itemize}
+    \item Incidence is required; Minnaert also requires emission. JunoCam masks incidence $\geq88^\circ$; cosine floors guard division near the limb/terminator
+    \item These models reduce illumination trends; they do not establish absolute radiometry or preserve every spatial statistic
+    \item JIRAM thermal radiance retains nightside emission. Reflected-light Lambert/Minnaert requests are rejected for it
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The same smoothing number can mean a different scale}
+  \revsec{4.18}
+\texttt{flat:sigma} divides by a Gaussian low-pass background and normalizes the result. Sigma is expressed in \emph{the array's pixels}.
+  \vspace{0.3cm}
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \textbf{Image preview}\\
+    \small Operates after serving stride; sigma is in preview pixels. It is a viewing aid.
+    \column{0.48\textwidth}
+    \textbf{Analysis and export}\\
+    \small Operates on native pixels before scientific calculations; the recipe records this choice.
+  \end{columns}
+  \vspace{0.4cm}
+  If a preview keeps every fourth pixel, sigma 10 spans four times the physical distance of native sigma 10. Compare normalization groups using their recorded physical context.
+\end{frame}
+
+\begin{frame}{Readiness checks a sequence, not a wind result}
+  \revsec{4.19}
+\begin{enumerate}
+    \item Deduplicate source versions; select a physical band and validate pixel scale and any supplied regular, square grid coordinates
+    \item Require unique observations with strictly positive time gaps
+    \item Find runs of at least three frames whose gaps satisfy the cadence tolerance
+    \item Apply the selected normalization and require pixels valid in \emph{every} frame of a run
+  \end{enumerate}
+  \vspace{0.2cm}
+  Report observation count, gaps, cadence runs and explicit failure reasons. A cadence run can contain several sliding triples; its count is not the number of all triples.
+\end{frame}
+
+\begin{frame}{An export carries the recipe that made its arrays}
+  \revsec{4.19}
+\begin{itemize}
+    \item Record source versions, timestamps, physical band, units, grid, masks, normalization, policy and software revision, plus available kernel provenance
+    \item Native preparation precedes the existing velocity-model layout; invalid samples remain zero-encoded according to that layout
+    \item Source files are preserved; output identities include filtered sources and settings, and an explicitly named destination must be empty
+    \item A ready export establishes layout and cadence compatibility. It does not validate navigation, learned-model behavior or resulting wind accuracy
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Compare: shared coordinates before a numerical shift}
+  \revsec{4.19}
+\begin{itemize}
+    \item Linked pan/zoom, split/blink, shared stretch and common-mask overlay make discrepancies visible
+    \item Registration requires equivalent projection and physical coordinates. Incompatible grids return a reason, not an implicit reprojection
+    \item Masked NCC searches bounded displacements on an at-most-512-pixel sampled grid; means and variances use the shifted mask intersection
+    \item Normalization still reads native arrays \emph{before} sampling. A bounded FFT does not guarantee bounded native I/O
+  \end{itemize}
+  Insufficient support, weak variance or a peak at the search boundary is reported explicitly.
+\end{frame}
+
+\begin{frame}{Compare: what the displacement and uncertainty mean}
+  \revsec{4.19}
+Positive $(\Delta y,\Delta x)$ describes pattern displacement from the \emph{left image to the right image}, in native map pixels. Sampling stride and sampled km/pixel accompany it.
+  \[
+    d_{\rm expected}=\frac{U|\Delta t|}{p},\qquad
+    \sigma_U=\frac{\sqrt{2}\,\sigma_{\rm nav,px}\,p}{|\Delta t|}
+  \]
+  \small Here $p$ is native metres/pixel. The uncertainty expression assumes independent, user-supplied per-image navigation errors; absent input stays unknown.
+  \vspace{0.2cm}
+  \normalsize Registration measures a pattern shift, not a validated wind field. Cross-band morphology and scene evolution can displace the correlation peak.
+\end{frame}
+
+\begin{frame}{Population spectra: count independent passes}
+  \revsec{4.19}
+\begin{enumerate}
+    \item Group by instrument, physical band, units, native resolution class and normalization
+    \item Count shared source observations once; conservatively exclude a strip that partly duplicates an already represented source set
+    \item Average strips within each pass, then give each independent pass equal weight
+    \item Estimate standard error from those pass means; with only one pass it is unknown, not zero
+  \end{enumerate}
+  \vspace{0.2cm}
+  This prevents overlapping strips or processing versions from manufacturing a larger effective sample size.
+\end{frame}
+
+\begin{frame}{A slope fit should travel with its mask and fit range}
+  \revsec{4.19}
+\begin{itemize}
+    \item Inspect valid fraction, connected components, boundary fraction, dynamic range and row discontinuity before interpreting a spectrum
+    \item Fit only positive finite bins over an explicit $k$ range; the default stays inside the Nyquist disc
+    \item Pixel spacing and Nyquist wavelength are known; effective resolution remains unassessed without a transfer-function measurement
+    \item Export numeric values and a JSON recipe alongside SVG/PNG figures; compare normalization sensitivity as distinct groups
+  \end{itemize}
+  These are \textbf{intensity-variance spectra}, not kinetic-energy spectra. Scalar mask compensation cannot undo spectral leakage.
+\end{frame}
+
+\begin{frame}{Matches and vectors require different kinds of evidence}
+  \revsec{4.19}
+\begin{itemize}
+    \item Cross-instrument matches use time proximity and seam-aware spherical footprint boxes: approximate candidates, not exact pixel overlap or common cloud height
+    \item A vector overlay requires explicit source stack, time, projection, \texttt{map\_xy} basis, kilometre coordinates and m/s units in an existing product
+    \item The current mirror lacks a generic vector product with that exact association; the normal result is unavailable with a reason
+    \item Published PJ4 TP4 vectors remain in the established validation path. They are not silently attached to an arbitrary displayed stack
   \end{itemize}
 \end{frame}
 
@@ -725,19 +1072,21 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     \column{0.5\textwidth}
     \textbf{Gates}\\
     \small \texttt{test\_gate\_*.py}\\
-    need the real mirror + paper data\\
-    check against \emph{published} ground truth
+    physical gates: real mirror / paper data\\
+    contract gates: known synthetic answers\\
+    browser gates: complete live interactions
   \end{columns}
   \vspace{0.3cm}
   \textbf{Gates are read-only to every executor, always.} Passing a gate by editing it is task failure --- stated in three separate project documents.
 \end{frame}
 
-\begin{frame}{Where gate ground truth comes from}
+\begin{frame}{Where acceptance evidence comes from}
   \revsec{5}
   \begin{enumerate}
     \item The 48-frame PJ4 fixture --- numbers a peer-reviewed paper actually published
     \item The published maps and TRACKER4 tables themselves, read directly with \texttt{vicar.py}
     \item A \emph{fresh}, independent SPICE oracle call --- the only kind that can catch a bug in the \emph{vectorisation itself}
+    \item Known synthetic shifts, masks, spectra and cadence --- explicit answers for the new workflow contracts; these complement physical validation
   \end{enumerate}
 \end{frame}
 
@@ -769,6 +1118,20 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   \vspace{0.2cm}
 
   Both wrong-gate stories: the \emph{code} was never the bug --- the gate's own definition was measuring the wrong thing.
+\end{frame}
+
+% Refresh through 1e2723d.
+\begin{frame}{Validation snapshot: know what each green check proves}
+  \revsec{5}
+\small At \texttt{1e2723d}, recorded on 7 September 2026:
+  \begin{itemize}
+    \item 339 offline Python tests passed (49 skipped); 135 frontend unit tests passed
+    \item Eight focused live API/policy/science gate checks passed; the full production-bundle browser gate passed
+    \item New known answers cover shifts, masks, power laws, cadence, grouping, uncertainty, policy enforcement and out-of-order image responses
+    \item The preserved older JunoCam gate has two passes and one count conflict: it expects at least 100 products; current policy admits 72 unique preferred observations
+  \end{itemize}
+  \vspace{0.2cm}
+  The count conflict is reported, not hidden by duplicate versions or weaker exclusions. These checks do not establish archive-wide radiometric or wind accuracy.
 \end{frame}
 
 % =======================================================================
@@ -826,6 +1189,18 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     \item A gate is only as good as its own definition of ground truth --- distrust a failing gate's assumptions, not just the code under it
     \item Genuine-oracle numerical work (a published number, an independent SPICE call, a known synthetic answer) is exactly where dispatch-then-verify-hard catches real errors --- \emph{in both directions}
   \end{enumerate}
+\end{frame}
+
+% Refresh through 1e2723d.
+\begin{frame}{The browser revision exposed scientific bugs too}
+  \revsec{6}
+\begin{itemize}
+    \item An apparently harmless version suffix doubled observations and could fabricate cadence; identity belongs in source loaders and exports
+    \item A band selector could advance before the pixels arrived; the fix required full request identity and immediate clearing, not a new label
+    \item Concurrent NetCDF operations crashed the process; route/job serialization restored correctness while leaving a visible queueing cost
+    \item A slow contour path loaded a full large field; bounded display reads improved usability without changing native statistics
+  \end{itemize}
+  The useful lesson is to test a scientific interaction through its complete source-to-pixel or source-to-export path.
 \end{frame}
 
 % =======================================================================
@@ -890,7 +1265,7 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     \item \textbf{SPICE}: NAIF's toolkit for spacecraft geometry from loaded \emph{kernels}
     \item \textbf{Kernel} (SPK/CK/FK/IK/SCLK/LSK/PCK): trajectory / attitude / frames / instrument / clock / leap-seconds / planetary-constants files
     \item \textbf{Furnsh / kernel pool}: SPICE state is global per process --- why every parallel worker here uses \texttt{spawn}, never \texttt{fork}
-    \item \textbf{Ephemeris time (ET)}: SPICE's internal continuous time scale; this project's epoch is always the label's \texttt{START\_TIME}, exactly
+    \item \textbf{Ephemeris time (ET)}: SPICE time scale. JIRAM uses label start time; JunoCam adds instrument timing terms per frame and any fitted offset
     \item \textbf{Sincpt} / \textbf{pxform}: surface-intercept and frame-rotation calls; \texttt{geometry.py} vectorises the same computation over a whole pixel grid
     \item \textbf{Light time / stellar aberration (``LT+S'')}: finite light speed, and the observer's own velocity bending apparent direction --- getting the \emph{inverse} applied consistently is section 4.4's central subtlety
   \end{itemize}
@@ -900,8 +1275,8 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   \revsec{8}
   \scriptsize
   \begin{itemize}
-    \item \textbf{Planetocentric} latitude: angle from the equatorial plane to the vector from the body's \emph{centre} --- what this project uses everywhere
-    \item \textbf{Planetographic} latitude: uses the local surface normal instead --- numerically different on an oblate body, never used here
+    \item \textbf{Planetocentric} latitude: angle from the equatorial plane to the vector from the body's \emph{centre} --- the convention of native repository grids
+    \item \textbf{Planetographic} latitude: uses the local surface normal instead --- different on an oblate body; the external ML-calibrated reference requires conversion
     \item \textbf{East-positive longitude, [0,360)}: this project's fixed convention, matching the archive's own labels
     \item \textbf{System III}: Jupiter's body-fixed rotating longitude system; \texttt{IAU\_JUPITER} \emph{is} System III for this project's purposes
     \item \textbf{Emission / incidence / phase angle}: angle to observer / to Sun / between the two, at the surface point
@@ -914,10 +1289,24 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
   \scriptsize
   \begin{itemize}
     \item \textbf{PDS3 / PDS4}: the archive's label syntax (PDS3 text) and bundle layout (PDS4 directories) --- not the same axis
-    \item \textbf{RDR / EDR}: calibrated vs.\ raw data record --- this project reads RDR exclusively
+    \item \textbf{RDR / EDR}: reduced / experimental data record. Processing level alone does not establish units: JIRAM RDR is radiance; native JunoCam remains DN
     \item \textbf{VICAR}: JPL's older self-contained image format --- used here only because the ground-truth maps and vector tables ship in it
     \item \textbf{NCC}: normalised cross-correlation, 1.0 for identical patches --- the tracker's match score \emph{and} the general ``does our reprojection match the paper'' figure of merit
     \item \textbf{\texttt{geo\_ok} / \texttt{on\_planet\_frac} / \texttt{bore\_*}}: SPICE succeeded at all / fraction of pixels on the ellipsoid / evaluated at the boresight specifically --- consistent naming across every table in this codebase
+  \end{itemize}
+\end{frame}
+
+% Refresh through 1e2723d.
+\begin{frame}{Glossary: the new scientific contracts}
+  \revsec{8}
+\small
+  \begin{itemize}
+    \item \textbf{Framelet}: one filter strip's 128-line readout; many framelets make one JunoCam archived image
+    \item \textbf{Observation identity}: the underlying exposure identity, independent of processing-version suffix
+    \item \textbf{Eligibility}: evidence-based access under the current policy; distinct from absolute radiometric calibration
+    \item \textbf{Readiness}: format, grid, cadence and mask compatibility for an operation; distinct from physical accuracy
+    \item \textbf{Normalization / stretch}: transformation of the analysed field / mapping to display brightness
+    \item \textbf{Independent pass}: the population uncertainty unit; overlapping strips are not independent replicates
   \end{itemize}
 \end{frame}
 
@@ -933,8 +1322,9 @@ d = (x, y, 1) / |(x, y, 1)|            # unit ray, band frame
     module-by-module facts & \texttt{docs/architecture.md}, \texttt{docs/decisions.md} \\
     schemas & \texttt{docs/data\_products.md} \\
     command reference & \texttt{docs/usage.md} \\
+    current browser/science use & \texttt{docs/research\_workflow.md} \\
     open questions & \texttt{docs/open\_items.md} \\
-  \end{tabular}
+  \end{tabular}\par
   \vspace{1cm}
 
   {\small\color{jirgray} This deck and its figures: \texttt{docs/pedagogy/}}

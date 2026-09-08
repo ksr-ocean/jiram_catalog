@@ -6,6 +6,9 @@ one line each; follow the links for the rest.
 
 ## Read first
 
+- [`../PEDAGOGICAL_REVIEW.md`](../PEDAGOGICAL_REVIEW.md) -- teaching tour of
+  JIRAM/JunoCam implementation, scientific workflows and validation, with
+  [companion slides](pedagogy/slides.pdf).
 - [`research_workflow.md`](research_workflow.md) -- current five-view workspace,
   JunoCam exclusion policy, capability matrix and scientific interpretation.
 - [`../README.md`](../README.md) -- what the tool is, quickstart,

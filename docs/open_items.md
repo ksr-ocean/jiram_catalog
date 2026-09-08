@@ -5,6 +5,53 @@ what would close it. See `docs/decisions.md` for the choices that *are*
 settled and `docs/agent_harness.md` for how a new milestone gets opened
 against one of these.
 
+## JunoCam formats and calibration beyond the September 8 RGB expansion
+
+The [expansion audits](reports/junocam_expansion_evidence_2026-09-08.md) found
+three concrete limits that remain outside the supported full-resolution RGB
+sample. Summed 816-column products need a sampling-aware detector model;
+methane labels can override detector distortion-Y (405.48 instead of the
+fixed 315.48 used by the current model); and PJ3's JIRAM orbit bucket does not
+identify the December JunoCam pass's navigation kernels. Each requires its own
+source/geometry gate before acquisition and clearance. NULL or absent archive
+timing is not zero, and some latest PJ3 products still use the old companding
+pipeline. Broad epoch eligibility would hide these distinctions.
+
+Native cross-pass brightness and spectral amplitude also need defensible
+response/illumination/compression controls. The published throughput fit lacks
+per-image uncertainties and is not automatically applied. Current maps support
+screened morphology and qualified relative-signal analysis; they do not
+establish invariant radiometry or a validated wind product.
+
+Cross-instrument candidate matching now uses the actual JIRAM corners and
+physical detector halves. PJ24 already has JIRAM strips in the selected
+encounter window; PJ5, 6, 8, 12, 18, 30 and 34 have local JIRAM native images
+and navigation metadata but need JIRAM strip products for the same library
+workflow. A returned time/bounding-box candidate does not certify common
+valid pixels, equal grids, illumination or cloud altitude.
+
+Expose limb-fit outcomes alongside available footprint geometry in future
+navigation/readiness controls. The new mapped sample has 103 successful fits
+and 23 refusals below the existing 200-point minimum, with nominal navigation
+retained for the latter. Their fitted offsets/residuals remain unknown. The
+[per-source navigation table](reports/junocam_expansion_navigation_2026-09-08.csv)
+and stack/run tables preserve those distinctions now; successful fitting still
+needs independent positional and motion validation.
+
+Same-ID geometry-fit and GUI statistics caches need source-aware invalidation
+before general reprocessing of existing products. This expansion uses new IDs
+and preserves previous products. CLI index writers must still be serialized;
+the new additive strip upsert is not a cross-process lock. Full survey geometry
+also allocates native arrays before subsampling, so worker counts must follow
+measured memory rather than the survey docstring's sampling description.
+
+Dense JunoCam construction repeats inverse projection for signal, emission
+and incidence in each band. The September 8 PJ5 pilot took 31.17 minutes for
+five strips with one worker. Sharing that calculation is a possible bounded
+performance improvement, but requires an independent equivalence gate for
+images, angle fields, masks and coordinates before changing the numerical
+path. This expansion keeps the existing mapper and measures its worker costs.
+
 ## SPICE geometry fails entirely for orbits 38 and 70, partially for 55
 
 `<mirror>/index/geo_report.md` and `frames_geo.parquet` show `geo_ok`
@@ -142,10 +189,6 @@ statistics, mask diagnostics, selected fit ranges, figure/recipe export,
 coverage discovery, JunoCam failure exclusion and vector-overlay support
 are available. Remaining data/validation limits:
 
-- The historical JunoCam product gate still requires at least 100 catalog
-  entries. The accepted policy and version deduplication now yield 72 eligible
-  observations; its count assertion is obsolete and was preserved unchanged.
-  New identity and failure-exclusion gates validate the replacement semantics.
 - Full-resolution statistics on 6000-square JunoCam strips can take minutes.
   They run only when requested. Native arrays and the numerical estimator are
   preserved; persistent preview products or process-isolated analysis workers
@@ -157,9 +200,11 @@ are available. Remaining data/validation limits:
   displayed stack, time and map basis. This mirror has none. Published TP4
   vectors have a dedicated validation reader; a reusable association/product
   writer would enable those overlays without guessing.
-- JunoCam's three independent local polar observations have irregular gaps.
-  More verified unaffected native observations are required for a regular
-  three-frame motion sequence. No interface change can manufacture cadence.
+- The September 8 expansion adds short JunoCam sequences with measured
+  cadence and common coverage, including PJ34 north. Their pointing and
+  cloud-motion accuracy still require validation; format readiness is not a
+  wind result. The historical PJ4 example retains its irregular gaps. See the
+  [measured expansion record](reports/junocam_expansion_2026-09-08.md).
 - The new analysis checks have synthetic validation, not archive-wide
   navigation/radiometric or wind validation. Population bicoherence and
   calibrated effective-resolution transfer functions remain future work.

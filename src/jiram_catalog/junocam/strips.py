@@ -370,20 +370,47 @@ def _strip_task(task: _Task) -> dict[str, Any]:
         "seconds": np.nan,
         "row": None,
     }
+    dataset: xr.Dataset | None = None
     try:
         kernels = _worker_kernels(task.mirror, task.orbit)
         dataset = build_strip(
             task.mirror, row, task.bands, kernels=kernels, refine=task.refine
         )
         path = junocam_strip_path(task.mirror, task.orbit, identifier)
+        fresh_row = index_row(dataset, path, task.mirror)
+        if path.exists():
+            try:
+                with xr.open_dataset(path, engine="netcdf4") as existing:
+                    previous_bands = _physical_bands(existing)
+            except Exception as exc:
+                raise ValueError(
+                    f"{identifier}: cannot validate existing band coordinate: {exc}"
+                ) from exc
+            if previous_bands != _physical_bands(dataset):
+                raise ValueError(
+                    f"{identifier}: existing product has a different band set; "
+                    "preserving its file"
+                )
         write_strip(dataset, path)
-        record["row"] = index_row(dataset, path, task.mirror)
+        record["row"] = fresh_row
         record["ok"] = True
-        dataset.close()
     except Exception as exc:  # noqa: BLE001 - one bad image must not end a run
         record["error"] = " ".join(f"{type(exc).__name__}: {exc}".split())[:400]
+    finally:
+        if dataset is not None:
+            dataset.close()
     record["seconds"] = time.perf_counter() - started
     return record
+
+
+def _physical_bands(dataset: xr.Dataset) -> set[str]:
+    """Validate the physical band coordinate before replacing a native file."""
+    if "band" not in dataset.coords or dataset["band"].dims != ("band",):
+        raise ValueError("missing or malformed physical band coordinate")
+    names = [str(name) for name in dataset["band"].values]
+    if not names or any(not name.strip() for name in names) or len(set(names)) != len(names):
+        raise ValueError("empty or duplicate physical band coordinate")
+    return set(names)
 
 
 def _results(tasks: Sequence[_Task], jobs: int) -> Iterator[dict[str, Any]]:
@@ -405,40 +432,38 @@ def _results(tasks: Sequence[_Task], jobs: int) -> Iterator[dict[str, Any]]:
 def update_index(
     mirror: str | Path | None, rows: Sequence[dict[str, Any]], orbits: Sequence[int]
 ) -> Path:
-    """Replace the JunoCam rows of the selected orbits, keeping every other row.
-
-    The replacement key is ``(orbit, instrument)`` rather than the JIRAM
-    ``(orbit, band)``: a JunoCam run owns every JunoCam row of the orbits it
-    was given and must not touch a JIRAM row of the same orbit.
-    """
+    """Upsert successful JunoCam strips, preserving omitted rows and every file."""
     root = mirror_root(mirror)
     path = strips_index_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
     selected = sorted({int(value) for value in orbits})
-    fresh = _coerce_index(pd.DataFrame(list(rows), columns=list(INDEX_COLUMNS)))
+    incoming = pd.DataFrame(list(rows), columns=list(INDEX_COLUMNS))
+    if incoming.empty and path.exists():
+        return path
+    if not incoming["instrument"].eq("JunoCam").all():
+        raise ValueError("strip upsert accepts only JunoCam rows")
+    identifiers = incoming["strip_id"]
+    if (
+        identifiers.isna().any()
+        or identifiers.astype(str).str.strip().eq("").any()
+        or identifiers.duplicated().any()
+    ):
+        raise ValueError("strip upsert requires unique, nonempty strip IDs")
+    if not pd.to_numeric(incoming["orbit"], errors="coerce").isin(selected).all():
+        raise ValueError("strip upsert row belongs to an orbit outside this run")
+    fresh = _coerce_index(incoming)
 
     kept = fresh
     if path.exists():
         existing = _coerce_index(pd.read_parquet(path))
-        replaced = existing["orbit"].isin(selected) & (
+        replaced = existing["strip_id"].isin(fresh["strip_id"]) & (
             existing["instrument"].astype(str) == "JunoCam"
         )
-        keep_ids = set(fresh["strip_id"].astype(str))
-        for relative in existing.loc[replaced, "path"].astype(str):
-            if Path(relative).stem not in keep_ids:
-                (root / relative).unlink(missing_ok=True)
         kept = pd.concat([existing.loc[~replaced], fresh], ignore_index=True)
-
-    written = set(fresh["path"].astype(str))
-    for orbit in selected:
-        directory = root / "strips" / "junocam" / f"orbit{orbit:02d}"
-        for candidate in directory.glob("*.nc"):
-            if str(candidate.relative_to(root)) not in written:
-                candidate.unlink(missing_ok=True)
 
     kept = kept.sort_values(
         ["instrument", "orbit", "band", "time_start", "strip_id"], kind="stable"
     ).reset_index(drop=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".parquet.tmp")
     kept.to_parquet(temporary, index=False)
     temporary.replace(path)

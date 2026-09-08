@@ -330,6 +330,29 @@ when images cannot be served. Units `DN`, measured radiance and generated
 HST-equivalent `I/F` are distinct products. The ML sample audit stays under
 `junocam/calibration_review/` and is not added to native observation tables.
 
+The September 8 multi-pass acquisition audit lives under
+`junocam/expansion_2026-09-08/`: exact selected IDs and archive hashes,
+small retrieved evidence, measured quality/geometry, operational logs and
+verified pre-expansion index backups. Its committed
+[selection table](reports/junocam_expansion_selection_2026-09-08.csv) contains
+337 screened candidates, of which 194 were selected for acquisition. Native
+images remain in their ordinary volume/`DATA/RDR` paths; this audit directory
+does not change portable index paths or create extra observations. Neither
+native images nor derived scientific NetCDFs belong in Git.
+
+The completed batch adds 102 RGB strips and 13 polar stacks (30.009 GiB of
+derived-file payload), representing 126 distinct source IDs. The
+[product, stack and cadence inventories](reports/junocam_expansion_2026-09-08.md#mapped-products-and-temporal-support)
+record actual counts and paths; the
+[navigation table](reports/junocam_expansion_navigation_2026-09-08.csv) distinguishes
+103 successful limb fits from 23 nominal-navigation outcomes. A missing fitted
+offset is not a measured zero error.
+
+JunoCam strip-index updates are additive by successful product ID. Omitted
+rows/files survive partial builds; an existing product with a different
+physical band set is preserved and its replacement fails explicitly. This
+differs from the historical whole-pass replacement/deletion behavior.
+
 Other GUI-managed files are `stats_<strip_id>.nc` (the legacy file described
 just above, one per strip with computed statistics), `meta_<key>.json`
 (a stack's display stretch and graticule, cached on first open),

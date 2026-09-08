@@ -21,14 +21,17 @@ vs. `orbit_dir` in the frame index; the exact wording of one archive
 fact that a later measurement revised). No claim here should need you
 to trust prose over `git blame`.
 
-The implementation described here is **commit `1e2723d`**, through
-2026-09-07. It includes the intervening JunoCam acquisition, geometry and
-photometry work and the scientific-workspace implementation. Earlier JIRAM
+The teaching baseline is **commit `1e2723d`**, through 2026-09-07, with the
+**2026-09-08 JunoCam expansion** additions explicitly dated below. The baseline
+includes the intervening JunoCam acquisition, geometry and photometry work
+and the scientific-workspace implementation. Earlier JIRAM
 measurements remain validation history, not a fresh census. The new deep
 dives are [4.18, JunoCam](#418-junocam--archive-camera-and-quality-evidence)
 and [4.19, scientific workflow](#419-scientific-workflow--what-the-data-can-support).
-Current counts and verification are recorded in the
-[delivery log](docs/build_log_2026-09-07.md).
+Baseline counts and verification are recorded in the
+[September 7 delivery log](docs/build_log_2026-09-07.md); the
+[expansion record](docs/reports/junocam_expansion_2026-09-08.md) carries the
+later per-pass inventory and validation.
 
 ## Table of contents
 
@@ -80,14 +83,17 @@ observation times, validity and viewing geometry. The repeated views are a
 scientific opportunity; regular cadence, adequate overlap and navigation
 accuracy must still be demonstrated for the particular selection.
 
-That qualification matters immediately for JunoCam. The preserved local
+That qualification matters immediately for JunoCam. The September 7 PJ4
 polar file originally had six entries, but two processing versions of each
 of three observations do not give six independent times. After version
 selection it has three observations with approximately 577- and 243-second
 gaps. It is viewable, but cannot supply the default constant-cadence triple.
-These are current measured results, recorded in
-[the delivery log](docs/build_log_2026-09-07.md), not a claim about all
-possible JunoCam passes.
+These are dated baseline results, recorded in
+[the delivery log](docs/build_log_2026-09-07.md). The
+[September 8 expansion](docs/reports/junocam_expansion_2026-09-08.md) adds
+13 polar stacks and seven qualifying RED cadence runs. Their common support,
+native sampling and navigation still determine what each run can support;
+the new passes do not erase the limits of the preserved PJ4 example.
 
 **Regime 2 — individual swaths.** Much of the useful nonpolar JIRAM sampling
 is a sweep across cloud over one to a few minutes, followed by departure.
@@ -2210,8 +2216,10 @@ epoch milliseconds are a `Float64Array`. The timestamp conversion must be
 explicit on the server: the old JunoCam 1970 dates were unit conversion,
 not a bad spacecraft clock.
 
-The current snapshot has 47,731 mapped rows, including 72 preferred eligible
-JunoCam observations ([delivery record](docs/build_log_2026-09-07.md)). This
+The September 8 snapshot has 47,925 mapped catalog rows, including 266
+distinct preferred eligible JunoCam observations across nine passes
+([expansion record](docs/reports/junocam_expansion_2026-09-08.md)). The earlier
+September 7 counts were 47,731 and 72, respectively. This
 is an inventory of the local policy view, not a promise that all those rows
 have independent motion partners. Instrument-aware detail responses include
 identity, available versions, label/source links, geometry and the quality
@@ -2502,6 +2510,31 @@ not establish meaningful signal or valid radiometry. The label parser and
 indexer, [labels.py](src/jiram_catalog/junocam/labels.py) and
 [index.py](src/jiram_catalog/junocam/index.py), preserve those distinctions.
 
+**Exact acquisition is a reproducibility boundary (2026-09-08).** The bounded
+expansion selects native RGB products from PJ5, 6, 8, 12, 18, 24, 30 and 34,
+with exact IDs, versions, URLs, label/native checksums and byte counts.
+Selection is drawn from inspected encounter windows and supported camera
+formats. It is neither an entire-pass download nor an assertion that every
+product of those passes is healthy. The existing broad mirror command selects
+by orbit/day and can include superseded versions; the expansion's operational
+script joins its explicit selection to the every-version manifest and calls
+the downloader only for those rows. It does not rewrite the manifest to make
+the subset appear complete. The [inventory](docs/reports/junocam_expansion_inventory_2026-09-08.md)
+records both the selection and deferred alternatives, including PJ3's local
+kernel mismatch and unsupported methane modes.
+
+Instrument, transfer, signal and navigation evidence answer different
+questions. A mission-team statement of normal operation is affirmative era
+evidence, but each selected product still needs its own label/errata audit,
+matched checksum, supported dimensions, measured signal and finite geometry.
+The expansion requires clean finite metrics for each RED/GREEN/BLUE channel;
+a satisfactory median over channels cannot conceal one failed band. A
+finite archive timing record supports a navigation assessment, not exact
+attitude: its correction is already in the product's label start time and
+must not be added a second time. Zero means no correction was needed;
+`NULL` means one could not be determined. See the
+[evidence audit](docs/reports/junocam_expansion_evidence_2026-09-08.md).
+
 **The native image is a timed sequence of filter strips.** A *framelet* is
 one 128×1648 band strip from one camera readout. A *frame* is the simultaneous
 readout of the commanded bands. The file cycles through bands inside each
@@ -2570,6 +2603,10 @@ t_i = str2et(START_TIME) + START_TIME_BIAS
 
 The bias and interframe delta come from the instrument kernel; the delay
 comes from the label. `dt_refined` is one fitted offset for the whole image.
+In the epoch equation this is the **applied** adjustment: if refinement is
+refused, the model applies zero additional offset while the stored fitted
+offset remains `NaN`. Nominal SPICE/camera timing is still used; it does not
+become a measured zero-error fit.
 There is no additional unconditional half-exposure correction. JIRAM's
 rule of using its label `START_TIME` exactly (section 4.4) still applies to
 JIRAM; copying that rule into this camera would drop explicit timing terms.
@@ -2669,13 +2706,67 @@ keeps a provenance-bearing historical product usable without pretending it
 is the newest archive product. A corrected label time of a few milliseconds
 does not make V01 and V02 independent observations.
 
-The current snapshot contains **72 preferred eligible JunoCam observations**.
+The September 7 snapshot contained **72 preferred eligible JunoCam observations**.
 The earlier mapped set had 93 stems; 21 methane observations are additionally
 withheld by existing bloom evidence. The preserved six-entry polar file is
 presented as three unique observations. See the
 [delivery record](docs/build_log_2026-09-07.md) for the count definitions and
-the unchanged historical count-gate conflict. Neither 72 nor the policy's
-legacy allowance is an archive-wide radiometric validation.
+the historical count-gate conflict, resolved by the September 8 expansion
+without changing the gate. Neither 72 nor the policy's legacy allowance is
+an archive-wide radiometric validation.
+
+The **September 8 sample** adds 194 individually cleared preferred RGB
+observations from eight passes, giving **266 distinct eligible observations
+across nine passes** with PJ4 retained. All acquired sizes and label/native
+checksums matched, and every new product passed the specified overall and
+per-band signal checks and finite geometry assessment. These are distinct
+source observations, not a demonstration of statistical independence. The
+[completion record](docs/reports/junocam_expansion_2026-09-08.md) gives the
+per-product evidence and each pass's acquired, eligible and mapped counts.
+
+The completed strip builds add **102 RGB maps**: 5, 12, 15, 13, 9, 7, 14
+and 27 for PJ5, 6, 8, 12, 18, 24, 30 and 34, respectively. Every file was
+checked for physical bands, DN units, complete valid-mask fractions and
+sampled positive finite signal. They occupy **26,926,789,342 bytes
+(25.078 GiB)**. The 92 coarser healthy observations do not pass the existing
+30 km/pixel native-sampling selector; they remain native-eligible rather
+than being reclassified as instrument failures. The final API offers
+**110 preferred JunoCam strips** (eight old plus 102 new), **399 strips**
+across instruments and **18 stacks**, including the 13 new polar products.
+The native strip index retains 407 rows, including older versions; all 305
+pre-existing rows remain identical. A smaller preferred view is compatible
+with retaining the original product history.
+
+The new strips and polar stacks together use **126 distinct source IDs**;
+**103** accepted limb refinements and **23** could not provide the required
+200 usable points. Of the 62 polar sources, 55 accepted fits, including all
+13 sources in the PJ34 north and south stacks. The refused cases use the existing
+SPICE/camera timing without an additional fitted adjustment and retain
+unknown fitted offsets/residuals. A mapped footprint or finite applied timing
+alone therefore does not establish accepted limb refinement. This navigation
+distinction is separate from the instrument-health clearance. The
+[navigation table](docs/reports/junocam_expansion_navigation_2026-09-08.csv)
+records every mapped source's outcome.
+
+**An incremental build must preserve observations (2026-09-08).** The earlier
+JunoCam strip-index writer replaced an entire selected pass and removed files
+omitted by the latest run. That made a partial failure, a new band selection
+or a preferred-version filter capable of deleting useful existing products.
+The repaired writer upserts successful rows by `(instrument, strip_id)` and
+preserves all omitted rows and files, including JIRAM and older versions.
+An empty update leaves an existing index byte-for-byte unchanged. Product
+metadata is validated before the atomic NetCDF write, and failures do not
+publish a successful result row. Dataset handles close even on failure.
+
+The filename still identifies one product, not arbitrary band variants.
+Before replacement, the builder checks the existing file's physical band
+coordinate and refuses a different or unreadable band set; a different order
+of the same set is acceptable. Shared-index commands remain serialized.
+This is preservation during incremental work, not a multi-file transaction
+or a pruning policy. Fresh versioned products avoid a separate cache hazard:
+same-ID reprocessing can leave old dataset handles and disk statistics until
+scoped invalidation. The [pipeline audit](docs/reports/junocam_expansion_pipeline_2026-09-08.md)
+distinguishes those remaining hazards from the repaired deletion behavior.
 
 **Photometry is an explicit transform, not a new unit label.** Let
 `μ0 = cos(i)` and `μ = cos(e)`, for incidence and emission angle. The
@@ -2713,6 +2804,23 @@ by linear/asinh mapping into image bytes. RGB channels may use separate
 limits. Such choices help inspect clouds, but a spectrum must use the
 selected physical-band array and recorded normalization, never the colored
 canvas or an RGB composite.
+
+The **September 8 evidence review** adds a mission-long comparison caution.
+Instrument-team response measurements describe optical throughput evolution
+over the mission, distinct from the later electronics failures. The existing
+numerical throughput-factor display domain is retained for compatibility;
+its lower bound does not establish when response change began, and an earlier
+missing factor does not mean measured unity. Those factors are not applied
+as a certified per-image correction. Planetary RDR processing already rescales
+decompanded counts using commanded exposure and solar distance, while some
+native observations use lossy compression. Those operations, illumination,
+viewing geometry and evolving response can all affect texture amplitudes or
+small-scale structure. Match and record these conditions before interpreting
+cross-pass brightness, color or spectra; unchanged DN units do not guarantee
+an unchanged measurement response. Clean signal checks still do not admit
+documented instrumentation or radiometric failures. The
+[evidence report](docs/reports/junocam_expansion_evidence_2026-09-08.md) separates
+these conclusions from unmeasured calibration uncertainties.
 
 **The PDS calibrated collection: a reference with a different observation
 operator.** The completed
@@ -2793,9 +2901,34 @@ spacing and some common support. It does **not** establish cloud-feature
 persistence, subpixel navigation accuracy, sufficient displacement signal,
 or trustworthy winds. For example, a single common pixel is enough to
 avoid an empty-mask error, but cannot make a useful full-field velocity
-retrieval. The actual JunoCam polar selection fails earlier on cadence:
+retrieval. The preserved September 7 PJ4 selection fails earlier on cadence:
 three observations at roughly 577/243-second intervals do not pass the
-regular-triple test. The UI keeps that explanation visible.
+regular-triple test. The UI keeps that explanation visible for that stack.
+
+The **September 8 native audit** checked all 13 new polar stacks: 62 stored
+steps from 62 distinct source IDs, all physical bands, DN units, increasing
+product start times and valid masks. Two healthy observations projected no
+sunlit cells into their selected north grid and were omitted there while
+remaining native-eligible. This is a coverage exclusion, not a new instrument
+failure. Seven runs in the PJ18/PJ24/PJ30/PJ34 northern stacks passed the
+5% interval tolerance and nonempty common RED support. Some runs share
+endpoints; seven runs are not seven independent replicates. Their common
+fractions range from 0.546% to 42.656% of the stored canvas, with two below
+1%. Changing the crop changes that denominator without changing the observed
+surface, so a percentage is not an area or a sufficient analysis-region test.
+
+PJ34 north makes the distinction concrete. Its two qualifying runs have
+median intervals of 240.621 and 180.726 seconds, with 42.656% and 6.505%
+common RED support. The common latitude ranges are approximately
+59.78–87.91°N and 59.78–73.61°N; neither contains the pole. Native median
+sampling changes from 41.61 to 10.50 km/pixel over this stack, despite its
+fixed 15 km map grid. The ten successful limb fits report median absolute
+residuals of 0.392–1.318 **detector pixels**, not RMS map-position errors or
+wind uncertainties. Temporal coordinates are product `START_TIME`, not
+per-pixel acquisition epochs. The
+[verified stack/run tables](docs/reports/junocam_expansion_2026-09-08.md)
+support morphology and input-format assessment; physical motion validation
+requires additional evidence.
 
 `export_stack` repeats preflight before creating the requested destination,
 then prepares and writes one retained run at a time. `spec.json` and each
@@ -2931,6 +3064,23 @@ band-pair overlap where a product has multiple band rows. This finds
 plausible contemporaneous targets; it does not establish exact pixel overlap,
 a common cloud altitude or registration compatibility.
 
+The September 8 audit found two defects using actual catalog row shapes.
+An empty optional `fp_lon` array prevented fallback to valid JIRAM corners;
+paired detector rows also carried the product label `band='LM'` when their
+separate `half='L'` or `half='M'` identified the measured footprint. The
+bounded repair restores the existing corner fallback and attributes only
+qualifying physical halves. Nonempty footprint priority, spherical-box
+formula, time limits, deduplication and policy are unchanged.
+
+With ±300 seconds and a minimum 0.25 box-overlap fraction, **174 of the 194**
+new JunoCam observations have JIRAM candidates, and **140** have a qualifying
+M half. The 2,639 returned pairs were not truncated by the result limit.
+The [matching audit](docs/reports/junocam_expansion_matches_2026-09-08.csv)
+records the per-pass results. The improved count fixes false negatives in
+metadata matching; it does not check native JIRAM file availability, exact
+valid-pixel overlap, matched spatial resolution or a common atmospheric
+measurement. Those remain separate tests on the chosen pair.
+
 The vector endpoint is stricter. It examines existing neighboring tracking
 NetCDFs only when source-stack association, time, projection, explicit
 kilometre coordinates, `m s-1` velocities and `map_xy` basis all match.
@@ -3039,7 +3189,7 @@ cumulative.py` — that cumulative sweep stacks agree with the frame-
 and sequence-level stacks at every point the three are required to
 coincide.
 
-**The current verification snapshot.** The September 7 delivery records
+**Dated verification snapshots.** The September 7 delivery records
 339 Python tests passed with 49 skipped under the offline command, 135
 frontend tests passed, eight focused API/science gate checks passed, and
 the full production browser gate passed against the real mirror
@@ -3049,13 +3199,24 @@ validation. The narrow mask-recipe wording correction made during this
 documentation refresh was also followed by the same 339-pass, 49-skip
 offline result and a check across the actual 88-degree boundary.
 
-One historical gate conflict is preserved: `test_gate_junocam_products.py`
-has two passing checks and one failing count assertion requiring at least
-100 library products. The current policy admits 72 independent JunoCam
+At the September 7 baseline, one historical gate conflict was preserved:
+`test_gate_junocam_products.py` had two passing checks and one failing count
+assertion requiring at least 100 catalog products. That policy snapshot
+admitted 72 distinct JunoCam
 observations. Reintroducing duplicate versions or withheld images to satisfy
 that count would damage the scientific input selection. The gate remains
-unchanged and the conflict is reported explicitly; this is not an
-unqualified all-gates-pass state.
+unchanged. The September 8 expansion passes all three existing product/API
+checks and all three existing JunoCam geometry checks, closing the old count
+conflict through new eligible observations. After both matching fixes,
+the offline suite passed **357 tests, with 52 skipped**. Fixed regressions
+also protect incremental preservation and actual-catalog matching behavior.
+An aggregate threshold still does not establish independent samples or
+retained native bytes; the
+[expansion report](docs/reports/junocam_expansion_2026-09-08.md) records the
+identity, saved-pixel and preservation evidence separately.
+The final acquisition gate and two mapped-product/API/preservation integration
+checks also passed. The lead verified all 13 saved polar cubes and all 102
+new strips, and found the 305 pre-existing strip-index rows unchanged.
 
 **The two gates that were wrong, and how that was found.** Both cases
 share a shape worth naming explicitly: the *code* under test was not

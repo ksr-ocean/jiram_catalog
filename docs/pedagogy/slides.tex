@@ -66,7 +66,7 @@
 \title{\textbf{jiram\_catalog}}
 \subtitle{A pedagogical review: two instruments, geometry, and scientific readiness}
 \author{}
-\date{\small Implementation through \texttt{1e2723d} --- 7 September 2026}
+\date{\small Baseline \texttt{1e2723d}; JunoCam expansion notes --- 8 September 2026}
 
 \begin{document}
 
@@ -107,7 +107,7 @@
     \item Its unsigned detector samples and per-frame timing require a separate adapter, not JIRAM's float reader or single-frame epoch
     \item The common workspace starts after each instrument has explicit geometry, validity, units and source identity
   \end{itemize}
-  \begin{block}{Current scope, 7 September 2026}
+  \begin{block}{Scientific scope}
     Native JunoCam inspection is available. Failure exclusion and readiness checks decide which observations and calculations are accessible.
   \end{block}
 \end{frame}
@@ -769,6 +769,18 @@ Suppose RED finishes loading after the user has already selected GREEN.
   Archive discovery, local availability and scientific eligibility are three different counts.
 \end{frame}
 
+\begin{frame}{JunoCam: acquire an exact sample, then assess it}
+  \revsec{4.18}
+  \begin{enumerate}
+    \item Name each native RGB product, version, URL, checksum and expected byte count; do not substitute a whole-pass download
+    \item Combine instrument-operation evidence with individual errata, supported dimensions, verified bytes and timing evidence
+    \item Measure \emph{each} visible band's signal and finite geometry before issuing an exact, sourced clearance
+    \item Keep failures and unassessed products metadata-only; a clean overall median cannot hide a failing channel
+  \end{enumerate}
+  \vspace{0.2cm}
+  Archive timing corrections are already in the label. A finite correction is navigation evidence, not zero residual error, and must not be added again.
+\end{frame}
+
 \begin{frame}{JunoCam: an image is a sequence of band framelets}
   \revsec{4.18}
 \begin{block}{\texttt{junocam/images.py}: natural array shape}
@@ -817,7 +829,10 @@ Suppose RED finishes loading after the user has already selected GREEN.
     \item Inspect entering and leaving limbs separately. Haze above the reference ellipsoid can shift an apparent limb without a pointing error
   \end{enumerate}
   \vspace{0.2cm}
-  The PJ4 assessment records limb-height and interframe-rate residuals. It retains the kernel timing rate; a low fitted residual does not establish independent navigation accuracy.
+  The expansion's 126 mapped sources include 103 accepted fits and 23 refusals below 200 limb points. Refused fits retain unknown offsets/residuals and apply zero additional adjustment to nominal SPICE/camera timing.
+  \vspace{0.2cm}
+
+  A small residual does not establish absolute navigation accuracy; the PJ4 timing-rate and limb-height limitations remain.
 \end{frame}
 
 \begin{frame}{JunoCam: reproject each band and preserve its support}
@@ -829,6 +844,18 @@ Suppose RED finishes loading after the user has already selected GREEN.
     \item \texttt{stacks.py} and \texttt{strips.py} write fixed-grid products; masks, bands and source identities travel with the pixels
   \end{itemize}
   A displayed RGB composite is assembled from those physical bands; it is not a fifth measured channel.
+\end{frame}
+
+\begin{frame}{JunoCam: an incremental build must preserve earlier work}
+  \revsec{4.18}
+  \begin{itemize}
+    \item Old behavior replaced a selected pass and deleted omitted files: a partial build could remove earlier successful products
+    \item The repaired index adds or replaces only successful \texttt{(instrument, strip\_id)} rows; omitted products and older versions remain
+    \item Validate metadata before the atomic NetCDF write; a failed write publishes no successful row, and the dataset is closed
+    \item Reject a different or unreadable existing band set before replacement. Product-ID filenames still identify one physical band set
+  \end{itemize}
+  \vspace{0.2cm}
+  Serialize shared-index commands. Additive updates do not provide a multi-file transaction or invalidate old caches after same-ID reprocessing.
 \end{frame}
 
 \begin{frame}{JunoCam: quality is an access decision with evidence}
@@ -848,15 +875,29 @@ Suppose RED finishes loading after the user has already selected GREEN.
   Loaders enforce this for images and derived analysis/export access. No browser override reveals withheld pixels.
 \end{frame}
 
-\begin{frame}{JunoCam: what the current eligible sample supports}
+\begin{frame}{JunoCam: a bounded sample across passes}
   \revsec{4.18}
 \begin{itemize}
-    \item At \texttt{1e2723d}: \textbf{72 preferred eligible PJ4 observations} in the current mirror
-    \item Compared with the earlier 93 mapped observations, 21 methane observations are additionally withheld by existing bloom flags; no RGB observation is removed by this additional cut
-    \item The bloom metric is conservative signal evidence, not proof of a documented hardware event in every flagged image
-    \item The polar stack contains \textbf{three unique observations}; gaps are about 577 and 243 seconds, outside a 5\% constant-cadence tolerance
+    \item On 8 September: \textbf{194 new RGB observations} acquired, checksummed and individually cleared across PJ5, 6, 8, 12, 18, 24, 30 and 34
+    \item Including retained PJ4: \textbf{266 distinct eligible observations across nine passes}; distinct does not establish statistical independence
+    \item \textbf{13 new polar stacks, 62 distinct observations}; a bounded encounter sample, with individual source and mask checks
+    \item \textbf{110 preferred JunoCam strips}: eight retained plus 102 new at the 30~km/pixel cutoff. Another 92 coarser healthy observations remain native-eligible
   \end{itemize}
-  Viewing those three maps is useful. Calling them an export-ready regular three-frame sequence would be incorrect.
+  \begin{block}{Preserved PJ4 example, 7 September 2026}
+    Three unique polar observations have gaps of about 577 and 243 seconds. They remain useful views, but fail a 5\% constant-cadence tolerance.
+  \end{block}
+\end{frame}
+
+\begin{frame}{JunoCam: clean signal does not imply constant response}
+  \revsec{4.18}
+  \begin{itemize}
+    \item Optical throughput evolves over the mission; its history is distinct from documented electronic failures
+    \item The existing numerical factor display retains its legacy domain. A missing earlier factor is unknown, not measured unity
+    \item Planetary RDR processing includes exposure and solar-distance scaling; compression, illumination and viewing geometry also affect texture
+    \item Match physical band, scale, normalization and valid support, then inspect these acquisition conditions before comparing brightness or spectra
+  \end{itemize}
+  \vspace{0.2cm}
+  No calibrated I/F or brightness-invariance claim follows from DN units. Documented instrumentation and radiometric failures remain excluded.
 \end{frame}
 
 \begin{frame}{PDS ``calibrated'' is a derived reference here}
@@ -937,6 +978,18 @@ For reflected light, write $\mu_0=\cos i$ and $\mu=\cos e$.
   Report observation count, gaps, cadence runs and explicit failure reasons. A cadence run can contain several sliding triples; its count is not the number of all triples.
 \end{frame}
 
+\begin{frame}{New polar sequences: inspect the actual common region}
+  \revsec{4.19}
+  \begin{itemize}
+    \item Seven RED runs in PJ18/24/30/34 north pass cadence and nonempty-mask checks. Two cover less than 1\% of their stored canvas
+    \item PJ34 north: 240.621/180.726~s median intervals; 42.656\%/6.505\% common RED support. Neither common region includes the pole
+    \item Product \texttt{START\_TIME} is not a per-pixel epoch. A 15~km output grid does not erase PJ34 native sampling of 41.61--10.50~km/pixel
+    \item Its fitted median-absolute residuals, 0.392--1.318 \emph{detector} pixels, are not RMS map errors or wind uncertainties
+  \end{itemize}
+  \vspace{0.2cm}
+  Runs can share endpoints. These checks establish temporal and mask support; statistical independence and physical motion accuracy require other evidence.
+\end{frame}
+
 \begin{frame}{An export carries the recipe that made its arrays}
   \revsec{4.19}
 \begin{itemize}
@@ -970,16 +1023,16 @@ Positive $(\Delta y,\Delta x)$ describes pattern displacement from the \emph{lef
   \normalsize Registration measures a pattern shift, not a validated wind field. Cross-band morphology and scene evolution can displace the correlation peak.
 \end{frame}
 
-\begin{frame}{Population spectra: count independent passes}
+\begin{frame}{Population spectra: use passes as the replication unit}
   \revsec{4.19}
 \begin{enumerate}
     \item Group by instrument, physical band, units, native resolution class and normalization
     \item Count shared source observations once; conservatively exclude a strip that partly duplicates an already represented source set
-    \item Average strips within each pass, then give each independent pass equal weight
+    \item Average strips within each pass, then give each distinct pass equal weight
     \item Estimate standard error from those pass means; with only one pass it is unknown, not zero
   \end{enumerate}
   \vspace{0.2cm}
-  This prevents overlapping strips or processing versions from manufacturing a larger effective sample size.
+  Distinct passes are not automatically statistically independent. Grouping avoids counting overlapping strips as separate pass replicates; inspect the assumption for the scientific question.
 \end{frame}
 
 \begin{frame}{A slope fit should travel with its mask and fit range}
@@ -1004,6 +1057,18 @@ Positive $(\Delta y,\Delta x)$ describes pattern displacement from the \emph{lef
 \end{frame}
 
 % =======================================================================
+\begin{frame}{New JIRAM matches are measured metadata candidates}
+  \revsec{4.19}
+  \begin{itemize}
+    \item Fixed search: $|\Delta t|\leq300$~s; spherical-box intersection / smaller box area $\geq0.25$
+    \item \textbf{174 of 194} new JunoCam observations have a JIRAM candidate; \textbf{140} have a qualifying M half. Total: 2,639 pairs, with no result-cap truncation
+    \item Empty JIRAM outlines now fall back to measured corners; paired \texttt{LM} products report only the physical L/M halves whose footprints qualify
+    \item The unchanged approximate method does not verify native JIRAM files, common valid pixels, matched sampling, illumination or cloud altitude
+  \end{itemize}
+  \vspace{0.2cm}
+  Inspect both images and masks before registration or statistics. A larger candidate count fixes metadata false negatives; it does not validate physical pairs.
+\end{frame}
+
 \section{Figures from real data}
 % =======================================================================
 
@@ -1123,15 +1188,15 @@ Positive $(\Delta y,\Delta x)$ describes pattern displacement from the \emph{lef
 % Refresh through 1e2723d.
 \begin{frame}{Validation snapshot: know what each green check proves}
   \revsec{5}
-\small At \texttt{1e2723d}, recorded on 7 September 2026:
+\small Dated checks at the baseline and after the bounded expansion repairs:
   \begin{itemize}
-    \item 339 offline Python tests passed (49 skipped); 135 frontend unit tests passed
-    \item Eight focused live API/policy/science gate checks passed; the full production-bundle browser gate passed
-    \item New known answers cover shifts, masks, power laws, cadence, grouping, uncertainty, policy enforcement and out-of-order image responses
-    \item The preserved older JunoCam gate has two passes and one count conflict: it expects at least 100 products; current policy admits 72 unique preferred observations
+    \item 7 September, \texttt{1e2723d}: 339 offline Python tests passed (49 skipped), 135 frontend unit tests and the production-browser gate passed
+    \item 8 September: \textbf{357 offline tests passed, 52 skipped}, after incremental-preservation and actual-catalog matching repairs
+    \item All three existing JunoCam geometry gates and all three product/API gates pass; the old 100-count conflict is closed with new eligible observations
+    \item Fixed regressions protect omitted products, band collisions, empty-footprint fallback and attribution to qualifying physical halves
   \end{itemize}
   \vspace{0.2cm}
-  The count conflict is reported, not hidden by duplicate versions or weaker exclusions. These checks do not establish archive-wide radiometric or wind accuracy.
+  Identity, saved masks and source preservation need their own evidence. Passing a count threshold does not establish independent samples, archive-wide radiometry or wind accuracy.
 \end{frame}
 
 % =======================================================================

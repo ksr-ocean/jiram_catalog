@@ -26,6 +26,12 @@ one line each; follow the links for the rest.
 
 ## Decisions and gaps
 
+- [`reports/junocam_expansion_2026-09-08.md`](reports/junocam_expansion_2026-09-08.md)
+  -- measured multi-pass acquisition, eligibility, mapped coverage and limits.
+- [`reports/junocam_expansion_evidence_2026-09-08.md`](reports/junocam_expansion_evidence_2026-09-08.md),
+  [`inventory`](reports/junocam_expansion_inventory_2026-09-08.md) and
+  [`pipeline audit`](reports/junocam_expansion_pipeline_2026-09-08.md)
+  -- primary instrument evidence, exact archive costs and safe incremental processing.
 - [`reports/junocam_calibrated_assessment_2026-09-07.md`](reports/junocam_calibrated_assessment_2026-09-07.md)
   -- bounded PDS sample inspection, generated-channel provenance and suitability.
 - [`reports/usability_scientific_review_2026-09-07.md`](reports/usability_scientific_review_2026-09-07.md)
@@ -49,6 +55,8 @@ one line each; follow the links for the rest.
 
 ## Process
 
+- [`build_log_2026-09-08.md`](build_log_2026-09-08.md) -- JunoCam expansion,
+  strip preservation repair, measured validation and documentation refresh.
 - [`build_log_2026-09-07.md`](build_log_2026-09-07.md) -- accepted D01–D12
   implementation, validation and remaining data limitations.
 - [`agent_harness.md`](agent_harness.md) -- the spec -> gate -> execute

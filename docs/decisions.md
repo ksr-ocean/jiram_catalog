@@ -1,5 +1,44 @@
 # Decisions
 
+## Bounded JunoCam expansion and additive strip builds (2026-09-08)
+
+The owner requested actual multi-pass expansion. The lead selected 194 exact
+preferred RGB products from PJ5, 6, 8, 12, 18, 24, 30 and 34 after independent
+archive, instrument and pipeline audits. Selection uses supported unsummed
+dimensions, complete framelets, inspected corrections and finite archive timing;
+zero is a determined no-shift result, while NULL and absence are unassessed.
+The published offsets are already incorporated in label times and must not be
+added again. IDs, versions, URLs and checksums are frozen in the
+[acquisition oracle](reports/junocam_expansion_selection_2026-09-08.csv).
+
+NASA's affirmative normal-operation evidence through PJ34 supports individual
+screening. It does not whitelist that epoch. Newly cleared IDs also require
+verified bytes, clean finite overall and per-colour metrics and successful
+geometry. Existing failure exclusions and PJ4 evidence are retained. The
+instrument team's mission-long optical-response evolution is a separate
+quantitative limitation: native RDR already contains archive exposure/distance
+scaling, remains DN, and receives no automatic throughput correction. The
+existing 47–60 numeric factor domain is retained for compatibility; it is not
+a physical onset boundary or evidence of unit response earlier. See the
+[evidence audit](reports/junocam_expansion_evidence_2026-09-08.md).
+
+Incremental JunoCam strip builds upsert successful product IDs and preserve
+omitted rows and files, including another band selection and failed rebuilds.
+The ID-based filename can hold one band set; incompatible replacements fail
+explicitly. Metadata is validated before atomic pixel-file replacement.
+Pruning and multiple named band variants require separate work. Shared index
+writers remain serialized operationally. Enforced by
+`junocam/strips.py` and `test_gate_junocam_incremental.py`.
+
+Cross-instrument candidate searches fall back to valid corner coordinates when
+an optional footprint outline is empty. For paired JIRAM products, the returned
+bands identify only detector halves that pass the time and spatial filters;
+the product-level `LM` label is not evidence that both halves qualify. The
+real-catalog audit and fixed `test_gate_junocam_matches.py` cases enforce these
+repairs. Bounding-box candidates still require physical-image/mask validation
+before scientific pairing; see the
+[measured match results](reports/junocam_expansion_matches_2026-09-08.csv).
+
 ## Scientific workspace and JunoCam failure exclusion (2026-09-07)
 
 The owner accepted D01–D12 in the usability review and requested their

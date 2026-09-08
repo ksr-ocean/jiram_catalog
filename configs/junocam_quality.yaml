@@ -11,9 +11,11 @@
 # them in order and returns the first match.  Orbits outside every interval
 # resolve to "unknown".
 #
-# Throughput entries give, per band, the orbit range over which the ERRATA
-# documents a response loss, the loss it quotes at the end of that range, and
-# the linear fit coefficients it publishes for correcting it.  The factor
+# Throughput entries retain the legacy 47..60 numerical display domain for
+# compatibility with existing quality tables. This is NOT the physical onset
+# of optical darkening: the instrument team's analysis describes mission-long
+# response evolution normalized to PJ3. Entries give the loss quoted through
+# orbit 60 and the published linear fit coefficients. The factor
 # applied to an image is intercept + slope * orbit, clipped to (0, 1]; an
 # orbit outside every band's range gets NaN (unknown response).  None
 # of this is applied to the archived RDR products -- the ERRATA says so
@@ -28,9 +30,11 @@ epochs:
     orbit_max: 46
     source: JNOJNC_0035/ERRATA.TXT
     note: >-
-      Prime mission and early extended mission.  No radiation-damage effect is
-      reported in any ERRATA release before the PJ47 anomaly; JunoCam operated
-      through the 34-orbit prime mission with little degradation.
+      Prime mission and early extended mission, before the documented PJ47
+      electronics anomaly. NASA/JPL reports normal operation through the
+      first 34 orbits. This is descriptive, not an observation clearance:
+      mission-long optical throughput evolution and product-specific defects
+      still require separate assessment. See the 2026-09-08 evidence report.
 
   - name: regulator_damage
     orbit_min: 47
@@ -80,12 +84,14 @@ throughput:
     intercept: 1.01
     source: JNOJNC_0033/ERRATA.TXT section B.10
     note: >-
-      "An analysis of the images through orbit 60 indicates that there has
-      been varying degrees of loss of throughput in each of the color
-      channels... Red 23%".  The orbit range is set to the damage era of the
-      epoch table (47) through the last orbit the analysis covers (60): the
-      ERRATA quotes no loss for the prime mission and its fit is not
-      extrapolated beyond the orbits it was measured on.
+      Red response loss is summarized as 23% through orbit 60. The retained
+      lower bound 47 is a legacy numerical display-domain choice, not a
+      measured onset or a no-loss guarantee for earlier passes. The primary
+      instrument-team analysis uses mission-long characterization images
+      normalized to PJ3 and reports scatter without per-image uncertainties.
+      Earlier NaN factors mean unreported here, never unit response. No fit
+      is applied to native pixels. See docs/reports/junocam_expansion_evidence_2026-09-08.md
+      and https://meetingorganizer.copernicus.org/EPSC-DPS2025/EPSC-DPS2025-1226.html.
 
   - band: green
     orbit_min: 47
@@ -142,7 +148,211 @@ access_policy:
   legacy_evidence: docs/reports/junocam_pj4_geometry.md
   # Future unaffected clearances must name individual product_ids or
   # observation_ids plus reason and source; no broad recovery epoch.
-  clearances: []
+  clearances:
+    - product_ids:
+        - JNCR_2017086_05C00100_V02
+        - JNCR_2017086_05C00104_V02
+        - JNCR_2017086_05C00105_V02
+        - JNCR_2017086_05C00106_V02
+        - JNCR_2017086_05C00107_V02
+        - JNCR_2017086_05C00108_V02
+        - JNCR_2017086_05C00109_V02
+        - JNCR_2017086_05C00110_V02
+        - JNCR_2017086_05C00111_V02
+        - JNCR_2017086_05C00112_V02
+        - JNCR_2017086_05C00113_V02
+        - JNCR_2017086_05C00115_V02
+        - JNCR_2017139_06C00098_V02
+        - JNCR_2017139_06C00099_V02
+        - JNCR_2017139_06C00100_V01
+        - JNCR_2017139_06C00101_V02
+        - JNCR_2017139_06C00102_V02
+        - JNCR_2017139_06C00103_V02
+        - JNCR_2017139_06C00104_V02
+        - JNCR_2017139_06C00106_V02
+        - JNCR_2017139_06C00107_V02
+        - JNCR_2017139_06C00108_V01
+        - JNCR_2017139_06C00109_V02
+        - JNCR_2017139_06C00110_V02
+        - JNCR_2017139_06C00111_V02
+        - JNCR_2017139_06C00112_V02
+        - JNCR_2017139_06C00113_V02
+        - JNCR_2017139_06C00114_V02
+        - JNCR_2017139_06C00115_V02
+        - JNCR_2017139_06C00117_V02
+        - JNCR_2017139_06C00118_V02
+        - JNCR_2017139_06C00119_V01
+        - JNCR_2017139_06C00121_V02
+        - JNCR_2017139_06C00122_V02
+        - JNCR_2017139_06C00123_V02
+        - JNCR_2017139_06C00124_V02
+        - JNCR_2017139_06C00125_V02
+        - JNCR_2017139_06C00126_V02
+        - JNCR_2017139_06C00127_V02
+        - JNCR_2017139_06C00128_V01
+        - JNCR_2017139_06C00129_V02
+        - JNCR_2017139_06C00131_V02
+        - JNCR_2017139_06C00132_V01
+        - JNCR_2017139_06C00133_V02
+        - JNCR_2017244_08C00105_V02
+        - JNCR_2017244_08C00107_V02
+        - JNCR_2017244_08C00108_V02
+        - JNCR_2017244_08C00109_V02
+        - JNCR_2017244_08C00110_V02
+        - JNCR_2017244_08C00111_V02
+        - JNCR_2017244_08C00112_V02
+        - JNCR_2017244_08C00113_V02
+        - JNCR_2017244_08C00114_V02
+        - JNCR_2017244_08C00116_V02
+        - JNCR_2017244_08C00117_V02
+        - JNCR_2017244_08C00118_V02
+        - JNCR_2017244_08C00119_V02
+        - JNCR_2017244_08C00120_V02
+        - JNCR_2017244_08C00121_V01
+        - JNCR_2017244_08C00122_V02
+        - JNCR_2017244_08C00123_V02
+        - JNCR_2017244_08C00124_V02
+        - JNCR_2017244_08C00125_V02
+        - JNCR_2017244_08C00126_V01
+        - JNCR_2018091_12C00082_V02
+        - JNCR_2018091_12C00084_V02
+        - JNCR_2018091_12C00085_V02
+        - JNCR_2018091_12C00086_V02
+        - JNCR_2018091_12C00087_V02
+        - JNCR_2018091_12C00088_V02
+        - JNCR_2018091_12C00089_V02
+        - JNCR_2018091_12C00090_V02
+        - JNCR_2018091_12C00091_V02
+        - JNCR_2018091_12C00092_V02
+        - JNCR_2018091_12C00093_V02
+        - JNCR_2018091_12C00094_V02
+        - JNCR_2018091_12C00099_V02
+        - JNCR_2018091_12C00100_V02
+        - JNCR_2018091_12C00101_V02
+        - JNCR_2018091_12C00102_V02
+        - JNCR_2018091_12C00103_V02
+        - JNCR_2018091_12C00104_V01
+        - JNCR_2018091_12C00105_V02
+        - JNCR_2019043_18C00019_V02
+        - JNCR_2019043_18C00020_V02
+        - JNCR_2019043_18C00022_V02
+        - JNCR_2019043_18C00023_V02
+        - JNCR_2019043_18C00024_V02
+        - JNCR_2019043_18C00025_V02
+        - JNCR_2019043_18C00026_V02
+        - JNCR_2019043_18C00027_V02
+        - JNCR_2019043_18C00028_V02
+        - JNCR_2019043_18C00029_V01
+        - JNCR_2019043_18C00030_V02
+        - JNCR_2019043_18C00031_V02
+        - JNCR_2019043_18C00044_V02
+        - JNCR_2019043_18C00045_V02
+        - JNCR_2019043_18C00046_V02
+        - JNCR_2019043_18C00047_V02
+        - JNCR_2019043_18C00048_V02
+        - JNCR_2019043_18C00049_V02
+        - JNCR_2019043_18C00050_V02
+        - JNCR_2019043_18C00051_V02
+        - JNCR_2019043_18C00052_V02
+        - JNCR_2019043_18C00053_V02
+        - JNCR_2019043_18C00054_V01
+        - JNCR_2019360_24C00013_V01
+        - JNCR_2019360_24C00015_V01
+        - JNCR_2019360_24C00017_V01
+        - JNCR_2019360_24C00019_V01
+        - JNCR_2019360_24C00021_V01
+        - JNCR_2019360_24C00022_V01
+        - JNCR_2019360_24C00023_V01
+        - JNCR_2019360_24C00024_V01
+        - JNCR_2019360_24C00025_V01
+        - JNCR_2019360_24C00027_V01
+        - JNCR_2019360_24C00040_V01
+        - JNCR_2019360_24C00041_V01
+        - JNCR_2019360_24C00042_V01
+        - JNCR_2019360_24C00043_V01
+        - JNCR_2019360_24C00044_V01
+        - JNCR_2019360_24C00045_V01
+        - JNCR_2019360_24C00046_V01
+        - JNCR_2019360_24C00047_V01
+        - JNCR_2020313_30C00006_V01
+        - JNCR_2020313_30C00007_V01
+        - JNCR_2020313_30C00008_V01
+        - JNCR_2020313_30C00009_V01
+        - JNCR_2020313_30C00011_V01
+        - JNCR_2020313_30C00013_V01
+        - JNCR_2020313_30C00014_V01
+        - JNCR_2020313_30C00015_V01
+        - JNCR_2020313_30C00017_V01
+        - JNCR_2020313_30C00019_V01
+        - JNCR_2020313_30C00021_V01
+        - JNCR_2020313_30C00022_V01
+        - JNCR_2020313_30C00023_V01
+        - JNCR_2020313_30C00024_V01
+        - JNCR_2020313_30C00025_V01
+        - JNCR_2020313_30C00039_V01
+        - JNCR_2020313_30C00040_V01
+        - JNCR_2020313_30C00041_V01
+        - JNCR_2020313_30C00042_V01
+        - JNCR_2020313_30C00043_V01
+        - JNCR_2020313_30C00044_V01
+        - JNCR_2020313_30C00045_V01
+        - JNCR_2020313_30C00046_V01
+        - JNCR_2020313_30C00047_V01
+        - JNCR_2020313_30C00048_V01
+        - JNCR_2020313_30C00050_V01
+        - JNCR_2020313_30C00051_V01
+        - JNCR_2021159_34C00036_V01
+        - JNCR_2021159_34C00037_V01
+        - JNCR_2021159_34C00038_V01
+        - JNCR_2021159_34C00039_V01
+        - JNCR_2021159_34C00040_V01
+        - JNCR_2021159_34C00041_V01
+        - JNCR_2021159_34C00042_V01
+        - JNCR_2021159_34C00043_V01
+        - JNCR_2021159_34C00044_V01
+        - JNCR_2021159_34C00046_V01
+        - JNCR_2021159_34C00047_V01
+        - JNCR_2021159_34C00048_V01
+        - JNCR_2021159_34C00050_V01
+        - JNCR_2021159_34C00051_V01
+        - JNCR_2021159_34C00053_V01
+        - JNCR_2021159_34C00054_V01
+        - JNCR_2021159_34C00055_V01
+        - JNCR_2021159_34C00056_V01
+        - JNCR_2021159_34C00058_V01
+        - JNCR_2021159_34C00059_V01
+        - JNCR_2021159_34C00060_V01
+        - JNCR_2021159_34C00061_V01
+        - JNCR_2021159_34C00062_V01
+        - JNCR_2021159_34C00063_V01
+        - JNCR_2021159_34C00064_V01
+        - JNCR_2021159_34C00066_V01
+        - JNCR_2021159_34C00067_V01
+        - JNCR_2021159_34C00068_V01
+        - JNCR_2021159_34C00069_V01
+        - JNCR_2021159_34C00070_V01
+        - JNCR_2021159_34C00071_V01
+        - JNCR_2021159_34C00072_V01
+        - JNCR_2021159_34C00073_V01
+        - JNCR_2021159_34C00074_V01
+        - JNCR_2021159_34C00075_V01
+        - JNCR_2021159_34C00076_V01
+        - JNCR_2021159_34C00077_V01
+        - JNCR_2021159_34C00078_V01
+        - JNCR_2021159_34C00079_V01
+        - JNCR_2021159_34C00080_V01
+        - JNCR_2021159_34C00082_V01
+        - JNCR_2021159_34C00083_V01
+        - JNCR_2021159_34C00085_V01
+      reason: >-
+        NASA/JPL reports normal operation through PJ34. These exact preferred
+        RGB products have inspected label/errata and determined archive timing,
+        verified native checksums, clean overall and every-band signal metrics,
+        and successful finite geometry. Native DN retain mission-long response,
+        illumination and compression differences; this is not absolute calibration.
+      source: >-
+        docs/reports/junocam_expansion_evidence_2026-09-08.md;
+        docs/reports/junocam_expansion_assessment_2026-09-08.csv
   exclusions:
     - orbit_min: 47
       orbit_max: 47

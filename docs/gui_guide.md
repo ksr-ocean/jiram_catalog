@@ -1,9 +1,9 @@
 # The Juno science workspace: an illustrated guide
 
-Updated **2026-09-07** for the five-view interface. This guide follows the
-controls in the current application and uses real screenshots from the local
-mirror. Counts and available products are a snapshot of that mirror; your
-session may contain more observations or different region builds.
+Updated **2026-09-08** for the five-view interface and bounded JunoCam
+expansion. Screenshots retain their **2026-09-07** capture date and show the
+same controls. Counts and available products are dated snapshots of the local
+mirror; your session may contain more observations or different region builds.
 
 Use this guide for the practical steps. The [scientific workflow and capability
 matrix](research_workflow.md) explains interpretation and validation limits;
@@ -202,13 +202,13 @@ an unassessed result does not mean zero wind.
 ### Readiness, movies and model input
 
 Scroll to **Analysis readiness**. If viewing RGB, choose **Physical band for
-analysis and movie** there. The report gives independent observation count,
+analysis and movie** there. The report gives distinct observation count,
 duplicate versions removed, cadence gaps, common valid coverage, units,
 normalization and qualifying runs. **Download readiness and sources** saves
 that evidence to the browser.
 
 **Export triples** becomes available only after grid, band, positive cadence
-and common-mask checks find a suitable run of at least three independent
+and common-mask checks find a suitable run of at least three distinct
 observations. Cadence must agree within the 5% tolerance. The export writes
 model input files on the server; the job result reports their directory.
 These checks establish an input contract, not wind accuracy. Check navigation,
@@ -225,12 +225,28 @@ the variable physical cadence.
 
 ![Eligible JunoCam polar imagery fitted to valid data in the current interface](reports/figures/implementation_2026-09-07/junocam_time_series_fit_valid_1440x900.png)
 
-The 2026-09-07 local polar example contains **three independent observations**,
+The 2026-09-07 PJ4 polar example contains **three distinct observations**,
 with gaps of approximately **577 and 243 seconds**. Processing versions are
-not extra exposures. Those gaps fail the regular-triplet check, so the current
-stack is useful for morphology and geometry inspection but does not provide
+not extra exposures. Those gaps fail the regular-triplet check, so this
+preserved stack is useful for morphology and geometry inspection but does not provide
 a regular three-frame model input. A disabled export button is expected here;
-more suitable eligible observations are required.
+more suitable eligible observations are required for a different sequence.
+
+The September 8 expansion adds **13 polar stacks containing 62 distinct
+observations**. Seven RED-band runs in the northern PJ18, PJ24, PJ30 and
+PJ34 stacks pass the 5% cadence and nonempty-common-mask checks. These runs
+can share endpoints; they are not seven independent samples or certified
+wind measurements. Their common support ranges from **0.546% to 42.656% of
+the stored map canvas**, with two runs below 1%. Inspect the mask before
+choosing an analysis region; the fraction depends on the canvas crop.
+
+The stacks use **15 km output sampling** and product `START_TIME` coordinates.
+They do not establish uniform native resolution or per-pixel acquisition
+times. For example, PJ34 north's native sampling ranges from 41.61 to
+10.50 km/pixel. Its two qualifying RED regions do not include the pole;
+successful limb fits still do not supply an absolute map-position or wind
+uncertainty. The [expansion record](reports/junocam_expansion_2026-09-08.md)
+lists each stack, run and common-mask extent.
 
 ## Image library: inspect texture and build a scientific figure
 
@@ -290,9 +306,11 @@ Its membership is separate from the Explore selection tray.
 
 Groups keep instrument, physical band, native resolution class, units and
 normalization separate. Duplicate/shared source observations are counted
-once. Strip means are first averaged within a pass, and independent pass
+once. Strip means are first averaged within a pass, and distinct pass
 means receive equal weight. The reported population standard error is based
-on those passes; with one pass it is unknown, not zero.
+on those passes; with one pass it is unknown, not zero. Treating different
+passes as independent replicates is a scientific assumption to assess for
+the question, not something established by distinct pass numbers.
 
 These are **intensity-variance spectra**, not kinetic-energy spectra. Mask
 holes, seams and disconnected regions can alter a fitted slope, and a scalar
@@ -358,12 +376,92 @@ clearance are unassessed. **Both are metadata-only, with no control that
 reveals their pixels.** A legacy A/B/C grade or the occurrence of an anneal
 does not by itself clear an observation.
 
-The 2026-09-07 mirror has **72 preferred eligible JunoCam PJ4 observations**.
-This count reflects conservative local exclusions and version deduplication;
-it is not archive-wide radiometric certification. Defaults use the latest
-known processing version and require its eligibility. See the
+The **2026-09-08** catalog has **266 distinct preferred eligible JunoCam
+observations across nine passes**, including the unchanged 72 PJ4 observations
+shown in the September 7 examples. The expansion acquired and individually
+cleared 194 additional RGB observations. The joint JIRAM/JunoCam catalog has
+**47,925 rows**. These counts reflect local evidence and version deduplication;
+they do not establish statistical independence or archive-wide radiometric
+certification. Defaults use the latest known processing version and require
+its eligibility. See the
 [policy and local evidence](research_workflow.md#junocam-policy-and-identity)
 for the methane bloom criterion and the separate navigation limitations.
+
+### How new passes enter the workspace
+
+The bounded expansion added individual native RGB products from **PJ5, 6,
+8, 12, 18, 24, 30 and 34**. It is a targeted sample around each encounter,
+not a complete census or a blanket clearance of those passes. Each acquisition
+names an exact product ID, processing version, source URL and checksum. Older
+versions, EDRs, methane, partial products and unsupported summed modes are not
+silently added by downloading a whole pass or day. The
+[inventory](reports/junocam_expansion_inventory_2026-09-08.md) explains the
+sample boundaries and JIRAM overlap.
+
+The expansion produced **102 new RGB strips** across those eight passes,
+retaining the existing **30 km/pixel native-sampling cutoff**. The other
+92 newly eligible observations are coarser and remain available in the
+catalog; their absence from the strip library is not an instrument-failure
+classification. The new strip files total **25.078 GiB**. Image library now
+offers **399 strips**, including **110 preferred JunoCam strips**: eight
+retained PJ4 products plus 102 new products. Time series has **18 products**
+in total, including the 13 new JunoCam polar stacks. Refresh the interface
+and clear an old PJ4-only filter to see the expanded sample.
+
+An acquired file still needs individual assessment. The expansion combines
+documented instrument operation, product-specific errata and timing evidence,
+verified bytes, clean measurements in **each** visible band and successful
+finite geometry. A clean overall average cannot hide a failing channel.
+Only qualifying exact products receive a sourced clearance; failures and
+unassessed products remain metadata-only. A recorded timing correction is
+already incorporated in the archive label and must not be added again.
+It does not establish zero residual navigation error. See the
+[evidence audit](reports/junocam_expansion_evidence_2026-09-08.md).
+
+Across the **126 distinct sources** used by the new strips or polar stacks,
+**103** accepted a limb fit; **23** had fewer than 200 usable limb points.
+The latter retain the existing SPICE/camera timing with zero **additional applied**
+fit offset; the fitted offset and its residual remain unknown. This is a
+navigation limitation, not an instrument failure or a measured zero error.
+Inspect refinement status as well as the timing fields before motion work;
+the [navigation record](reports/junocam_expansion_navigation_2026-09-08.csv)
+identifies each mapped source.
+
+Mapped strips are a further stage. Incremental builds now add or replace only
+their successful product entries, retaining omitted images, older versions
+and other passes. A rebuild with a different physical band set is rejected
+before replacing an existing file. This protects the library during partial
+builds; it does not make an unassessed source eligible. Builds remain a
+command-line workflow, described in the
+[pipeline audit](reports/junocam_expansion_pipeline_2026-09-08.md) and the
+[completed expansion record](reports/junocam_expansion_2026-09-08.md).
+
+For cross-pass texture studies, match the physical band, resolution,
+normalization and valid area, then inspect illumination and acquisition
+metadata. Native response evolves over the mission; compression and the
+archive's exposure/solar-distance scaling also affect the signal. Clean
+instrument operation does not make raw brightness or spectral amplitude
+constant across passes. Existing throughput factors retain their legacy
+display domain; an earlier missing factor is **unknown, not measured unity**.
+No automatic calibration or instrument-failure repair is implied. More
+mapped passes also do not create regular cadence: use each stack's readiness
+result before exporting a three-frame input.
+
+### Nearby JIRAM observations are candidates
+
+For the 194 new JunoCam observations, a search within **±300 seconds** and
+at least **0.25 overlap by the smaller spherical bounding box** found JIRAM
+candidates for **174 observations**; **140** had a qualifying physical
+M-band half. The 2,639 returned pairs were not limited by the result cap.
+The matcher now uses valid JIRAM corner coordinates when its optional outline
+is empty, and reports only the physical L/M halves whose footprints qualify.
+
+These are metadata matches. They do not verify native JIRAM file availability,
+common valid pixels, compatible sampling, illumination or cloud altitude.
+Inspect both physical-band images and their masks before using a candidate
+for comparison. The [matching results](reports/junocam_expansion_matches_2026-09-08.csv)
+and [verification record](reports/junocam_expansion_2026-09-08.md) retain the
+per-pass counts and the method's limits.
 
 ### How to use the PDS calibrated collection
 
@@ -416,7 +514,7 @@ for file contents and units.
 ## Screenshot provenance and maintenance
 
 The `current_*.png` illustrations were captured from the production build at
-1440 × 900 during this guide refresh. The two additional science screenshots
+1440 × 900 on **2026-09-07**. The two additional science screenshots
 in `reports/figures/implementation_2026-09-07/` were captured during validation
 of the same interface on 2026-09-07. They show actual local products, not mockups.
 
@@ -440,4 +538,6 @@ Judgment calls: organized the guide around research tasks and current visible
 controls; retained historical captures only as unreferenced records; reused
 existing current science images to avoid repeating expensive calculations;
 kept instrument eligibility, export readiness and physical interpretation
-separate so an attractive display cannot imply unsupported scientific validity.
+separate so an attractive display cannot imply unsupported scientific validity;
+retained the September 7 screenshots because the controls are unchanged, with
+the expansion's dated data snapshot reported separately.

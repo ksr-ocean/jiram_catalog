@@ -1,6 +1,6 @@
 # Scientific workspace: current workflow and capability matrix
 
-Updated 2026-09-07. Use the [illustrated GUI guide](gui_guide.md) for current
+Updated 2026-09-08. Use the [illustrated GUI guide](gui_guide.md) for current
 screenshots and step-by-step controls, or [gui_usage.md](gui_usage.md) for
 serving and tunnelling. The data mirror is shared; the Coverage view
 reports its actual processing stages and source timestamps.
@@ -30,8 +30,13 @@ without specific clearance. Both states are metadata-only. There is no
 quality toggle that reveals their pixels. The policy records instrument,
 signal and navigation reasons separately from a legacy A/B/C tier.
 
-The current mirror has 72 preferred eligible PJ4 observations. Compared with
-the earlier 93 mapped observations, 21 additional methane observations are
+The current mirror has **266 preferred eligible observations across nine
+passes**: the existing 72 PJ4 observations plus 194 individually assessed RGB
+observations from PJ5, 6, 8, 12, 18, 24, 30 and 34. Exact selection, supporting
+evidence and measured products are in the
+[expansion record](reports/junocam_expansion_2026-09-08.md).
+
+Within PJ4, compared with the earlier 93 mapped observations, 21 methane observations are
 withheld by their existing bloom flags. This is a conservative image metric:
 line means exceeding three times the framelet median on more than 5% of
 lines. It is not proof that every flagged image has a documented hardware
@@ -45,9 +50,17 @@ An eligible older version can be inspected explicitly. Existing derived
 stacks retain their stored source version provenance and are filtered without
 rewriting the source file.
 
-The local JunoCam polar stack now displays three observations. Their gaps
-are approximately 577 and 243 seconds, so there is no regular three-frame
-sequence under the 5% tolerance. RGB is a display composite; choose RED,
+The historical PJ4 polar example displays three observations. Its gaps
+are approximately 577 and 243 seconds, so it has no regular three-frame
+sequence under the 5% tolerance. The expansion adds 13 polar stacks with
+62 distinct observations. Seven RED/native runs in four northern stacks meet
+the existing cadence/common-mask checks; some share endpoints, and two have
+less than 1% common support on the stored canvas. The observation start times
+are not per-pixel acquisition times, and output-grid spacing is not native
+resolution. Inspect the measured runs before selecting an analysis region;
+format readiness does not establish wind accuracy.
+
+RGB is a display composite; choose RED,
 GREEN, BLUE or another actual available channel for analysis, movies and
 exports. Exposure units and normalization follow the selected band; an
 illumination correction does not turn DN into calibrated I/F.
@@ -109,11 +122,11 @@ analysis recipe when comparing spatial statistics.
 | Capability | Implementation | Scientific validation scope |
 |---|---|---|
 | JIRAM navigation / paper-grid reprojection | Available | Published PJ4 comparison; known kernel gaps remain for other passes. |
-| JunoCam navigation | Native framelet geometry and PJ4 refinement | Local PJ4 geometry assessment; unresolved limb-height/timing effects remain. |
+| JunoCam navigation | Native framelet geometry and refinement | Existing PJ4 assessment plus successful geometry for 194 new products and saved-map checks; absolute pointing, limb-height/timing and wind uncertainty remain unvalidated for the added passes. |
 | Instrument-failure exclusion | Default catalog, image and derived-product access | Versioned conservative rules and measured local metrics; no archive-wide radiometric certification. |
 | Velocity-model export | Readiness, physical-band selection, masks, native units and provenance | Synthetic contract tests and existing JIRAM layout checks; not inferred wind accuracy. |
 | Comparison / population analysis | Interactive views and bounded APIs | Known synthetic shifts, power laws, masks, cadence, grouping and uncertainty tests. |
-| Cross-instrument matching | Time proximity plus seam-aware spherical footprint boxes | Approximate candidates only; no exact pixel overlap or common cloud-level claim. |
+| Cross-instrument matching | Time proximity plus seam-aware spherical footprint boxes; valid-corner fallback and qualifying JIRAM detector halves | Actual-catalog audit: 174 of 194 new JunoCam observations have candidates at ±300 s and overlap ≥0.25; 140 have M candidates. Approximate boxes do not establish valid-pixel overlap or a common cloud level. |
 | Reference maps / ML calibrated collection | Provenance links in Coverage | Context resources; quantitative automatic import is not enabled. See the [calibrated-data assessment](reports/junocam_calibrated_assessment_2026-09-07.md). |
 
 New research caches and movies live in `<mirror>/gui_cache/research/`;

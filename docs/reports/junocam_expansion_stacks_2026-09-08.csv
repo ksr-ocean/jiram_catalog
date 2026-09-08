@@ -1,0 +1,17 @@
+orbit,region,built,reason,selected_observations,retained_observations,empty_daylight_ids,path,bytes,map_rows,map_cols,red_native_ready,red_native_runs,refined_observations,unrefined_product_ids
+5,north_pole_paper,True,,2,2,,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits5_frame.nc,251662575,3000,3200,False,0,1,JNCR_2017086_05C00104_V02
+5,south_pole,True,,2,2,,regions/south_pole/junocam_RED-GREEN-BLUE_orbits5_frame.nc,279972947,3600,3600,False,0,1,JNCR_2017086_05C00111_V02
+6,north_pole_paper,True,,6,6,,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits6_frame.nc,544520625,3000,3200,False,0,5,JNCR_2017139_06C00107_V02
+6,south_pole,True,,3,3,,regions/south_pole/junocam_RED-GREEN-BLUE_orbits6_frame.nc,466698490,3600,3600,False,0,3,
+8,north_pole_paper,True,,3,3,,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits8_frame.nc,224983564,3000,3200,False,0,3,
+8,south_pole,True,,3,3,,regions/south_pole/junocam_RED-GREEN-BLUE_orbits8_frame.nc,190593160,1926,2827,False,0,3,
+12,north_pole_paper,True,,2,2,,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits12_frame.nc,137570787,2960,1990,False,0,2,
+12,south_pole,True,,3,3,,regions/south_pole/junocam_RED-GREEN-BLUE_orbits12_frame.nc,382555499,3600,3600,False,0,3,
+18,north_pole_paper,True,,10,9,JNCR_2019043_18C00029_V01,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits18_frame.nc,651031075,3000,3200,True,1,8,JNCR_2019043_18C00019_V02
+18,south_pole,False,fewer than two eligible overlapping observations,0,0,,,0,0,0,False,0,0,
+24,north_pole_paper,True,,8,7,JNCR_2019360_24C00024_V01,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits24_frame.nc,576413018,3000,3200,True,1,5,JNCR_2019360_24C00013_V01;JNCR_2019360_24C00015_V01
+24,south_pole,False,fewer than two eligible overlapping observations,0,0,,,0,0,0,False,0,0,
+30,north_pole_paper,True,,9,9,,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits30_frame.nc,673556015,3000,3200,True,3,8,JNCR_2020313_30C00006_V01
+30,south_pole,False,fewer than two eligible overlapping observations,1,0,,,0,0,0,False,0,0,
+34,north_pole_paper,True,,10,10,,regions/north_pole_paper/junocam_RED-GREEN-BLUE_orbits34_frame.nc,664188194,3000,3200,True,2,10,
+34,south_pole,True,,3,3,,regions/south_pole/junocam_RED-GREEN-BLUE_orbits34_frame.nc,251645716,2819,2408,False,0,3,

@@ -356,7 +356,9 @@ def _longitude_arc(row: dict[str,Any]) -> tuple[float,float] | None:
             if np.isfinite(lo) and np.isfinite(hi):
                 return lo%360,(hi-lo)%360
         values=row.get("fp_lon")
-        if values is None or not hasattr(values,"__len__") or isinstance(values,str):
+        # Empty optional outlines must not hide separately available corners.
+        if (values is None or not hasattr(values,"__len__") or isinstance(values,str)
+                or len(values)==0):
             values=[row.get(f"c{i}_lon",np.nan) for i in range(1,5)]
         angles=np.asarray(values,float)
         angles=np.sort(angles[np.isfinite(angles)]%360)
@@ -421,7 +423,9 @@ def matches(request: Request,body: MatchesRequest) -> dict[str,Any]:
         overlap=0. if other is None else max(bbox_overlap(box,other) for box in boxes)
         if overlap<body.min_overlap or overlap<=0:
             continue
-        bands=str(row.get("band","")).split(";")
+        half=str(row.get("half",""))
+        bands=([half] if row.get("instrument")=="JIRAM" and half in ("L","M")
+               else str(row.get("band","")).split(";"))
         if identity in found:
             entry=found[identity]
             entry["bands"]=sorted(set(entry["bands"]+bands))

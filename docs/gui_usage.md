@@ -54,9 +54,10 @@ registration with explicit uncertainty assumptions. **Coverage** searches
 archive metadata and shows processing stages, source age, exclusion reasons
 and reference links.
 
-Use the [current workflow and capability matrix](research_workflow.md) for
-scientific interpretation and a description of every new analysis control.
-The earlier [illustrated guide](gui_guide.md) retains historical screenshots.
+Use the [illustrated guide](gui_guide.md) for a walkthrough of all five views,
+with current screenshots, controls and worked workflows. The
+[scientific workflow and capability matrix](research_workflow.md) explains
+interpretation and validation limits.
 
 ## Products and caches
 

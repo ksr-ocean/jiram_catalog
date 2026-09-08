@@ -1,8 +1,8 @@
 # Scientific workspace: current workflow and capability matrix
 
-Updated 2026-09-07. This is the current usage guide; the older illustrated
-walkthrough preserves earlier layouts. Serve and tunnel with the commands in
-[gui_usage.md](gui_usage.md). The data mirror is shared; the Coverage view
+Updated 2026-09-07. Use the [illustrated GUI guide](gui_guide.md) for current
+screenshots and step-by-step controls, or [gui_usage.md](gui_usage.md) for
+serving and tunnelling. The data mirror is shared; the Coverage view
 reports its actual processing stages and source timestamps.
 
 ## Choose a task

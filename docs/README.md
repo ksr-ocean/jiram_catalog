@@ -40,9 +40,9 @@ one line each; follow the links for the rest.
 ## The GUI
 
 - [`gui_usage.md`](gui_usage.md) -- serving it, tunnelling to it from a
-  laptop, what each tab does, what it writes.
-- [`gui_guide.md`](gui_guide.md) -- the full walkthrough, tab by tab,
-  with real screenshots.
+  laptop, what each view does, what it writes.
+- [`gui_guide.md`](gui_guide.md) -- illustrated walkthrough of all five views,
+  with current controls, JunoCam eligibility and scientific export workflows.
 - [`gui_v2_notes.md`](gui_v2_notes.md) -- the React + deck.gl front
   end's architecture, state model, and design intent, for anyone
   extending it.

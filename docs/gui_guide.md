@@ -1,554 +1,443 @@
-# The catalog browser: a guide
-
-**Historical screenshots, captured before the 2026-09-07 redesign.** Use the
-[current workflow and capability matrix](research_workflow.md) for Explore,
-Time series, Image library, Compare, Coverage, exclusion rules and analysis
-exports. The screenshots below document the preceding three-tab interface;
-its labels, panel sizes and capability statements are superseded.
-
-This is a walkthrough of `jiram-catalog gui`, the browser-based catalog
-of this repository's products. The server started by this command is
-now GUI v2: a small FastAPI backend that answers Arrow, JSON and PNG
-under `/api`, and a React + deck.gl single-page front end that holds
-all of the state and does all of the drawing in the browser. Every
-screenshot below is a real capture of the running app (headless
-Chromium via Playwright), not a mockup; `docs/gui_guide/take_screenshots.py`
-reproduces every one of them. If you just want to get the server
-running and a browser pointed at it, skip to
-["Serving and tunnelling"](#serving-and-tunnelling) -- the rest of this
-page assumes it is already open in front of you.
-
-The original GUI was primarily a view and selector over files the command
-line wrote (`docs/usage.md`); the current workspace also computes comparison
-and population results on demand. Nothing you do
-in the browser touches the published archive mirror except the app's
-own cache, `<mirror>/gui_cache/`, and the region stacks you explicitly
-ask it to build under `<mirror>/regions/`.
-
-## About these screenshots
-
-Two things worth knowing before reading them literally. First, the
-Catalog tab's map sits above the coverage charts and the table in one
-scrolling column, and at a short browser window the map can be squeezed
-down to a thin strip well under its intended size before the charts and
-table give it room back -- a real, reproducible layout behaviour, not a
-headless-only artifact (confirmed by resizing the same page at several
-heights). The screenshots below were taken from a tall enough window
-that this does not happen; if your own window shows a sliver instead of
-a map, make it taller.
-
-Second, hovering a point on the Catalog map is answered by GPU picking
-through deck.gl when it can, and by a roughly fourteen-pixel
-nearest-point search over the same data when it cannot; this cluster
-node has no GPU, so every screenshot here runs on Chromium's SwiftShader
-software implementation of WebGL 2, which deck.gl accepts and which
-does perform GPU picking correctly (`docs/gui_v2_notes.md`). Every
-interaction shown below -- filtering, the polar toggle, hovering,
-box-selecting, saving a selection to the tray, stepping the time slider,
-switching the Poles mode selector, changing the colour map, and
-toggling a strip's statistics panel open -- was driven headlessly by
-the screenshot script exactly as captured, and the same interactions
-are asserted on by the automated end-to-end suite
-(`frontend/e2e/*.spec.ts`) against a live backend. None of it had to be
-described in words instead of shown.
-
-## The layout
-
-A top bar names the app, shows the mirror path and its counts (frames
-on the planet, stacks, strips, saved selections, the app version) from
-`/api/config`, and carries a **jobs** button that opens the list of
-every background job started in this session (kind, status, progress,
-message; queued jobs can be cancelled), polled every two seconds. Below
-it, a column of three view tabs on the left -- **Catalog**, **Poles**,
-**Strips** -- and, on the right, the **selection tray**, which is always
-visible no matter which tab is active. The middle is the active view.
-All three views stay mounted underneath even when their tab is not
-showing, so switching tabs never throws away a loaded stack or strip.
-
-![Catalog tab at first load](gui_guide/01_catalog_overview.png)
-
-![Poles tab at first load: no stack chosen yet](gui_guide/02_poles_overview.png)
-
-![Strips tab at first load: the library table and centres map, no strip opened yet](gui_guide/03_strips_overview.png)
-
-Neither Poles nor Strips auto-selects anything when the page loads --
-that is a deliberate difference from the previous version, where the
-Strips tab always opened on some strip whether you wanted one or not.
-Here both tabs start empty and wait for you to choose.
-
-## The selection tray
-
-This is the one part of the window every other view writes into, and it
-replaces the earlier "send to Poles" / "send to Strips" buttons, whose
-effect used to be invisible. The tray is a permanent column showing
-exactly what is selected, where it can be saved, and the two things you
-can do with a selection once you have one.
-
-**What can add to it.** A box or lasso drag on the Catalog map, a row's
-checkbox in the Catalog table, "add this page to selection" in the
-Catalog table's toolbar, "add to selection" on a frame's detail card,
-or "all `N` filtered" in the tray itself, which replaces the working
-selection with every row currently passing the Catalog's filters
-regardless of which tab you are looking at.
-
-**Tray controls**, one sentence each:
-
-| control | does |
-| --- | --- |
-| frames / orbits / latitude / bands / instruments | a live summary of the working selection: frame count, the orbit numbers as compressed ranges (e.g. `4-11, 14, 16-17`), the min-to-max boresight latitude span, which bands are present (detector halves for JIRAM rows, filter names for JunoCam ones), and how many rows came from each instrument |
-| all `N` filtered | replaces the working selection with every row the Catalog's current filters pass |
-| clear | empties the working selection |
-| name | a text field for the selection's name, used when you save it |
-| Save selection | posts the working selection to `/api/selections` under this name (disabled until something is selected) |
-| Build stack... | opens a dialog to build a new region stack from the selection (disabled until something is selected) |
-| Show in Strips | filters the Strips tab to strips whose orbit is one of the selection's orbits, and switches to that tab (disabled until something is selected) |
-| saved selections list | every selection saved on this mirror (by anyone), each with **load** (replaces the working selection with the saved one) and **del** (deletes it) |
-
-The **Build stack...** dialog asks for a region (the four names in
-`configs/regions.yaml` plus any region that already has a stack), an
-instrument, a band or set of bands, a level, a minimum quality tier
-(`A only` by default), and a maximum emission angle (default 80 deg).
-The instrument decides the shape of the rest: a JIRAM build takes one
-band (`M` or `L`) and any of the three levels, while a JunoCam build
-takes a set of filters (RED, GREEN and BLUE by default) and only the
-`frame` level, since a JunoCam image is already a whole swath. Submitting it saves the selection first, then
-posts `/api/stacks/build` with that selection's id, so the job is
-restricted to exactly those frames; the new file lands under
-`<mirror>/regions/<region>/` and the stack list on the Poles tab
-refreshes when the job finishes.
-
-The working selection and its name persist in your browser's
-`localStorage` across a reload; a **saved** selection is a small JSON
-file under `<mirror>/gui_cache/selections/<id>.json` that anyone
-pointed at this mirror can load by name -- the two are not the same
-thing, and only the second survives switching browsers or machines.
-
-![The selection tray, holding a named, saved selection made from a Catalog box-select](gui_guide/08_selection_tray_saved.png)
-
-## Catalog
-
-**What it shows.** Every camera frame that sees the planet -- about
-47,600 of the archive's 113,000 (frame, band-half) rows, the rest
-excluded because `on_planet_frac` is zero or the geometry engine could
-not fix the frame at all -- as boresight points on a map, drawn as GPU
-point primitives rather than rasterised, which is what makes hovering
-and picking work at full point count. A JunoCam image is not a point: it
-is a swath tens of degrees across, so it is drawn as its footprint
-outline, stroked and faintly filled, in both the cylindrical and the
-polar views. An outline that crosses 0/360 is drawn as two polygons, one
-against each edge of the map, and an outline that goes right round a
-pole is closed over the top or bottom edge; hover and click work on an
-outline exactly as they do on a point, and the count beside the map
-toolbar says how many of the drawn rows are footprints. Below the map, three coverage
-charts (frames per latitude band, per orbit, per month) come from
-`/api/catalog/summary` computed by the server with the same filter
-parameters the map applies on the client, so the two cannot disagree
-about what "the current set" is -- the table's caption prints both
-counts side by side for exactly this reason. Below that, a paginated
-table of the filtered rows with checkboxes into the selection tray.
-
-**Filter toolbar**, one sentence each:
-
-| control | does |
-| --- | --- |
-| orbit | inclusive numeric range of orbit directories to include (default 1 to 99, effectively all) |
-| instrument | `both`, `JIRAM`, or `JunoCam` (shown only when the mirror has JunoCam images indexed) |
-| band | a band the row must carry: `L` or `M` for JIRAM, `RED`, `GREEN`, `BLUE` or `METHANE` for JunoCam; the options follow the instrument choice, and choosing an instrument that lacks the current band clears it |
-| quality | `A only`, `A + B` (the default) or `all`: JunoCam images are graded, and tier `C` is hidden unless it is asked for (shown only when the mirror has JunoCam images) |
-| band half | `all`, `L`, or `M` -- which detector half's frames to keep; a JunoCam row has no half and is dropped by either choice |
-| pixel <= km | drop frames whose median pixel size exceeds this (blank = no limit) |
-| emission <= deg | drop frames whose boresight emission angle exceeds this (blank = no limit) |
-| on-planet >= | drop frames whose on-planet pixel fraction is below this (blank = no limit) |
-| latitude band | one of the seven trackability-table bands, or `all` |
-| dayside only | keep only frames with a nonzero dayside fraction |
-| same-pass revisit only | keep only frames with a same-pass revisit partner (hidden entirely when `has_trackability` is false, i.e. `index/trackability_frames.parquet` does not exist) |
-| reset filters | puts every filter above back to its default (disabled once they already are) |
-
-Every threshold above *excludes*, it does not *require*: a frame whose
-emission angle the geometry engine could not resolve stays on the map
-instead of vanishing the moment a slider moves. The two exceptions are
-on-planet fraction and the latitude band, which drop a row outright when
-its value is missing -- a frame whose boresight misses the planet has no
-latitude to be inside a band (the toolbar says as much beneath the
-filters).
-
-**Map toolbar and map**, one sentence each:
-
-| control | does |
-| --- | --- |
-| tool: pan / box / lasso | pan drags the view and scrolls to zoom; box and lasso drag a rectangle or a free-form outline that adds the enclosed points to the selection on release |
-| replace instead of add | when checked, a box or lasso selection replaces the working selection instead of adding to it |
-| view: cyl / N / S | longitude-latitude, or azimuthal-equidistant polar centred on the north or south pole (`rho = 90 - abs(lat)`) |
-| colour by | orbit, year, pixel size (km), emission (deg), or instrument -- orbit, year and instrument are categorical, pixel size and emission a viridis ramp, with a legend in the corner |
-| zoom to data | fits the view to the extent of whatever currently passes the filters |
-| reset view | fits the view to the fixed limits of the current projection (the whole globe in `cyl`, the whole cap in `N`/`S`) |
-| the map | hover for a tooltip (product id, instrument and quality tier, time, orbit, sequence, pixel size, emission); click a point or a footprint to open its frame detail card |
-
-**Table toolbar and table:**
-
-| control | does |
-| --- | --- |
-| caption | `N rows pass the filters (server agrees: M)` -- the client and server counts for the same filters |
-| prev / next, page label | 200 rows a page |
-| add this page to selection | adds the 200 rows currently shown to the working selection |
-| download CSV | downloads every filtered row (not just the current page, and independent of what is selected) as `jiram_catalog_filtered.csv`, a browser download |
-| row checkbox | adds or removes that one row from the working selection |
-| product id link | opens the frame's detail card: every column of `frames_with_geo` for that product, plus an "add to selection" button for whichever detector halves it has |
-| instrument, bands, quality_tier columns | which camera the row came from, the bands it carries (`;`-joined for JunoCam), and its quality tier; all three are in the CSV as well |
-
-**Typical workflow.**
-1. Narrow the filter toolbar until the coverage charts show the subset
-   you care about.
-2. Optionally switch to a polar view for a pole-centred look.
-3. Box- or lasso-select on the map, check rows in the table, or use
-   "all `N` filtered" in the tray -- or do nothing and work with the
-   filtered set as it is.
-4. Read the table, or download it as CSV.
-5. Save the selection by name in the tray, and use it to build a stack
-   or jump to the matching strips.
-
-![Filtered to band M, pixel size <= 20 km, N polar](gui_guide/04_catalog_filtered.png)
-
-![The N polar view, azimuthal-equidistant from the pole, same filters](gui_guide/05_catalog_polar_view.png)
-
-![Hovering the polar cluster: a tooltip with a real product id](gui_guide/06_catalog_hover_tooltip.png)
-
-![A box selection over the same cluster: 1,627 frames added to the tray](gui_guide/07_catalog_box_selection.png)
-
-**What the exports produce and where they land.** "download CSV" is a
-browser download; it goes wherever your browser puts downloads, not
-onto the mirror. "Save selection" writes
-`<mirror>/gui_cache/selections/<id>.json`, shared with anyone using this
-mirror. "Build stack..." writes a new NetCDF under
-`<mirror>/regions/<region>/`.
-
-**What to do when the map looks empty.** The table caption reads `0
-rows pass the filters` when every row has been excluded. The two
-easiest filters to over-tighten are pixel size and on-planet fraction;
-the fastest fix is usually "reset filters" or loosening whichever
-slider you touched last. If the map looks like a thin coloured sliver
-rather than empty, that is the short-window layout behaviour described
-above, not an empty result -- check the "N of M drawn" count next to the
-map toolbar before assuming nothing survived the filters.
-
-## Poles
-
-**What it shows.** A viewer for the region time stacks
-`jiram-catalog region-stack` already wrote under `<mirror>/regions/`,
-plus the means to build a new one from a tray selection. A stack is
-never loaded whole: it is opened lazily server-side and one time step
-is read when the player moves; the display stretch and the graticule
-are computed once per stack and cached under
-`<mirror>/gui_cache/meta_<key>.json`, keyed to the file's own size and
-modification time. Nothing here is auto-selected at first load.
-
-**The three modes.** The same frames can be watched three ways, and the
-three are three files that differ only in their `level`:
-
-| mode | file | what one step is |
-| --- | --- | --- |
-| Region snapshots | `<BAND>_orbits<token>_sequence.nc` | one averaged snapshot per spin sequence -- the velocity model's input |
-| Accumulating sweep | `<BAND>_orbits<token>_cumulative.nc` | that same sweep filling in frame by frame, emptied again at the next sequence |
-| Instrument frames | `<BAND>_orbits<token>_frame.nc` | one raw JIRAM frame, in the order the imager recorded them |
-
-The three buttons above the player switch between them, except on a
-JunoCam stack: a JunoCam image is already the whole swath rather than
-one frame of a sweep, so `frame` is the only level such a stack comes
-in and the selector shows only that button rather than offering to
-build files that cannot exist. Because the
-three are separate files, a mode is only a click away when the mirror
-holds it; when it does not, the selector says so and offers **Build
-this view**, which starts the same background job the tray's "Build
-stack..." would with this stack's own region, band and orbits, and
-opens the new file when the job finishes. A cumulative stack has the
-frame stack's number of steps, so it is the largest of the three; the
-snapshots are the smallest.
-
-In the "Accumulating sweep" mode the time label reads
-`sweep k, frame i of n` beside `t/N`: which spin sequence is on screen,
-and how much of it has been painted so far. The last step of every
-sweep is exactly that sweep's snapshot in the sequence stack, so the
-two modes meet at the end of each sweep.
-
-![The three-button mode selector with "Region snapshots" active -- the stack list, the badge, and the one-sentence blurb under each button all agree](gui_guide/12_poles_mode_snapshots.png)
-
-![The same stack family switched to "Accumulating sweep" and stepped mid-sweep -- the time label reads "time 6/294 -- sweep 1, frame 6 of 12"](gui_guide/13_poles_mode_cumulative_sweep.png)
-
-**Toolbar and hints:**
-
-| control | does |
-| --- | --- |
-| stack | choose a stack from `<mirror>/regions/*/*.nc`, listed as `<id> - <band> <mode>, <n> steps`, with `[movie]` when one has been rendered; the list is ordered by region, band, then snapshots, sweep, frames |
-| the mode badge | the open stack's mode, beside the chooser |
-| the summary line | shape, km/px, and file size of the chosen stack, from the listing |
-| the hint line | reminds you that frames selected in the Catalog can become a new stack via the tray's "Build stack..." |
-| the three sentences under it | one line each on what the three modes are |
-
-**Viewer controls**, once a stack is open:
-
-| control | does |
-| --- | --- |
-| Region snapshots / Accumulating sweep / Instrument frames | the mode selector: opens the sibling file of that mode, or offers to build it |
-| play / pause, < / > | step through time; playback speed is the `speed` field, keyboard left/right also step it while this tab is focused |
-| time | the slider and its `t/N` label, plus `sweep k, frame i of n` on a cumulative stack |
-| speed | frames per second while playing (1-30) |
-| band | on a stack with a band dimension (a JunoCam stack, for instance), which band to display, plus `RGB composite` when RED, GREEN and BLUE are all present |
-| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis` -- a 256-entry lookup table applied to pixels already in the browser, so changing it never needs a new request from the server; disabled while the RGB composite is on screen, which carries its own colour |
-| link bands | shown in the composite: one vmin/vmax pair on the toolbar drives all three channels while it is on. It starts **off** for a JunoCam stack and on for a JIRAM one -- three colour strips of one camera differ in throughput and in where each crossed the terminator, so they do not share a stretch without tinting the picture |
-| illumination | the model divided out of every pixel before the stretch: `None`, `Lambert` (`I / cos(i)`), `Minnaert` (`I / (cos(i)^k cos(e)^(k-1))`, with a `k` slider from 0.3 to 1.2, 0.7 by default) or `Flatten` (divide by the image's own Gaussian low-pass, sigma slider 8-256 px). It opens on the product's own default -- Lambert for JunoCam, None for JIRAM -- and offers only the models the file can answer for, since the first two need a per-pixel incidence angle. Changing it re-reads every stretch slider from that model's limits |
-| stretch (Linear / Asinh) | how the display range is laid over the eight bits: linear, or `asinh`, which is linear near the bottom and logarithmic near the top and keeps one bright feature from eating the whole range |
-| graticule | overlays parallels every 2 deg and meridians every 30 deg, from the stack's own coordinate arrays (on by default) |
-| emission overlay | a 0-1 opacity slider blending in the per-pixel emission-angle PNG (always drawn with an inferno ramp), fetched only once you raise this above zero |
-| vmin / vmax | the display stretch's numeric limits; editing either refetches the frame at the new stretch, debounced by 350 ms so you can type without a flood of requests |
-| reset stretch | puts vmin/vmax back to the stack's own 1st/99th percentile, over valid pixels and under the illumination model currently chosen |
-| the image itself | drag to pan, scroll to zoom (aspect ratio locked by construction, so it cannot distort); hovering shows an x/y (km) readout |
-| frame metadata | time, product id, sequence id, orbit, frame count, emission, instrument, band, km/px, and the served x/y range for the current step, from the stack's own per-time coordinates |
-| build dialog level | the tray's "Build stack..." names the same three modes, and its instrument, bands and quality controls decide which they are: a JIRAM build takes one band (`M` or `L`) and all three levels, a JunoCam build takes a set of filters (RED, GREEN and BLUE by default) and only `frame`, and the quality control names the worst tier the job may use (`A only` by default) |
-
-**Movie panel:**
-
-| control | does |
-| --- | --- |
-| the player | a native `<video controls>` element over `/api/stacks/{id}/movie`, present only when the stack has a rendered movie |
-| Render movie | starts a background job (current speed as fps, 1st/99th percentile stretch, current colour map); reloads the video element when the job finishes |
-| Export triples | starts a background job that writes a constant-cadence velocity-model dataset; a toast reports where it landed and how many realizations |
-
-The next two frames are prefetched into a twenty-entry cache while
-playing, so playback should not stutter once it gets going.
-
-![A sequence stack stepped to a non-zero time, graticule on, gray colour map](gui_guide/09_poles_stepped_graticule.png)
-
-![The same frame with the colour map changed to magma -- an instant redraw, no new request](gui_guide/10_poles_colormap_magma.png)
-
-![The rendered movie, playing, beside the frame viewer](gui_guide/11_poles_movie.png)
-
-**What the exports produce and where they land.** A rendered movie is
-written next to its stack, `<mirror>/regions/<region>/<stem>.mp4`.
-"Export triples" writes under `<mirror>/gui_cache/exports/goflow_<id>/`
-by default. "Build stack..." (in the selection tray) writes
-`<mirror>/regions/<region>/<BAND>_orbits<token>_<level>.nc`, where
-`<token>` is the orbit list the job ran on, or `all` when it was built
-from a tray selection rather than an explicit orbit range. A JunoCam
-build writes `junocam_<bands>_orbits<token>_frame.nc` in the same
-directory.
-
-**What to do when a stack is slow to open.** A frame-level stack (every
-contributing frame kept, not composited per sequence) can be 2 GB; the
-cumulative stack of the same orbit has the same number of steps and is
-larger still, because a step late in a sweep has more painted pixels
-than the single frame it started from; a sequence-level composite is a
-fraction of either. The
-first time a given stack file is opened, the server computes its
-display stretch and graticule and writes them to
-`<mirror>/gui_cache/meta_<key>.json`; every later open of the same file
-(even after restarting the server) reads that cache instead of
-recomputing, so a stack that stays slow past its first open on this
-mirror is more likely a busy shared filesystem than the app itself.
-Stepping through time should stay fast throughout, since each frame is
-downsampled server-side before it is sent.
-
-## Strips
-
-**What it shows.** The per-pass strip library: a filterable table, a
-small map of strip centres coloured by year, a viewer for whichever
-strip you open, and that strip's statistics. Unlike Poles, Strips has no
-time axis -- each strip is one independent look, reprojected onto its
-own tangent-plane grid (`docs/architecture.md`, "The two regimes, side
-by side"). A JunoCam swath is one strip too, holding all of its filters
-in one file, which is why the table has an instrument column and the
-viewer a band selector. Nothing is opened automatically; the table and centres map
-are there from the first load, and clicking a row or a point opens a
-strip. The statistics are three Plotly figures over a server round trip
-and start **hidden** behind a "Show statistics" toggle -- opening a
-strip requests them in the background regardless, but they are not
-drawn until you ask, and until then the image viewer keeps their space
-for itself (640 px tall instead of 380).
-
-**Filter toolbar:**
-
-| control | does |
-| --- | --- |
-| latitude band | one of the seven trackability-table bands, or `all`; a strip is kept when its own latitude span overlaps the band, not just its centre |
-| instrument | `both`, `JIRAM`, or `JunoCam` (shown only when the library holds JunoCam strips) |
-| band | a band the strip must carry, from whatever the loaded strips have (`L`, `M`, `RED`, `GREEN`, `BLUE`, `METHANE`), or `all`; a JunoCam strip carries several at once and matches on any of them |
-| resolution class | whichever resolution-class labels are present in this library's strips, or `all` |
-| valid frac >= | threshold on the strip's own valid-pixel fraction (default 0, i.e. no filter) |
-| dayside only | keep only strips with a nonzero dayside fraction |
-| strip count | `N of M strips` |
-| the tray's orbit note | shown only after "Show in Strips" in the tray; names the orbits it limited the table to, with a **clear** button |
-
-**Viewer and statistics**, once a strip is open:
-
-| control | does |
-| --- | --- |
-| library table row / a point on the centres map | click either to open that strip |
-| current strip | the open strip's id |
-| band | on a multi-band (JunoCam) strip, which band the viewer draws and the statistics are computed for, plus `RGB composite` when RED, GREEN and BLUE are all present; the composite is assembled in the browser from the three band images |
-| colour map | `gray`, `viridis`, `magma`, `inferno`, or `cividis`, same LUT mechanism as Poles; disabled while the RGB composite is on screen |
-| illumination | the same four models as the Poles viewer, opening on the strip's own default (Lambert for a JunoCam strip). It travels to the statistics as well as to the picture: a spectrum of a limb-darkened swath and a spectrum of the corrected one are two different measurements, and the isotropic-spectrum heading names the model it used |
-| stretch (Linear / Asinh) | the PNG mapping, as in the Poles viewer |
-| graticule | parallels every 2 deg, meridians every 30 deg |
-| local-time contours | dashed contours every 2 h from the strip's own local-time field |
-| the image itself | drag to pan, scroll to zoom, hover for an x/y (km) readout |
-| Show statistics / Hide statistics | toggles the three plot panels below the image; starts on "Show statistics" (hidden) every time you open the app fresh, and the choice persists in `localStorage` after that |
-| Download stats (JSON) | downloads the current strip's statistics payload as `<strip_id>_stats.json`, a browser download (disabled until the statistics have loaded, independent of whether the panel is shown) |
-| isotropic spectrum | `E(k)` on log-log axes, annotated with the wavelength range it spans; its heading names the band it was computed for on a multi-band strip |
-| 1-D spectra (x, y) | the along-track and cross-track power spectra |
-| structure functions | `S2` (log-log) and the signed `S3` (linear, secondary axis) |
-
-**Typical workflow.**
-1. Filter the library table down to the strips you want, or arrive here
-   from the tray's "Show in Strips".
-2. Click a row or a point on the centres map to open a strip.
-3. Read the image; click "Show statistics" when you want the three
-   plots, which gives up some of the image's height in exchange.
-4. Download the stats JSON if you need the numbers outside the browser.
-
-![A strip open with statistics hidden (the default): the image gets the space, and "Show statistics" is the only way in](gui_guide/14_strips_stats_hidden.png)
-
-![The same strip with "Show statistics" clicked: the panel appears, the image shrinks back to its normal height, and the button now reads "Hide statistics"](gui_guide/15_strips_stats_shown.png)
-
-**What the exports produce and where they land.** "Download stats
-(JSON)" is a browser download. There is no bulk CSV export of the
-filtered library on this tab (the Catalog tab's CSV export is the one
-that writes a file); the library table itself is the way to read many
-strips' metadata at once.
-
-**What to do when a strip has no statistics yet.** `/api/strips/{id}/stats`
-(with `?band=` on a multi-band strip)
-checks an on-disk cache first (`<mirror>/gui_cache/stats_<strip_id>.nc`,
-the same file `stats2d.strip_statistics` writes); if a strip has never
-been opened before, the server computes it on that request, which takes
-a few seconds. That request fires the moment you open the strip, not
-when you click "Show statistics" -- the toggle only decides whether the
-three plot panels are drawn, not whether the numbers behind them are
-fetched, so a strip you have had open for a few seconds usually shows
-its plots the instant you ask for them. If they are still not there,
-the request is simply still in flight -- like every other network call
-here, it runs through the loading/error machinery rather than freezing
-the page, so the rest of the tab stays usable while you wait. Every
-later visit to that strip, including after a server restart, is
-instant.
-
-## The two regimes, and how the tabs map to them
-
-This tool treats the polar caps and everywhere else as genuinely
-different products (`docs/architecture.md`):
-
-| | polar / repeat-view (regime 1) | everywhere else (regime 2) |
-| --- | --- | --- |
-| product | region time stack | strip library |
-| grid | fixed per region, shared across frames | one per chunk, centred on that chunk |
-| time axis | real (multiple visits) | none (one look) |
-| GUI tab | **Poles** | **Strips** |
-| designed for | velocity retrieval at a cadence | distribution-level statistics across many independent looks |
-| ground truth | Ingersoll et al. (2022) PJ4 maps and TRACKER4 vectors | none published; internal consistency only |
-
-**Catalog** sits above both regimes, as the one place that shows every
-frame regardless of which regime (if either) it ends up feeding, and
-the **selection tray** is the route from a Catalog selection into
-whichever regime you are working in: "Build stack..." feeds regime 1,
-"Show in Strips" feeds regime 2.
-
-## Serving and tunnelling
-
-Exact commands, copied from `docs/gui_usage.md` (see that file for the
-full explanation of each flag).
-
-Run the server on a compute node from an interactive allocation
-(Expanse discourages running work on the login nodes; an interactive
-node with tens of cores and 128 GB is the normal home for this tool).
-On the node:
-
-```
-cd <repository>
+# The Juno science workspace: an illustrated guide
+
+Updated **2026-09-07** for the five-view interface. This guide follows the
+controls in the current application and uses real screenshots from the local
+mirror. Counts and available products are a snapshot of that mirror; your
+session may contain more observations or different region builds.
+
+Use this guide for the practical steps. The [scientific workflow and capability
+matrix](research_workflow.md) explains interpretation and validation limits;
+[GUI usage](gui_usage.md) is the short serving reference.
+
+## A first session
+
+1. Open **Explore**. Choose **Repeat cloud views** under **Workflow** for
+   JIRAM M-band revisit candidates, or select **JunoCam** under **Instrument**
+   to inspect eligible visible-light observations.
+2. Set the pass and latitude range. Keep **Match → Footprint overlap** when
+   you want observations covering a region, including swaths centred outside it.
+3. Open an observation from the table to inspect its identity, source links
+   and quality evidence. Add useful observations to the selection.
+4. Open **Image library** for existing mapped images, or **Time series** for
+   an existing region stack. Use **Fit valid data** if a swath occupies only
+   a small part of its map.
+5. For quantitative work, choose a physical band and inspect its units,
+   normalization and mask. Use **Compare** to examine registration, or request
+   statistics in **Image library**. Download the numbers and recipe with a figure.
+
+You can browse existing products without building a stack. A selected catalog
+observation, a mapped library image and a usable time sequence are different
+stages; **Coverage** shows which stages exist.
+
+## Start the server and connect
+
+On an allocated compute node, from this repository:
+
+```bash
 uv run jiram-catalog gui --port 5006 --address 0.0.0.0 --no-browser
 ```
 
-`--address 0.0.0.0` is needed on a compute node because the login node
-must be able to reach the server over the cluster network when it
-forwards your port; the default loopback binding only works when the
-browser tunnel terminates on the same machine. Then, from your laptop,
-in a second terminal:
+From a separate terminal on your laptop:
 
-```
+```bash
 ssh -N -L 5006:<compute-node>:5006 <user>@login.expanse.sdsc.edu
 ```
 
-where `<compute-node>` is the name printed by `hostname` on the
-allocation (for example `exp-2-45`). Open `http://localhost:5006` in
-your browser. The server has no authentication, so while it runs any
-process on the cluster network can open it; stop it when you are done
-(Ctrl-C on the node). The web socket origin check is disabled by
-default so the tunnelled `localhost:5006` address is accepted.
+Replace `<compute-node>` with the allocation's `hostname` and `<user>` with
+your cluster username, then open `http://localhost:5006`. The address option
+lets the login node reach the compute node. The mirror comes from
+`JIRAM_MIRROR` or the configured default; see [configuration](configuration.md).
 
-## FAQ
+Keep both terminals running. Stop the server and tunnel with Ctrl-C when
+finished. The server has no authentication and is reachable from the cluster
+network while bound this way.
 
-**Why does the Catalog map sometimes look like a thin strip instead of
-filling its box?** The map sits above the coverage charts and the table
-in one column, and at a short browser window that column runs out of
-room and squeezes the map down before it touches the charts or table --
-confirmed by resizing the same page at several heights, not a headless
-quirk. Maximizing the browser window, or using a portrait-oriented
-screen, gives it back its full height; the "N of M drawn" count next to
-the map toolbar tells you the real point count regardless of how big
-the map is drawn.
+## Find your way around
 
-**Where does anything I export actually go?** Saved selections under
-`<mirror>/gui_cache/selections/`; a built stack under
-`<mirror>/regions/<region>/`; a rendered movie next to its stack; a
-goflow export under `<mirror>/gui_cache/exports/` by default; strip
-statistics cached at `<mirror>/gui_cache/stats_<strip_id>.nc`; stack
-metadata cached at `<mirror>/gui_cache/meta_<key>.json`. CSV and JSON
-downloads are browser downloads, not files on the mirror. Nothing else
-under the mirror is touched, and no request leaves the node.
+The left navigation contains five views. **Selection (n)** opens the tray;
+**Hide selection** gives the image more width without discarding its contents.
+The top bar reports local product counts and provides the jobs indicator.
+Expandable metadata and advanced controls leave room for images at ordinary
+desktop sizes; scroll the main view to reach analysis and export panels.
 
-**Does it remember my filters and selection?** The Catalog's filters
-and the working selection persist in your browser's own `localStorage`,
-so a reload of the page lands you back where you were -- but only in
-that browser, on that machine; a private window or a browser with site
-data disabled will not remember anything, and it degrades quietly
-rather than erroring. A **saved** selection (the tray's "Save
-selection" button) is different: it is a small named file on the
-mirror itself, visible to anyone pointed at the same mirror, and is the
-way to hand a selection to a collaborator or to yourself on another
-machine.
+| View | Use it for | Main result |
+|---|---|---|
+| [**Explore**](#explore-find-and-select-observations) | Search mapped observations by instrument, pass, time and geometry | Observation details, selections, filtered catalog CSV |
+| [**Time series**](#time-series-inspect-repeated-views-and-export-a-sequence) | Inspect successive looks at a named region | Readiness report, movie, velocity-model input export |
+| [**Image library**](#image-library-inspect-texture-and-build-a-scientific-figure) | Inspect mapped strips and compare texture statistics | Individual statistics, population figures and recipes |
+| [**Compare**](#compare-examine-alignment-and-change) | Examine two strips or region frames together | Shared-mask view, registration diagnostics and comparison recipe |
+| [**Coverage**](#coverage-understand-availability-and-junocam-exclusions) | Understand archive availability, processing and exclusions | Metadata search, policy evidence, reference links and coverage JSON |
 
-**Which band should I look at -- L or M?** They are not interchangeable
-views of the same thing. The L-band channel (3.455 um) is tuned to H3+
-auroral emission, not reflected or thermal sunlight, so away from the
-poles it is essentially dark; an L-band frame or strip over the disk
-shows little but detector line-to-line residuals rather than any real
-atmospheric structure (`docs/architecture.md`, "The instrument, in one
-paragraph"; `docs/reports/lm_half_order.md` measures the L half's
-bright fraction below 0.05 outside the aurora). The M-band channel
-(4.780 um) sees thermal emission from several bar depth through gaps in
-the ammonia cloud deck, day and night, so it is M that actually shows
-cloud structure -- which is why every region stack and every "Build
-stack..." example in this guide defaults to band `M`
-(`north_pole_paper/M_orbits4_*`). Filter to `L` when you specifically
-want the aurora; for cloud dynamics, use `M`.
+## Explore: find and select observations
 
-**What changed from the previous version?** State and rendering now
-live in the browser rather than the server: colour map changes are an
-instant redraw (no request that can silently fail to arrive), hovering
-works at full point count because the points are on the client, a
-rendered movie plays in a native video element, and zooming cannot
-distort the aspect ratio. The selection tray replaces the earlier
-"send to Poles" / "send to Strips" buttons with a permanent, visible
-object. Two things the earlier version had are gone: an explicit
-"save session" file and a single-frame PNG export from the Poles tab;
-saved selections and the stats JSON download cover the corresponding
-uses that carried over.
+![Explore with current workflow filters and a loaded coverage map](gui_guide/current_explore.png)
 
-**Which interactions could this guide not verify visually?** None, this
-time -- every screenshot above, including the box-select, the polar
-toggle, the hover tooltip, saving a selection, stepping the time
-slider, switching the Poles mode selector between "Region snapshots"
-and "Accumulating sweep", changing the colour map, opening a strip, and
-toggling its statistics panel open and shut, was driven headlessly by
-`docs/gui_guide/take_screenshots.py` and is also exercised by the
-automated end-to-end suite. The one caveat in this guide is the
-short-window map-squeeze behaviour described above, which is a real
-layout behaviour of the app rather than something the guide could not
-capture.
+The map starts with **Coverage density**, which makes broad sampling patterns
+visible without filling the display with overlapping outlines. The table and
+summary charts below it reflect the catalog filters. Density represents
+observation coverage, not measured brightness or a quality score.
+
+### Search controls
+
+| Control | What it does |
+|---|---|
+| **Workflow** | Applies a starting preset and resets the other search filters. Repeat cloud views selects JIRAM M revisits; Polar morphology starts northward of 60°; Single-pass texture applies emission/on-planet limits; Cross-instrument context includes both instruments. |
+| **Instrument / Band** | Restricts observation identity and available physical channels. JunoCam controls do not offer JIRAM detector halves or a JIRAM revisit test. |
+| **Pass … to** | Selects an inclusive perijove range. |
+| **Latitude / Match** | Matches footprint latitude coverage by default, or the boresight centre when requested. Latitude is planetocentric. |
+| **Advanced geometry and time filters** | Adds resolution, emission, on-planet fraction, UTC dates, dayside and applicable JIRAM half/revisit limits. Missing resolution or emission values remain included; inspect their metadata. |
+| **Reset filters** | Restores the default catalog search. It does not clear the selection. |
+| **Global / North pole / South pole** | Changes the map projection, independently of which observations pass the filters. Longitude is east-positive. |
+| **Map detail / colour by** | Chooses density or all outlines, and colouring by orbit, year, pixel size, emission or instrument. Use outlines on a narrowed search to inspect individual swaths. |
+| **zoom to data / reset view** | Fits filtered observations or restores the map's general extent. |
+
+A latitude footprint match uses the available footprint latitude extent,
+falling back to the boresight when that extent is missing. It is a search
+criterion, not an exact valid-pixel overlap calculation. **Dayside only**
+selects observations with a dayside contribution; it does not certify that
+all their pixels are illuminated. Thermal JIRAM emission can be useful on
+the nightside.
+
+Hover or click observations on the map, or open a row in the catalog table.
+The detail card shows the product ID, processing version, source/label links,
+quality reasons and available preview. Expand **Processing and provenance**
+or **All catalog metadata** for more detail. An older eligible processing
+version can be inspected explicitly when versions are available.
+
+**Find cross-instrument context** looks for candidate observations within
+one hour using approximate footprint boxes. Its overlap percentage is a
+candidate-search estimate. It does not establish exact pixel overlap,
+simultaneous sampling or the same atmospheric level.
+
+### Make a reusable selection
+
+![Eligible JunoCam observations with a nonempty selection tray](gui_guide/current_selection.png)
+
+1. Narrow the search, then use row checkboxes, **Add observation to selection**
+   in the detail card, **add this page to selection**, or the tray's **all n filtered**.
+   The map's **box** and **lasso** tools offer spatial selection; return to
+   **pan** to navigate. **replace instead of add** controls whether a new
+   spatial selection replaces the current one.
+2. Open **Selection (n)**, check the count and pass summary, and give it a name.
+3. Click **Save selection**. Saved selections appear in the tray with **load**
+   and **del** actions. They are shared through the mirror; deleting one removes
+   the saved selection record, not the underlying observations.
+4. Use **Browse images from these orbits** to open Image library with an orbit
+   restriction. This is an orbit filter: the returned images can include other
+   observations from those passes. The library displays the restriction and a
+   **clear** button.
+
+The working selection and search filters persist in this browser's local
+storage. A named selection is a separate JSON record in the mirror. Changing
+filters or hiding the tray leaves the working selection intact; **clear** in
+the tray removes it.
+
+To make a new region product, choose **Build stack...**. Select the registered
+region, instrument, band(s), level and maximum emission angle, then **Start
+build**. The selection is saved first and the build uses its product IDs.
+JunoCam offers **Instrument frames**; JIRAM also offers the two mosaic modes
+below. Follow progress in the jobs panel. This action writes a derived product
+under the mirror's `regions/` directory and can take several minutes.
+
+## Time series: inspect repeated views and export a sequence
+
+![JIRAM region time series with its image and playback controls](gui_guide/current_time_series.png)
+
+Choose an existing **stack**. Its label identifies the region, instrument,
+bands, mode and step count; the summary gives grid dimensions and km/px.
+Use previous/next, the time slider, or play/pause to move through it. **speed**
+sets playback frames per second, not the physical time between exposures.
+
+### Choose the temporal product
+
+| Mode | One displayed step means | Best use |
+|---|---|---|
+| **Region snapshots** | An averaged JIRAM mosaic for one spin sequence | Repeated region views and candidate model inputs |
+| **Accumulating sweep** | The current JIRAM sweep filled progressively, restarting at the next sequence | Seeing where and when a mosaic was assembled |
+| **Instrument frames** | One reprojected JIRAM frame or whole JunoCam swath | Inspecting individual observations, footprint and timing |
+
+**How time-series modes differ** repeats this explanation in the application.
+Switching modes opens an existing related stack. A missing mode offers a
+build action; changing the label alone cannot create new observations.
+An accumulating mosaic contains reused pixels and is not automatically a
+sequence of independent atmospheric snapshots.
+
+### Make the image legible
+
+Use **Fit map** for the entire coordinate grid or **Fit valid data** for the
+bounding extent of nontransparent image pixels. Pan and zoom to inspect
+structure. Enable the graticule and choose **Sparse** or **Dense** grid labels;
+the **emission overlay** helps locate oblique viewing geometry.
+
+For JunoCam, the band selector offers available physical channels and an RGB
+composite when all three colour channels exist. The composite has its own
+colour, so a scalar colour map does not recolour it. RGB is a display choice;
+analysis, movies and exports require an actual available physical band.
+Native JIRAM images carry radiance in W m⁻² sr⁻¹ µm⁻¹; native JunoCam images
+carry DN. Check the selected normalization's reported units before comparing
+their statistics.
+
+Open **Advanced illumination and display stretch** when needed:
+
+| Setting | Meaning and appropriate use |
+|---|---|
+| **none** normalization | Keeps native intensity; appropriate for calibrated thermal radiance and a baseline for comparisons. |
+| **Lambert / Minnaert** | Applies reflected-light illumination corrections where supported. The Minnaert exponent changes the correction. These corrections do not turn JunoCam DN into calibrated I/F. |
+| **flat** and sigma | Divides out a smoothed illumination/background field. Sigma is in pixels of the array being processed; use this as a viewing aid unless the native analysis recipe is recorded. |
+| **stretch**, **vmin / vmax** | Changes how intensity maps to display brightness. It does not change acquisition time or spatial sampling. RGB also has channel stretch controls. |
+
+The interface restricts normalization choices to those supported by the
+product. JIRAM thermal data supports native/flattened intensity and retains
+valid nightside emission; Lambert and Minnaert are not offered as thermal
+corrections. The same flattening sigma can represent different physical
+scales in a preview and a native-resolution analysis; see the
+[normalization notes](research_workflow.md#statistics-and-reproducibility).
+
+Expand **Observation metadata and provenance** to check time, product,
+sequence, instrument, band, grid and processing attributes. **Tracking vector
+overlay** displays only an existing vector product with a matching source,
+time and map basis. The current mirror has no such generic associated product;
+an unassessed result does not mean zero wind.
+
+### Readiness, movies and model input
+
+Scroll to **Analysis readiness**. If viewing RGB, choose **Physical band for
+analysis and movie** there. The report gives independent observation count,
+duplicate versions removed, cadence gaps, common valid coverage, units,
+normalization and qualifying runs. **Download readiness and sources** saves
+that evidence to the browser.
+
+**Export triples** becomes available only after grid, band, positive cadence
+and common-mask checks find a suitable run of at least three independent
+observations. Cadence must agree within the 5% tolerance. The export writes
+model input files on the server; the job result reports their directory.
+These checks establish an input contract, not wind accuracy. Check navigation,
+scene evolution and registration before treating an exported sequence as a
+validated motion experiment.
+
+**Render movie** creates a movie for the selected physical band and
+normalization; it does not require an exportable triple. The player appears
+when rendering finishes. An irregular sequence can therefore be useful to
+inspect in a movie even though its fixed playback speed does not reproduce
+the variable physical cadence.
+
+### What the local JunoCam stack actually supports
+
+![Eligible JunoCam polar imagery fitted to valid data in the current interface](reports/figures/implementation_2026-09-07/junocam_time_series_fit_valid_1440x900.png)
+
+The 2026-09-07 local polar example contains **three independent observations**,
+with gaps of approximately **577 and 243 seconds**. Processing versions are
+not extra exposures. Those gaps fail the regular-triplet check, so the current
+stack is useful for morphology and geometry inspection but does not provide
+a regular three-frame model input. A disabled export button is expected here;
+more suitable eligible observations are required.
+
+## Image library: inspect texture and build a scientific figure
+
+![Image library filters, strip table and location map; the selected image begins below](gui_guide/current_image_library.png)
+
+A library strip is a mapped image product with a known pass, spatial grid and
+source provenance. It is useful even when there are no repeat observations
+suitable for tracking.
+
+1. Set **instrument**, **band**, **latitude band**, **resolution class** and
+   **valid frac >=** as needed. Remove any inherited tray-orbit restriction
+   if you want the full library. The nearby map shows strip centres.
+2. Click a row or map point to open its image. Check the displayed strip ID,
+   grid resolution and coverage. The band filter restricts library rows; use
+   the image's own **band** selector to choose its displayed/analysed channel.
+3. Choose a physical band and normalization. Use **Fit valid data**, the
+   graticule, local-time contours and stretch controls to inspect the image.
+4. Click **Show statistics** when you want numerical analysis. Until requested,
+   these calculations are not started merely by opening an image.
+
+![Current JIRAM image and requested statistics at a desktop viewport](reports/figures/implementation_2026-09-07/jiram_statistics_1440x900.png)
+
+The statistics panel contains the isotropic intensity spectrum, directional
+x/y spectra and structure functions. **Hide statistics** gives the image more
+space. Native-resolution calculations on large JunoCam products can take
+several minutes; the page says when it is computing them. Changing source,
+band or normalization clears old results while new results are requested.
+Heavy native image work can also queue other image requests on the server.
+
+If RGB is displayed, the statistics notice names the underlying physical band;
+the curves are not statistics of a combined colour image. Select the physical
+band explicitly before making a quantitative comparison.
+
+**Download stats (JSON)** saves individual numerical results. Each plot's
+**SVG** and **PNG** buttons export the figure. For a reproducible comparison
+across strips, use the population panel and save its recipe as well.
+
+### Compare a population of images
+
+Open **Population statistics and reproducible figures** above the library table.
+Its membership is separate from the Explore selection tray.
+
+1. Narrow library filters to no more than 100 images and choose **Use n filtered
+   images**, or expand **Choose individual population members** and select
+   members yourself. **Clear population** resets this set.
+2. Choose **Physical band** for multi-band products. The analysis uses the
+   current image normalization; make that setting explicit before computing.
+3. Set **Fit k minimum / maximum (rad/m)** for the scientific scale range of
+   interest. Wavenumber is angular, so wavelength is `2π/k`. The default fit
+   stays inside the Nyquist disc; a slope needs at least three positive bins.
+4. Optionally enable **Compare native normalization** or **Compare flattened
+   normalization**, depending on the current setting, to examine sensitivity.
+5. Click **Compute population**, then inspect **Mask, seam and fit diagnostics**
+   and **Sources, units and processing provenance** for each result group.
+6. Save the figure with **SVG** or **PNG**, its **Download numeric CSV**, and
+   **Download results and recipe (JSON)** together.
+
+Groups keep instrument, physical band, native resolution class, units and
+normalization separate. Duplicate/shared source observations are counted
+once. Strip means are first averaged within a pass, and independent pass
+means receive equal weight. The reported population standard error is based
+on those passes; with one pass it is unknown, not zero.
+
+These are **intensity-variance spectra**, not kinetic-energy spectra. Mask
+holes, seams and disconnected regions can alter a fitted slope, and a scalar
+mask correction cannot undo spectral leakage. A fit line alone is insufficient
+evidence for a turbulent scaling law.
+
+## Compare: examine alignment and change
+
+![Compare source selectors and an identical-source control comparison](gui_guide/current_compare.png)
+
+The screenshot uses the same source on both sides as an alignment control;
+it does not demonstrate measured atmospheric motion.
+
+1. For **Left** and **Right**, select the source type, source, frame where
+   applicable, physical band and normalization.
+2. Use **Display → Side by side** or **Blink**. Pan/zoom are linked. Enable
+   **Lock stretches** to keep brightness ranges comparable and the common-mask
+   checkbox to inspect shared support when available.
+3. Read the grid compatibility, time separation, common valid coverage,
+   registration, correlation and registration sampling below the images.
+4. Enter **Assumed speed (m/s)** for an expected-displacement estimate. Enter
+   **Navigation error (px)** only when you have a defensible per-image error
+   estimate; leaving it blank keeps navigation uncertainty unknown.
+5. Save **Download comparison and recipe** with the observations you used.
+
+Registration runs only on equivalent physical grids, including projection
+and coordinates. Different grids can be inspected but require a documented
+reprojection before a numerical alignment comparison. The measured shift is
+bounded and sampled, with its sampling scale reported; it is not a retrieved
+wind field. Cross-band contrast, lighting, navigation and cloud evolution can
+all affect its correlation peak. Expected displacement uses your assumed
+speed, rather than the measured registration.
+
+## Coverage: understand availability and JunoCam exclusions
+
+![Coverage view showing processing stages and the JunoCam exclusion policy](gui_guide/current_coverage.png)
+
+Read the stage columns from archive metadata toward derived products:
+
+| Column | What it establishes |
+|---|---|
+| **Archive / Labels** | Observations known to the local archive inventory and those with indexed labels |
+| **Local pixels** | Image presence recorded by the index; this may be an earlier snapshot rather than a fresh filesystem scan |
+| **Geometry** | Available navigation metadata |
+| **Assessed / Eligible / Excluded / Unassessed** | Recorded quality assessment and eligibility states, with policy evidence |
+| **Time series / Images** | Available derived stack and strip products for that pass |
+
+These are different stages, not interchangeable totals or a complete mission
+census. Open **Source timestamps and counting notes** to check freshness.
+The strict unassessed-pixel restriction below applies to JunoCam. JIRAM rows
+can have no recorded assessment while their existing radiance products remain
+available; an empty assessment count is not a measurement of instrument failure.
+Click a pass in the table to restrict the metadata search below, or set its
+instrument, pass and search text directly. Open observation details to inspect
+source identity and reasons. **Download coverage and policy** saves the report.
+
+### Instrument failures stay out of the viewer
+
+The JunoCam **instrument-failure policy** is enforced before pixel access,
+including derived images, statistics, movies and exports. Documented failures
+and measured signal failures are excluded. Observations without sufficient
+clearance are unassessed. **Both are metadata-only, with no control that
+reveals their pixels.** A legacy A/B/C grade or the occurrence of an anneal
+does not by itself clear an observation.
+
+The 2026-09-07 mirror has **72 preferred eligible JunoCam PJ4 observations**.
+This count reflects conservative local exclusions and version deduplication;
+it is not archive-wide radiometric certification. Defaults use the latest
+known processing version and require its eligibility. See the
+[policy and local evidence](research_workflow.md#junocam-policy-and-identity)
+for the methane bloom criterion and the separate navigation limitations.
+
+### How to use the PDS calibrated collection
+
+**External reference collections** links to source resources, including the
+PDS derived calibrated JunoCam collection. These links open external sites;
+they do not import images into your local analysis automatically.
+
+The [bounded calibrated-collection assessment](reports/junocam_calibrated_assessment_2026-09-07.md)
+found useful morphology/context products, but generated channels, mosaic
+provenance, tile timing and mask/scaling questions prevent treating them as a
+replacement for time-resolved native observations. They do not establish that
+instrument-damaged input has become valid. Use the collection for visual
+context and hypothesis development while retaining native eligible products
+for the quantitative workflows described here.
+
+## Where results go
+
+`<mirror>` means the configured data mirror. Browser downloads go to your
+laptop's browser download destination when you access the GUI through a tunnel.
+
+| Action | Destination |
+|---|---|
+| Filtered catalog CSV; statistics JSON; plot SVG/PNG; population CSV/recipe; comparison, readiness or coverage JSON | Browser download |
+| **Save selection** | `<mirror>/gui_cache/selections/` |
+| **Build stack...** or a missing-mode build | `<mirror>/regions/<region>/` |
+| New rendered movies and research calculation caches | `<mirror>/gui_cache/research/` |
+| **Export triples** | `<mirror>/gui_cache/exports/`; the completion message reports the chosen directory |
+| Background job records | `<mirror>/gui_cache/jobs/` |
+
+The current export button chooses its destination automatically. GUI API
+requests with an explicit destination must keep it inside the exports
+directory and use an empty destination. Building or exporting does not alter
+native observations or published ground truth. See [data products](data_products.md)
+for file contents and units.
+
+## When something looks wrong
+
+| Symptom | Check |
+|---|---|
+| A small bright swath sits in a large empty map | Use **Fit valid data**. Empty/transparent regions are missing coverage, not measured zero intensity. |
+| No catalog rows or library images | Reset/narrow filters appropriately, clear an inherited orbit restriction and inspect **Coverage**. Metadata availability does not imply a mapped product exists. |
+| A JunoCam observation is known but cannot be viewed | Read its eligibility reasons in **Coverage**; excluded/unassessed pixels remain withheld. |
+| The library shows more images than the tray selected | **Browse images from these orbits** selects whole passes, not exact source membership. |
+| JunoCam's colour map appears inactive | RGB carries its own colours. Choose a physical band for a scalar colour map. |
+| Statistics are missing or slow | Click **Show statistics**, check the named band and wait for native computation; large images can take minutes. Check visible errors and the server terminal if it fails. |
+| **Export triples** is disabled | Read **Analysis readiness**; choose a physical band and check unique observations, cadence, grid and common mask. |
+| Registration or vectors are unassessed | Check grid compatibility, sample limits or missing source-associated vector products; the interface does not infer missing evidence. |
+| The browser stops connecting | Check the compute allocation, running server and SSH tunnel. Restart the session if the allocation ended. |
+
+## Screenshot provenance and maintenance
+
+The `current_*.png` illustrations were captured from the production build at
+1440 × 900 during this guide refresh. The two additional science screenshots
+in `reports/figures/implementation_2026-09-07/` were captured during validation
+of the same interface on 2026-09-07. They show actual local products, not mockups.
+
+Regenerate the guide-owned captures on a compute node with the mirror available:
+
+```bash
+uv run --with playwright python docs/gui_guide/take_screenshots.py
+```
+
+The helper requires an installed Playwright Chromium browser. It starts a
+loopback server on a free port, waits for application data and image loading,
+captures the current views, and stops its server/browser. It uses configured
+Lustre temporary storage. It does not build products, save selections or
+export data; ordinary GUI reads may populate mirror caches. Historical numbered
+PNGs remain in the directory as earlier records and are not used in this guide.
+Screenshot capture verifies the illustrated states; the broader software
+validation and known data limitations are recorded in the
+[build log](build_log_2026-09-07.md).
+
+Judgment calls: organized the guide around research tasks and current visible
+controls; retained historical captures only as unreferenced records; reused
+existing current science images to avoid repeating expensive calculations;
+kept instrument eligibility, export readiness and physical interpretation
+separate so an attractive display cannot imply unsupported scientific validity.

@@ -1,455 +1,325 @@
-"""Regenerate the screenshots in ``docs/gui_guide/`` from the live v2 app.
+"""Capture the delivered five-view GUI at 1440 x 900 from real local data.
 
-Starts ``jiram-catalog gui`` (the React + deck.gl front end; this script
-never passes ``--legacy``) in a subprocess on a free loopback port,
-drives it with headless Chromium (Playwright), saves PNGs into this
-directory, and stops the server again. Run it as::
+Run from the repository with::
 
     uv run --with playwright python docs/gui_guide/take_screenshots.py
 
-Playwright and its Chromium build must already be installed (they are,
-under ``~/.cache/ms-playwright``, wherever this was developed). The
-default mirror (``JIRAM_MIRROR``, or the built-in default) supplies the
-data; nothing here writes anywhere except this directory and the
-mirror's own ``gui_cache/`` (one selection is saved to demonstrate the
-tray, then deleted again at the end so reruns do not accumulate them).
+Install Playwright's Chromium separately if it is absent. The committed
+production bundle is served on a free loopback port. JIRAM_MIRROR (or the
+configured default) supplies existing stacks and strips. No stack, export,
+movie or saved selection is created; normal GUI read caches are permitted.
+The selection screenshot uses only an ephemeral browser-context selection.
 
-Unlike GUI v1, every state this script waits on is read from the app's
-own hidden ``#debug-state`` element (``{n_points, n_filtered,
-selection_n, view, stack_id, level, t, cmap, stats_visible}``,
-`docs/gui_v2_notes.md`) rather than guessed from a fixed sleep or
-scraped from on-screen text -- v2 was built with that element
-specifically so a test (or this script) has a number to poll instead of
-a screenshot to eyeball; ``level`` and ``stats_visible`` are what this
-script polls for the Poles mode selector and the Strips statistics
-toggle. Every interaction below is one Playwright can drive headlessly
-and is also exercised by `frontend/e2e/*.spec.ts` against a live
-backend; none had to be described in words instead of captured, unlike
-GUI v1's second-strip click.
+Every capture waits on application state and rendered data. Frame captures
+also require nontransparent image pixels. PNG optimization is lossless: no
+resizing, colour conversion or palette quantization. Historical numbered
+screenshots are left untouched. The guide reuses existing JunoCam readiness evidence; this helper captures
+only the six required views and does not repeat that calculation.
+
+Server logs and a JSON capture record are retained under the configured
+Lustre TMPDIR. The browser and the complete owned server process group are
+closed on success or failure. This helper does not exercise save/build/
+export workflows; screenshots must not be described as evidence for them.
 """
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from io import BytesIO
 import json
+import os
+from pathlib import Path
+import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
-import urllib.error
+from typing import Any, Callable, Iterator
 import urllib.request
-from pathlib import Path
-from typing import Any, Callable
 
 from PIL import Image
-from playwright.sync_api import Page, sync_playwright
+import numpy as np
+import pyarrow as pa
+from playwright.sync_api import Browser, Page, expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = Path(__file__).resolve().parent
-#: Width is what the deliverable requires (<= 1400 px); the height is taller
-#: than a browser window needs to be because the Catalog tab's `.view` is a
-#: column flexbox with no `min-height: 0` on the map -- at a short viewport
-#: (900 px, tried first) the coverage charts and table below the map starve
-#: it, and the deck.gl canvas settles at well under its intended 420 px
-#: (confirmed empirically: full height only from about 1280 px of viewport
-#: height up). No code here is in scope to fix that, so the honest way to
-#: get a screenshot that actually shows the map is a taller viewport, not a
-#: smaller one; a normal maximized browser window clears this easily.
-VIEWPORT = {"width": 1400, "height": 1300}
-MAX_BYTES = 300_000
-MAX_WIDTH = 1400
-DEMO_SELECTION_NAME = "gui guide demo selection"
+VIEWPORT = {"width": 1440, "height": 900}
+WAIT_MS = 180_000
+expect.set_options(timeout=WAIT_MS)
+REQUIRED = (
+    "current_explore.png", "current_selection.png", "current_time_series.png",
+    "current_image_library.png", "current_compare.png", "current_coverage.png",
+)
+
+
+def scratch_directory() -> Path:
+    raw = os.environ.get("TMPDIR")
+    if not raw:
+        raise RuntimeError("TMPDIR must point to the configured Lustre runtime directory")
+    scratch = Path(raw).resolve()
+    if scratch == Path("/tmp") or Path("/tmp") in scratch.parents:
+        raise RuntimeError("System /tmp is not permitted for this capture")
+    scratch.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="gui-guide-capture-", dir=scratch))
 
 
 def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+        return int(sock.getsockname()[1])
 
 
-def wait_ready(url: str, timeout: float = 180.0) -> None:
-    """Poll ``GET /`` until it answers 200 (the built front end is served)."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+def fetch(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=180) as response:
+        return response.read()
+
+
+def get_json(url: str) -> Any:
+    return json.loads(fetch(url))
+
+
+@contextmanager
+def production_server(runtime: Path) -> Iterator[str]:
+    port = free_port()
+    url = f"http://127.0.0.1:{port}"
+    env = dict(os.environ)
+    for name in ("TMPDIR", "TMP", "TEMP", "SQLITE_TMPDIR"):
+        env[name] = str(runtime)
+    env.update(OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1")
+    log_path = runtime / "server.log"
+    # A regular file continuously drains stdout/stderr; a PIPE can fill and
+    # block the server before the browser gets its first response.
+    with log_path.open("w") as log:
+        server = subprocess.Popen(
+            [sys.executable, "-m", "jiram_catalog.gui_cmd", "--address", "127.0.0.1",
+             "--port", str(port), "--no-browser"],
+            cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        print(f"Server PID {server.pid}: {url}; log {log_path}", flush=True)
         try:
-            with urllib.request.urlopen(url, timeout=20) as response:
-                if response.status == 200:
-                    return
-        except OSError:
-            pass
-        time.sleep(1.0)
-    raise RuntimeError(f"server at {url} did not come up within {timeout:.0f}s")
+            deadline = time.monotonic() + 180
+            while time.monotonic() < deadline:
+                if server.poll() is not None:
+                    raise RuntimeError(f"Server exited {server.returncode}; see {log_path}")
+                try:
+                    with urllib.request.urlopen(url + "/api/health", timeout=5) as response:
+                        if response.status == 200:
+                            break
+                except OSError:
+                    time.sleep(0.25)  # Polling interval, never screenshot readiness.
+            else:
+                raise RuntimeError(f"Server startup timed out; see {log_path}")
+            assert b"/assets/" in fetch(url + "/"), "Committed production bundle is missing"
+            yield url
+        finally:
+            if server.poll() is None:
+                os.killpg(server.pid, signal.SIGTERM)
+                try:
+                    server.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    os.killpg(server.pid, signal.SIGKILL)
+                    server.wait(timeout=10)
 
 
-def compress(path: Path) -> None:
-    """Downscale to <= 1400 px wide and quantize until the file fits."""
-    image = Image.open(path).convert("RGB")
-    if image.width > MAX_WIDTH:
-        ratio = MAX_WIDTH / image.width
-        image = image.resize((MAX_WIDTH, round(image.height * ratio)), Image.LANCZOS)
-    image.save(path, format="PNG", optimize=True)
-    if path.stat().st_size <= MAX_BYTES:
-        return
-    for colors in (256, 192, 128, 96, 64):
-        quantized = image.convert("P", palette=Image.ADAPTIVE, colors=colors)
-        quantized.save(path, format="PNG", optimize=True)
-        if path.stat().st_size <= MAX_BYTES:
-            return
-    print(f"warning: {path.name} still {path.stat().st_size} bytes after quantizing")
-
-
-def save(page: Page, name: str) -> None:
-    path = OUT_DIR / name
-    page.screenshot(path=str(path), full_page=False)
-    compress(path)
-    print(f"wrote {path} ({path.stat().st_size} bytes)")
-
-
-# ---------------------------------------------------------------------------
-# The debug-state contract (see frontend/e2e/helpers.ts, the TypeScript twin
-# of these two functions).
-# ---------------------------------------------------------------------------
 def debug_state(page: Page) -> dict[str, Any]:
-    text = page.locator("#debug-state").text_content()
-    return json.loads(text or "{}")
+    return json.loads(page.locator("#debug-state").text_content() or "{}")
 
 
-def wait_for_state(
-    page: Page,
-    predicate: Callable[[dict[str, Any]], bool],
-    timeout: float = 90.0,
-    interval_ms: int = 400,
-) -> dict[str, Any]:
-    deadline = time.time() + timeout
-    state = debug_state(page)
-    while time.time() < deadline:
+def wait_for_state(page: Page, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+    deadline = time.monotonic() + WAIT_MS / 1000
+    while time.monotonic() < deadline:
         state = debug_state(page)
         if predicate(state):
             return state
-        page.wait_for_timeout(interval_ms)
-    raise RuntimeError(f"debug state never matched; last saw {state!r}")
+        page.wait_for_timeout(200)
+    raise RuntimeError(f"Application state did not become ready: {debug_state(page)!r}")
 
 
-def open_app(page: Page, url: str) -> None:
-    """Load the app and wait for the catalog Arrow table to be parsed."""
-    page.goto(url)
-    page.wait_for_selector("#debug-state", state="attached", timeout=60_000)
-    wait_for_state(page, lambda s: s.get("n_points", 0) > 0, timeout=120.0)
+def next_paint(page: Page) -> None:
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
 
 
-def centre_of(locator: Any) -> dict[str, float]:
-    box = locator.bounding_box()
-    if box is None:
-        raise RuntimeError("element has no box")
-    return {"x": box["x"] + box["width"] / 2, "y": box["y"] + box["height"] / 2, "width": box["width"], "height": box["height"]}
-
-
-def video_ready_state(page: Page) -> int:
-    return page.evaluate(
-        "() => { const v = document.querySelector('[data-testid=\"stack-movie\"]'); return v ? v.readyState : -1; }"
-    )
-
-
-# ---------------------------------------------------------------------------
-# The screenshot groups. Each function owns one browser page (one fresh
-# session with an empty localStorage) so that the interactions building
-# toward one screenshot cannot be thrown off by state left behind by another
-# group -- the same reasoning GUI v1's script used, even though v2's state
-# management does not actually drift the way v1's did.
-# ---------------------------------------------------------------------------
-def shot_first_loads(browser, url: str) -> None:
-    # 1. Catalog tab at first load (the default tab).
-    page = browser.new_page(viewport=VIEWPORT)
-    open_app(page, url)
-    page.wait_for_timeout(1500)
-    save(page, "01_catalog_overview.png")
-    page.close()
-
-    # 2. Poles tab at first load: no stack chosen yet, so this also shows
-    # the "no stack is open" placeholder and the stack chooser.
-    page = browser.new_page(viewport=VIEWPORT)
-    open_app(page, url)
-    page.locator('[data-testid="tab-poles"]').click()
-    page.locator('[data-testid="stack-select"] option').nth(1).wait_for(state="attached", timeout=60_000)
-    page.wait_for_timeout(800)
-    save(page, "02_poles_overview.png")
-    page.close()
-
-    # 3. Strips tab at first load: the library table and centres map, no
-    # strip opened yet (v2 does not auto-select one the way v1 did).
-    page = browser.new_page(viewport=VIEWPORT)
-    open_app(page, url)
-    page.locator('[data-testid="tab-strips"]').click()
-    page.locator('[data-testid="strips-table"] tbody tr').first.wait_for(state="attached", timeout=60_000)
-    page.wait_for_timeout(800)
-    save(page, "03_strips_overview.png")
-    page.close()
-
-
-def shot_catalog_workflow(browser, url: str) -> None:
-    """Filter -> polar view -> hover -> box-select -> save to the tray.
-
-    One session, in this order, because it is also the real workflow the
-    guide describes: narrow the map, look at one hemisphere, read a point,
-    select a cluster, and keep it.
-    """
-    page = browser.new_page(viewport=VIEWPORT)
-    open_app(page, url)
-    total = debug_state(page)["n_points"]
-
-    # 4. Filtered: band M, pixel <= 20 km, N polar.
-    page.locator('[data-testid="filter-half"]').select_option("M")
-    page.wait_for_timeout(300)
-    page.locator('[data-testid="filter-pixel-max"]').fill("20")
-    page.wait_for_timeout(300)
-    page.locator('[data-testid="filter-lat-band"]').select_option("N polar")
-    wait_for_state(page, lambda s: 0 < s["n_filtered"] < total, timeout=30.0)
-    page.wait_for_timeout(500)
-    save(page, "04_catalog_filtered.png")
-
-    # 5. Polar-view toggle, fit to the filtered set.
-    page.locator('[data-testid="view-mode-N"]').click()
-    wait_for_state(page, lambda s: s["view"] == "N")
-    page.locator('[data-testid="zoom-to-data"]').click()
-    page.wait_for_timeout(1500)
-    save(page, "05_catalog_polar_view.png")
-
-    # 6. Hover tooltip: switch to the pan tool (GPU picking, as
-    # frontend/e2e/catalog.spec.ts does) and probe a few points near the
-    # centre of the now-dense polar cluster.
-    page.locator('[data-testid="tool-pan"]').click()
-    page.wait_for_timeout(300)
-    map_box = centre_of(page.locator('[data-testid="catalog-map"]'))
-    tooltip = page.locator('[data-testid="catalog-map"] .tooltip')
-    shown = False
-    for dx, dy in [(0, 0), (10, 0), (-10, 8), (0, -14), (22, 18), (-28, -12), (36, 4), (0, 36)]:
-        page.mouse.move(map_box["x"] + dx, map_box["y"] + dy)
-        page.wait_for_timeout(250)
-        if tooltip.is_visible():
-            shown = True
-            break
-    if not shown:
-        print("warning: no tooltip appeared while probing the polar cluster")
-    save(page, "06_catalog_hover_tooltip.png")
-
-    # 7. Box selection: back to the box tool, drag over the same cluster.
-    page.locator('[data-testid="tool-box"]').click()
-    page.wait_for_timeout(200)
-    before_n = debug_state(page)["selection_n"]
-    page.mouse.move(map_box["x"] - map_box["width"] * 0.28, map_box["y"] - map_box["height"] * 0.28)
-    page.mouse.down()
-    page.mouse.move(map_box["x"], map_box["y"], steps=8)
-    page.mouse.move(map_box["x"] + map_box["width"] * 0.28, map_box["y"] + map_box["height"] * 0.28, steps=8)
-    page.mouse.up()
-    wait_for_state(page, lambda s: s["selection_n"] > before_n, timeout=15.0)
-    page.wait_for_timeout(400)
-    save(page, "07_catalog_box_selection.png")
-
-    # 8. The selection tray with that selection named and saved.
-    page.locator('[data-testid="selection-name"]').fill(DEMO_SELECTION_NAME)
-    page.locator('[data-testid="save-selection"]').click()
-    page.locator('[data-testid="saved-selections"]', has_text=DEMO_SELECTION_NAME).wait_for(
-        state="visible", timeout=20_000
-    )
-    page.wait_for_timeout(400)
-    save(page, "08_selection_tray_saved.png")
-    page.close()
-
-
-def shot_poles(browser, url: str, stack_id: str) -> None:
-    """Open the paper region's stack and its two named siblings.
-
-    ``stack_id`` is always the sequence-level ("Region snapshots") stack
-    (see ``pick_movie_stack``), so this one session can show all three
-    mode-selector states without reopening the tab: snapshots first (12),
-    the stepped/magma/cumulative shots next (09, 10, 13), then back to
-    snapshots for the movie (11), which is rendered only for that sibling.
-    """
-    page = browser.new_page(viewport=VIEWPORT)
-    open_app(page, url)
-    page.locator('[data-testid="tab-poles"]').click()
-
-    select = page.locator('[data-testid="stack-select"]')
-    select.locator(f'option[value="{stack_id}"]').wait_for(state="attached", timeout=60_000)
-    select.select_option(stack_id)
-    wait_for_state(page, lambda s: s.get("stack_id") == stack_id, timeout=60.0)
-    page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
-        state="attached", timeout=90_000
-    )
-
-    # 12. The mode selector with "Region snapshots" active -- the sibling
-    # this script always opens first, per pick_movie_stack.
-    state = wait_for_state(page, lambda s: s.get("level") is not None, timeout=30.0)
-    if state.get("level") != "sequence":
-        print(f"warning: expected to open a 'sequence' stack, debug-state says {state.get('level')!r}")
-    page.locator('[data-testid="mode-bar"]').scroll_into_view_if_needed()
-    page.wait_for_timeout(500)
-    save(page, "12_poles_mode_snapshots.png")
-
-    # 9. Step to a non-zero time with the graticule on (it defaults on).
-    slider = page.locator('[data-testid="time-slider"]')
-    slider.fill("10")
-    wait_for_state(page, lambda s: s.get("t") == 10, timeout=30.0)
-    page.wait_for_timeout(1200)
-    save(page, "09_poles_stepped_graticule.png")
-
-    # 10. Colour map changed to magma -- a LUT redraw, no refetch.
-    page.locator('[data-testid="cmap-select"]').select_option("magma")
-    wait_for_state(page, lambda s: s.get("cmap") == "magma", timeout=15.0)
-    page.wait_for_function(
-        "document.querySelector('[data-testid=\"frame-canvas\"]')?.dataset.cmap === 'magma'",
-        timeout=15_000,
-    )
-    page.wait_for_timeout(500)
-    save(page, "10_poles_colormap_magma.png")
-
-    # 13. Switch to "Accumulating sweep" (the cumulative sibling this
-    # mirror carries for the paper region) and step mid-sweep so the
-    # "sweep k, frame i of n" readout has something to say.
-    cumulative_option = select.locator('option[value$="_cumulative"]')
-    if cumulative_option.count() > 0:
-        page.locator('[data-testid="mode-cumulative"]').click()
-        wait_for_state(page, lambda s: s.get("level") == "cumulative", timeout=60.0)
-        page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
-            state="attached", timeout=90_000
-        )
-        slider.fill("5")
-        wait_for_state(page, lambda s: s.get("t") == 5, timeout=30.0)
-        page.wait_for_timeout(800)
-        page.locator('[data-testid="time-readout"]').scroll_into_view_if_needed()
-        save(page, "13_poles_mode_cumulative_sweep.png")
-
-        # Back to "Region snapshots" -- the sibling with the rendered movie.
-        page.locator('[data-testid="mode-sequence"]').click()
-        wait_for_state(page, lambda s: s.get("stack_id") == stack_id and s.get("level") == "sequence", timeout=60.0)
-        page.locator('[data-testid="frame-canvas"][data-loaded="true"]').first.wait_for(
-            state="attached", timeout=90_000
-        )
-    else:
-        print("warning: no cumulative sibling for this stack; skipping screenshot 13")
-
-    # 11. The movie player: this stack has a rendered movie, so the native
-    # <video> element is present without starting any render job. Play it
-    # (rather than just showing it paused at 0:00, indistinguishable from
-    # screenshot 10) so the controls' current-time and pause icon prove it
-    # actually plays.
-    video = page.locator('[data-testid="stack-movie"]')
-    video.scroll_into_view_if_needed()
-    video.wait_for(state="visible", timeout=30_000)
-    deadline = time.time() + 60.0
-    while time.time() < deadline and video_ready_state(page) < 1:
-        page.wait_for_timeout(500)
-    page.evaluate("document.querySelector('[data-testid=\"stack-movie\"]').play()")
-    page.wait_for_timeout(1500)
-    save(page, "11_poles_movie.png")
-    page.close()
-
-
-def shot_strips(browser, url: str) -> None:
-    page = browser.new_page(viewport=VIEWPORT)
-    open_app(page, url)
-    page.locator('[data-testid="tab-strips"]').click()
-
-    rows = page.locator('[data-testid="strips-table"] tbody tr')
-    rows.first.wait_for(state="attached", timeout=60_000)
-    rows.first.click()
-    page.locator('[data-testid="current-strip"]').wait_for(state="visible", timeout=90_000)
-    page.locator('[data-testid="strip-image"] canvas').first.wait_for(state="visible", timeout=120_000)
-
-    # 14. The statistics start hidden behind "Show statistics" (a fresh
-    # session's localStorage has no stats_visible yet, so it defaults to
-    # false); the image viewer has the panel's space in the meantime.
-    wait_for_state(page, lambda s: s.get("stats_visible") is False, timeout=15.0)
-    page.wait_for_timeout(800)
-    save(page, "14_strips_stats_hidden.png")
-
-    # 15. Toggling "Show statistics" fetches nothing new -- the stats were
-    # already requested when the strip opened -- it just draws the three
-    # Plotly figures and gives the image back its normal, smaller height.
-    page.locator('[data-testid="toggle-stats"]').click()
-    wait_for_state(page, lambda s: s.get("stats_visible") is True, timeout=15.0)
-    page.locator('[data-testid="plot-isotropic"] .js-plotly-plot').wait_for(state="visible", timeout=180_000)
-    page.locator('[data-testid="plot-structure"] .js-plotly-plot').wait_for(state="visible", timeout=30_000)
-    page.locator('[data-testid="current-strip"]').scroll_into_view_if_needed()
-    page.wait_for_timeout(1000)
-    save(page, "15_strips_stats_shown.png")
-    page.close()
-
-
-def cleanup_demo_selection(base_url: str) -> None:
-    """Delete every saved selection this script created, so reruns are idempotent."""
+@contextmanager
+def app_page(browser: Browser, url: str) -> Iterator[Page]:
+    # A fresh context prevents persistent settings or a prior selection from
+    # silently determining another screenshot's scientific source/settings.
+    context = browser.new_context(viewport=VIEWPORT, device_scale_factor=1)
+    page = context.new_page()
+    page.set_default_timeout(WAIT_MS)
     try:
-        with urllib.request.urlopen(f"{base_url}api/selections", timeout=20) as response:
-            records = json.load(response)
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        print(f"warning: could not list selections for cleanup: {exc}")
-        return
-    for record in records:
-        if str(record.get("name", "")).startswith(DEMO_SELECTION_NAME):
-            request = urllib.request.Request(f"{base_url}api/selections/{record['id']}", method="DELETE")
-            try:
-                urllib.request.urlopen(request, timeout=20)
-                print(f"cleaned up saved selection {record['id']!r}")
-            except (OSError, urllib.error.URLError) as exc:
-                print(f"warning: could not delete selection {record['id']!r}: {exc}")
+        page.goto(url, wait_until="domcontentloaded")
+        page.locator("#debug-state").wait_for(state="attached")
+        wait_for_state(page, lambda s: s.get("n_points", 0) > 0)
+        yield page
+    finally:
+        context.close()
 
 
-def pick_movie_stack(base_url: str) -> str:
-    """The paper region's sequence stack, or any stack with a rendered movie.
+def loaded_pixels(page: Page, test_id: str) -> dict[str, int]:
+    selector = f'[data-testid="{test_id}"] [data-testid="frame-canvas"][data-loaded="true"]'
+    check = """selector => {
+      const c = document.querySelector(selector);
+      if (!c || c.width === 0 || c.height === 0) return null;
+      const ctx = c.getContext('2d', {willReadFrequently:true});
+      if (!ctx) return null;
+      const a = ctx.getImageData(0,0,c.width,c.height).data;
+      let visible = 0;
+      for (let p=3; p<a.length; p+=4) if (a[p] > 0) visible++;
+      return visible > 0 ? {width:c.width,height:c.height,visible} : null;
+    }"""
+    page.wait_for_function(check, arg=selector, timeout=WAIT_MS)
+    next_paint(page)
+    return page.evaluate(check, selector)
 
-    The paper region (`north_pole_paper/M_orbits4_*`) is the one this
-    repository's own gates build, so preferring it -- the same choice
-    `frontend/e2e/poles.spec.ts`'s `chooseStack` makes -- gives a
-    deterministic session where the cumulative and frame siblings are also
-    known to exist, which screenshots 12 and 13 need.
-    """
-    with urllib.request.urlopen(f"{base_url}api/stacks", timeout=30) as response:
-        stacks = json.load(response)
-    if not stacks:
-        raise RuntimeError("no stacks under <mirror>/regions/ -- nothing for the Poles tab to show")
-    by_id = {str(s["id"]): s for s in stacks}
-    preferred = "north_pole_paper/M_orbits4_sequence"
-    if preferred in by_id and by_id[preferred].get("has_movie"):
-        return preferred
-    with_movie = [s for s in stacks if s.get("has_movie")]
-    chosen = with_movie[0] if with_movie else stacks[0]
-    if not with_movie:
-        print("warning: no stack on this mirror has a rendered movie; screenshot 11 will show the placeholder text")
-    return str(chosen["id"])
+
+def loaded_density(page: Page) -> dict[str, int]:
+    """Check data state, the density legend, and rendered blue coverage cells."""
+    wait_for_state(page, lambda s: s.get("n_filtered", 0) > 0)
+    expect(page.get_by_test_id("density-legend")).to_be_visible()
+    panel = page.get_by_test_id("catalog-map")
+    expect(panel.locator("canvas").first).to_be_visible()
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        next_paint(page)
+        with Image.open(BytesIO(panel.screenshot())) as image:
+            # Blue fill (69,154,216 with variable alpha) differs from the
+            # dark graticule. Ignore edge controls and the legend itself.
+            rgb = image.convert("RGB")
+            crop = rgb.crop((10, 10, rgb.width - 10, max(11, rgb.height - 65)))
+            pixels = np.asarray(crop, dtype=np.int16)
+            red, green, blue = pixels[..., 0], pixels[..., 1], pixels[..., 2]
+            count = int(np.count_nonzero((blue > 65) & (green - red > 20) & (blue - green > 20)))
+        if count > 100:
+            return {"coverage_pixels": count}
+    raise RuntimeError("Density state loaded but no rendered coverage cells were found")
+
+
+def save(page: Page, name: str, record: dict[str, Any], **details: Any) -> None:
+    next_paint(page)
+    path = OUT_DIR / name
+    page.screenshot(path=str(path), full_page=False, animations="disabled")
+    with Image.open(path) as image:
+        before = (image.mode, image.size, image.tobytes())
+        image.save(path, format="PNG", optimize=True)
+    with Image.open(path) as image:
+        assert (image.mode, image.size, image.tobytes()) == before, "PNG optimization altered pixels"
+        assert image.size == (1440, 900)
+    record["captures"][name] = dict(bytes=path.stat().st_size, state=debug_state(page), **details)
+    print(f"Captured {name}: {details}", flush=True)
+
+
+def collapse_empty_selection(page: Page) -> None:
+    if page.get_by_test_id("selection-tray").is_visible():
+        page.get_by_test_id("toggle-selection-tray").click()
+        expect(page.get_by_test_id("selection-tray")).to_have_count(0)
+
+
+def pick_sources(url: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    stacks = get_json(url + "/api/stacks")
+    jiram = [s for s in stacks if s.get("instrument", "JIRAM") == "JIRAM"]
+    if not jiram:
+        raise RuntimeError("A pre-existing JIRAM stack is required")
+    stack = next((s for s in jiram if s["id"] == "north_pole_paper/M_orbits4_sequence"), None)
+    stack = stack or min(jiram, key=lambda s: (s["level"] != "sequence", s["size_bytes"]))
+    rows = pa.ipc.open_stream(fetch(url + "/api/strips.arrow")).read_all().to_pylist()
+    candidates = [r for r in rows if r.get("instrument", "JIRAM") == "JIRAM"
+                  and r.get("band") == "M" and (r.get("valid_frac") or 0) > .2
+                  and min(r["rows"], r["cols"]) >= 128]
+    if not candidates:
+        raise RuntimeError("An existing usable JIRAM M-band strip is required")
+    strip = min(candidates, key=lambda r: r["rows"] * r["cols"])
+    return stack, strip
+
+
+def capture(browser: Browser, url: str, record: dict[str, Any]) -> None:
+    stack, strip = pick_sources(url)
+    record["sources"] = {"jiram_stack": stack, "jiram_strip": strip}
+    with app_page(browser, url) as page:
+        collapse_empty_selection(page)
+        save(page, "current_explore.png", record, **loaded_density(page))
+        page.get_by_test_id("filter-instrument").select_option("JunoCam")
+        wait_for_state(page, lambda s: s.get("instrument_filter") == "JunoCam" and s.get("n_filtered", 0) > 0)
+        # One page of eligible observations, browser memory only.
+        page.get_by_test_id("add-page-to-selection").click()
+        wait_for_state(page, lambda s: s.get("selection_n", 0) > 0)
+        if not page.get_by_test_id("selection-tray").is_visible():
+            page.get_by_test_id("toggle-selection-tray").click()
+        expect(page.get_by_test_id("selection-count")).not_to_have_text("0")
+        next_paint(page)
+        ids = page.get_by_test_id("catalog-table").locator("tbody tr").evaluate_all(
+            "rows => rows.map(row => row.querySelector('input[type=checkbox]')?.getAttribute('aria-label')?.replace(/^select /, '')).filter(Boolean)"
+        )
+        assert len(ids) == debug_state(page)["selection_n"], "Selected source IDs must be recorded"
+        save(page, "current_selection.png", record, selected_visible_ids=ids, **loaded_density(page))
+    with app_page(browser, url) as page:
+        collapse_empty_selection(page)
+        page.get_by_test_id("tab-poles").click()
+        page.get_by_test_id("stack-select").select_option(stack["id"])
+        wait_for_state(page, lambda s: s.get("stack_id") == stack["id"] and s.get("level") is not None)
+        pixels = loaded_pixels(page, "poles-image")
+        expect(page.get_by_test_id("frame-meta")).to_contain_text("km")
+        save(page, "current_time_series.png", record, source_id=stack["id"], t=0, pixels=pixels)
+    with app_page(browser, url) as page:
+        collapse_empty_selection(page)
+        page.get_by_test_id("tab-strips").click()
+        page.get_by_test_id("strip-instrument").select_option("JIRAM")
+        page.get_by_test_id("strip-band-filter").select_option("M")
+        page.get_by_title(strip["strip_id"], exact=True).click()
+        expect(page.get_by_test_id("current-strip")).to_have_text(strip["strip_id"])
+        pixels = loaded_pixels(page, "strip-image")
+        assert not debug_state(page)["stats_visible"], "Statistics should remain unrequested"
+        save(page, "current_image_library.png", record, source_id=strip["strip_id"], band="M", pixels=pixels)
+        # Enter Compare with an already loaded strip so its default source is
+        # the explicit same-image control, avoiding an unrelated stack read.
+        page.get_by_test_id("tab-compare").click()
+        for side in ("Left", "Right"):
+            expect(page.get_by_label(f"{side} source", exact=True)).to_have_value(strip["strip_id"])
+            page.get_by_label(f"{side} band", exact=True).select_option("M")
+        expect(page.get_by_test_id("compare-diagnostics")).to_contain_text("Compatible comparison grid")
+        expect(page.get_by_test_id("compare-diagnostics")).to_contain_text("measured")
+        pixels = [loaded_pixels(page, f"compare-image-{i}") for i in (0, 1)]
+        expect(page.get_by_test_id("compare-view").get_by_role("status")).to_have_count(0)
+        save(page, "current_compare.png", record, source_ids=[strip["strip_id"]] * 2,
+             interpretation="identical-source registration control; not atmospheric motion", pixels=pixels)
+    with app_page(browser, url) as page:
+        collapse_empty_selection(page)
+        page.get_by_test_id("tab-coverage").click()
+        expect(page.get_by_test_id("coverage-table").locator("tbody tr").first).to_be_visible()
+        expect(page.get_by_test_id("coverage-view").get_by_role("status")).to_have_count(0)
+        expect(page.get_by_test_id("coverage-view")).to_contain_text("failure-exclusion-v1")
+        save(page, "current_coverage.png", record,
+             displayed_stage_rows=page.get_by_test_id("coverage-table").locator("tbody tr").count())
+    record["omitted"]["current_junocam_readiness.png"] = "Guide reuses existing verified JunoCam evidence"
 
 
 def main() -> int:
-    port = free_port()
-    url = f"http://127.0.0.1:{port}/"
-    server = subprocess.Popen(
-        ["uv", "run", "jiram-catalog", "gui", "--port", str(port), "--no-browser"],
-        cwd=ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    started = time.monotonic()
+    runtime = scratch_directory()
+    record: dict[str, Any] = {
+        "captured_utc": datetime.now(timezone.utc).isoformat(), "viewport": VIEWPORT,
+        "software_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "captures": {}, "omitted": {},
+    }
+    print(f"Runtime and capture record: {runtime}", flush=True)
     try:
-        wait_ready(url)
-        movie_stack = pick_movie_stack(url)
-        with sync_playwright() as playwright:
+        with production_server(runtime) as url, sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            shot_first_loads(browser, url)
-            shot_catalog_workflow(browser, url)
-            shot_poles(browser, url, movie_stack)
-            shot_strips(browser, url)
-            browser.close()
-        cleanup_demo_selection(url)
+            try:
+                capture(browser, url, record)
+            finally:
+                browser.close()
+        assert all(name in record["captures"] for name in REQUIRED)
+        return 0
+    except Exception as exc:
+        record["error"] = f"{type(exc).__name__}: {exc}"
+        raise
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            server.kill()
-        if server.stdout is not None:
-            tail = server.stdout.read()
-            if tail:
-                print("--- server output (tail) ---")
-                print(tail[-4000:])
-    return 0
+        record["elapsed_s"] = round(time.monotonic() - started, 3)
+        (runtime / "capture.json").write_text(json.dumps(record, indent=2, default=str) + "\n")
 
 
 if __name__ == "__main__":

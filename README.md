@@ -59,10 +59,11 @@ ssh -N -L 5006:<compute-node>:5006 <user>@login.expanse.sdsc.edu
 
 where `<compute-node>` is what `hostname` prints on the allocation.
 Open `http://localhost:5006` in your browser. The server has no
-authentication, so stop it (Ctrl-C on the node) when you are done. Full
-workflow, scientific limits and export behavior:
-[research_workflow.md](docs/research_workflow.md). The
-[older illustrated guide](docs/gui_guide.md) preserves historical layouts.
+authentication, so stop it (Ctrl-C on the node) when you are done. Follow the
+[illustrated guide](docs/gui_guide.md) for current screenshots and workflows
+across all five views; see the
+[scientific workflow](docs/research_workflow.md) for interpretation and
+validation limits.
 
 ## Working with an agent
 
@@ -163,8 +164,8 @@ velocity-model export, strips, statistics, the GUI). Path resolution
 - `docs/README.md` -- index of every document in this repository.
 - `docs/architecture.md` -- the system as built, module by module.
 - `docs/usage.md` -- the command reference and worked examples.
-- `docs/gui_guide.md` -- the catalog browser, tab by tab, with real
-  screenshots.
+- `docs/gui_guide.md` -- all five workspace views, with current screenshots,
+  JunoCam eligibility and scientific export workflows.
 - [PEDAGOGICAL_REVIEW.md](PEDAGOGICAL_REVIEW.md) -- a teaching-oriented tour
   of JIRAM and JunoCam acquisition, geometry, quality and scientific workflows,
   with a companion [slide deck](docs/pedagogy/slides.pdf).

@@ -6,6 +6,11 @@ one line each; follow the links for the rest.
 
 ## Read first
 
+- [Ingersoll 2022 methods slide deck](pedagogy/ingersoll_2022_tracking_slides.pdf)
+  ([editable TeX](pedagogy/ingersoll_2022_tracking_slides.tex)) -- visual lessons
+  on cloud tracking, velocity uncertainty, vorticity/divergence and proposed
+  workflows. [Companion notes](pedagogy/ingersoll_2022_tracking.pdf)
+  ([TeX](pedagogy/ingersoll_2022_tracking.tex)) provide the full derivations.
 - [`../PEDAGOGICAL_REVIEW.md`](../PEDAGOGICAL_REVIEW.md) -- teaching tour of
   JIRAM/JunoCam implementation, scientific workflows and validation, with
   [companion slides](pedagogy/slides.pdf).
